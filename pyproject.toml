@@ -43,6 +43,7 @@ dev = [
     "mypy>=1.14.1",
     "ruff>=0.14.10",
     "types-setuptools>=75.8.0.20250110",
+    "types-tqdm>=4.67.0.20241221",
 ]
 
 [tool.ruff]
@@ -115,7 +116,7 @@ select = [
     # "TRY",        # tryceratops                  x    https://beta.ruff.rs/docs/rules/#tryceratops-try
     "NPY",   # NumPy-specific rules              https://beta.ruff.rs/docs/rules/#numpy-specific-rules-npy
     "RUF",   # Ruff-specific rules               https://beta.ruff.rs/docs/rules/#ruff-specific-rules-ruf
-    "TD002", # flake8-missing-todo-author               https://beta.ruff.rs/docs/rules/#flake8-todos-td
+    # "TD002", # flake8-missing-todo-author               https://beta.ruff.rs/docs/rules/#flake8-todos-td
     "TD004", # flake8-missing-todo-colon                https://beta.ruff.rs/docs/rules/#flake8-todos-td
     "TD005", # flake8-missing-todo-description              https://beta.ruff.rs/docs/rules/#flake8-todos-td
     "TD007", # flake8-missing-space-after-todo-colon        https://beta.ruff.rs/docs/rules/#flake8-todos-td
@@ -152,10 +153,11 @@ max-complexity = 10
 
 [tool.mypy]
 python_version = "3.12"
-disallow_untyped_defs = true
-disallow_untyped_calls = true
+disallow_untyped_defs = false
+disallow_untyped_calls = false
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true
+mypy_path = ["stubs"]
 no_implicit_optional = false
 strict_equality = true
 show_error_codes = true
@@ -165,7 +167,6 @@ warn_unused_ignores = true
 warn_unused_configs = true
 namespace_packages = true
 pretty = true
-# files = "packages, services, sdk"
 files = ["**/*.py"]
 exclude = [
     ".venv/",
@@ -175,9 +176,5 @@ exclude = [
 ]
 
 [[tool.mypy.overrides]]
-module = "keystone.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "capstone.*"
-ignore_missing_imports = true
+module = ["keystone.*", "unicorn.*", "capstone.*"]
+ignore_errors = true

@@ -1,6 +1,3 @@
-from capstone import *  # type: ignore[import-untyped]
-from keystone import *  # type: ignore[import-untyped]
-from unicorn import *
 from unicorn.x86_const import *
 
 from .isa import Register

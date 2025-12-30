@@ -36,7 +36,7 @@ class BaseMutate(object):
     @staticmethod
     def Rannum(bitnum):
         inputs = []
-        for i in range(bitnum):
+        for _ in range(bitnum):
             inputs += [random.getrandbits(bitnum)]
         return inputs
 

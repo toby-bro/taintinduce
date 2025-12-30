@@ -1,16 +1,16 @@
-from capstone import *  # type: ignore[import-untyped]
-from keystone import *  # type: ignore[import-untyped]
-from unicorn import *
-from unicorn.arm64_const import *
+from capstone import CS_ARCH_ARM64, CS_MODE_ARM
+from keystone import KS_ARCH_ARM64, KS_MODE_LITTLE_ENDIAN
+from unicorn import UC_ARCH_ARM64, UC_MODE_ARM
 
+from . import arm64_registers
 from .arm64_registers import *
-from .isa import ISA
+from .isa import ISA, Register
 
 
 # ruff: noqa: F405, F403
 # Arm64 architecture
 class ARM64(ISA):
-    def __init__(self):
+    def __init__(self) -> None:
         PC = ARM64_REG_PC()
         NZCV = ARM64_REG_NZCV()
         self.cpu_regs = [
@@ -451,43 +451,43 @@ class ARM64(ISA):
 
         self.cond_reg = NZCV
 
-    def name2reg(self, name):
+    def name2reg(self, name: str) -> Register:
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
         if 'MEM' in name:
-            return eval('ARM64_{}()'.format(name))
+            return getattr(arm64_registers, f'ARM64_{name}')()
 
-        return eval('ARM64_REG_{}()'.format(name))
+        return getattr(arm64_registers, f'ARM64_REG_{name}')()
 
-    def op2reg(self, name, size, structure=[]):
+    def op2reg(self, name: str, size: int, structure: list[int] = []) -> Register:  # noqa: B006
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
         if 'MEM' in name:
-            reg = eval('ARM64_{}()'.format(name))
+            reg = getattr(arm64_registers, f'ARM64_{name}')()
         else:
-            reg = eval('ARM64_REG_{}()'.format(name))
+            reg = getattr(arm64_registers, f'ARM64_REG_{name}')()
 
         reg.size = size
         reg.structure = structure
         return reg
 
-    def create_full_reg(self, name, bits=0, structure=[]):
+    def create_full_reg(self, name: str, bits: int = 0, structure: list[int] = []) -> Register:  # noqa: B006
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
         if 'MEM' in name:
-            reg = eval('ARM64_{}()'.format(name))
+            reg = getattr(arm64_registers, f'ARM64_{name}')()
             reg.bits, reg.structure = bits, structure
             return reg
 
         for full_reg_name, sub_regs_name in self.sub_registers.items():
             if name in sub_regs_name:
-                return eval('ARM64_REG_{}()'.format(full_reg_name))
+                return getattr(arm64_registers, f'ARM64_REG_{full_reg_name}')()
 
         for reg_name, to_replace_reg_name in self.reg_maps.items():
             if name in to_replace_reg_name:
-                return eval('ARM64_REG_{}()'.format(reg_name))
+                return getattr(arm64_registers, f'ARM64_REG_{reg_name}')()
 
-        return eval('ARM64_REG_{}()'.format(name))
+        return getattr(arm64_registers, f'ARM64_REG_{name}')()

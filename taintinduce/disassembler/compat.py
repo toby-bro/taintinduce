@@ -5,7 +5,7 @@ Uses Capstone directly without the squirrel wrapper.
 
 from typing import Any, Optional
 
-from capstone import (  # type: ignore[import-untyped]
+from capstone import (
     CS_ARCH_ARM,
     CS_ARCH_ARM64,
     CS_ARCH_X86,

@@ -3,6 +3,7 @@ Simple JSON serialization to replace squirrel-framework.
 Uses dataclasses + custom JSON encoder/decoder for object serialization.
 """
 
+import importlib
 import json
 from typing import TYPE_CHECKING, Any, Callable, Optional, Self, TypeVar
 
@@ -29,7 +30,7 @@ class TaintInduceDecoder(json.JSONDecoder):
     """Custom JSON decoder for TaintInduce objects."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(object_hook=self.object_hook, *args, **kwargs)
+        super().__init__(object_hook=self.object_hook, *args, **kwargs)  # noqa: B026
 
     def object_hook(self, dct: dict[str, Any]) -> Any:
         # Handle sets
@@ -40,7 +41,6 @@ class TaintInduceDecoder(json.JSONDecoder):
             return dct
 
         # Import the module and get the class
-        import importlib
 
         class_name = dct.pop('_class')
         module_name = dct.pop('_module')

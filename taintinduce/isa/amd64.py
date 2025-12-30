@@ -1,17 +1,16 @@
-from capstone import *  # type: ignore[import-untyped]
-from keystone import *  # type: ignore[import-untyped]
-from unicorn import *
-from unicorn.arm64_const import *
-from unicorn.x86_const import *
+from capstone import CS_ARCH_X86, CS_MODE_64
+from keystone import KS_ARCH_X86, KS_MODE_64
+from unicorn import UC_ARCH_X86, UC_MODE_64
 
-from .isa import ISA
+from . import x86_registers
+from .isa import ISA, Register
 from .x86_registers import *
 
 
 # ruff: noqa: F405, F403
 # x64 architecture
 class AMD64(ISA):
-    def __init__(self):
+    def __init__(self) -> None:
         self.cpu_regs = [
             # General Registers
             X86_REG_RAX(),
@@ -217,28 +216,26 @@ class AMD64(ISA):
 
         self.cond_reg = X86_REG_EFLAGS()
 
-    def name2reg(self, name):
+    def name2reg(self, name: str) -> Register | tuple[Register, Register]:
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
         if 'MEM' in name:
-            t1 = 'X86_{}()'.format(name)
-            t2 = 'X86_{}_ADDR64()'.format(name)
-            return (eval(t1), eval(t2))
+            return (getattr(x86_registers, f'X86_{name}')(), getattr(x86_registers, f'X86_{name}_ADDR64')())
 
-        return eval('X86_REG_{}()'.format(name))
+        return getattr(x86_registers, f'X86_REG_{name}')()
 
-    def create_full_reg(self, name, bits=0, structure=[]):
+    def create_full_reg(self, name: str, bits: int = 0, structure: list[int] = []) -> Register:  # noqa: B006
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
         if 'MEM' in name:
-            reg = eval('X86_{}()'.format(name))
+            reg = getattr(x86_registers, f'X86_{name}')()
             reg.bits, reg.structure = bits, structure
             return reg
 
         for full_reg_name, sub_regs_name in self.register_map.items():
             if name in sub_regs_name:
-                return eval('X86_REG_{}()'.format(full_reg_name))
+                return getattr(x86_registers, f'X86_REG_{full_reg_name}')()
 
-        return eval('X86_REG_{}()'.format(name))
+        return getattr(x86_registers, f'X86_REG_{name}')()

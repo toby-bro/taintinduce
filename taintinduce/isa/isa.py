@@ -1,38 +1,48 @@
+from abc import ABC, abstractmethod
 from typing import Optional
 
 from taintinduce.serialization import SerializableMixin
 
 
-class Register(SerializableMixin):
-    structure: Optional[list] = []
+class Register(ABC, SerializableMixin):
+    """Abstract base class for CPU registers and memory locations. Only subclasses should be instantiated."""
 
-    def __init__(self, repr_str=None):
-        self.name = None
-        self.uc_const = None
-        self.bits = None
-        self.structure = None
-        self.value = None
-        self.address = None
+    name: str
+    uc_const: int
+    bits: int
+    structure: list[int]
+    value: Optional[int]
+    address: Optional[int]
 
-    def __hash__(self):
+    @abstractmethod
+    def __init__(self, repr_str: Optional[str] = None) -> None:
+        pass
+
+    def __hash__(self) -> int:
         return hash(self.uc_const)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Register):
+            return NotImplemented
         return self.uc_const == other.uc_const
 
-    def __ne__(self, other):
+    def __ne__(self, other: object) -> bool:
         return not (self == other)
 
 
-class ISA(SerializableMixin):
-    name = None
-    cpu_regs = None
+class ISA(ABC, SerializableMixin):
+    """Abstract base class for ISA implementations (X86, AMD64, ARM64, etc.)."""
 
-    def __init__(self):
+    name: Optional[str]
+    cpu_regs: Optional[list[Register]]
+
+    def __init__(self) -> None:
         pass
 
-    def name2reg(self, name):
-        pass
+    @abstractmethod
+    def name2reg(self, name: str) -> Register | tuple[Register, Register]:
+        """Convert register name to register objects. Must be implemented by subclasses."""
 
-    def create_full_reg(self, name, bits=0, structure=[]):
-        pass
+    @abstractmethod
+    def create_full_reg(self, name: str, bits: int = 0, structure: list[int] = []) -> Register:  # noqa: B006
+        """Create a full register with given parameters. Must be implemented by subclasses."""

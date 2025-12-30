@@ -44,12 +44,12 @@ def read_rule(rule_file: str) -> None:
 
         if dataflow:
             print('\n   Sample taint propagations (input bit → output bits):')
-            for i, (src_bit, dest_bits) in enumerate(list(dataflow.items())[:5]):
+            for _, (src_bit, dest_bits) in enumerate(list(dataflow.items())[:5]):
                 # Handle sets that were serialized
                 if isinstance(dest_bits, dict) and '_set' in dest_bits:
                     dest_list = dest_bits['values']
                 elif isinstance(dest_bits, set):
-                    dest_list = sorted(list(dest_bits))
+                    dest_list = sorted(dest_bits)
                 else:
                     dest_list = dest_bits
 
@@ -58,7 +58,7 @@ def read_rule(rule_file: str) -> None:
 
                 if len(dest_list) > 10:
                     print(
-                        f"     Bit {src_bit_val:3d} → [{', '.join(map(str, dest_list[:5]))}... +{len(dest_list)-5} more]",
+                        f"     Bit {src_bit_val:3d} → [{', '.join(map(str, dest_list[:5]))}... +{len(dest_list)-5} more]",  # noqa: E501
                     )
                 else:
                     print(f'     Bit {src_bit_val:3d} → {dest_list}')

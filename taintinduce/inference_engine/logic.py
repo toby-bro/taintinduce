@@ -2,6 +2,7 @@ import os
 import pickle
 import subprocess
 from importlib.resources import files
+from typing import Optional
 
 command_template = """
 .i {}
@@ -22,7 +23,7 @@ class NonOrthogonalException(Exception):
 
 
 class Espresso(object):
-    def __init__(self, path=None):
+    def __init__(self, path: Optional[str] = None) -> None:
         # Use importlib.resources instead of deprecated pkg_resources
         try:
             espresso_file = files('taintinduce.inference_engine').joinpath('espresso')
@@ -35,7 +36,7 @@ class Espresso(object):
             path = os.environ['ESPRESSO_PATH']
         self.path = path
 
-    def parse_output(self, output):
+    def parse_output(self, output_b: bytes) -> set[tuple[int, int]]:
         """Takes the output of Espresso and returns the conditions.
 
         Args:
@@ -49,8 +50,8 @@ class Espresso(object):
             Exception: Illegal character in output string.
             Exception: Length of logic != number of phases.
         """
-        result = dict()
-        output = output.decode('utf-8')
+        result = {}
+        output = output_b.decode('utf-8')
         lines = output.split('\n')
         num_phase = None
         logic = []
@@ -75,9 +76,13 @@ class Espresso(object):
             raise Exception('Length of logic != number of phases')
 
         # extract boolean condition from logic
-        bool_cond = set()
+        bool_cond: set[tuple[int, int]] = set()
+        self.extract_conditions(num_phase, logic, bool_cond)
+        return bool_cond
+
+    def extract_conditions(self, num_phase: int, logic: list[list[str]], bool_cond: set[tuple[int, int]]) -> None:
         for x in range(num_phase):
-            condition_bitstring, output_class = logic[x]
+            condition_bitstring, _ = logic[x]
             # condition is a bitstring, so index 0 is the msb
             # we always treat values as little-endian so index 0 is lsb
             # we will want to inverse it to make logic clearer
@@ -96,9 +101,55 @@ class Espresso(object):
                 else:
                     raise Exception('Illegal character found in boolean logic!')
             bool_cond.add((condition_bitmask, condition_value))
-        return bool_cond
 
-    def minimize(self, in_size, out_size, pla_type, observations, raw=False):
+    def minimize_raw(self, in_size: int, out_size: int, pla_type: str, observations: dict[int, set[int]]) -> bytes:
+        """Obtain a minimal formula using the ESPRESSO heuristic, returning raw output.
+
+        Args:
+            in_size (int): Size of the input formula in terms of bits.
+            out_size (int): Size of the output formula in terms of bits.
+            pla_type (str): String to determine the optimization strategy, check espresso options
+                for more information
+            observations ({int: set(int)}): A dictionary with key being 1/0 representing the true and
+                false class. Value of the key is a set of ints being the input states for that class.
+        Returns:
+            result (bytes): Raw output from espresso minimization.
+        Raises:
+            Exception: Output found on stderr!
+        """
+        return self._minimize(in_size, out_size, pla_type, observations, raw=True)  # type: ignore[return-value]
+
+    def minimize(
+        self,
+        in_size: int,
+        out_size: int,
+        pla_type: str,
+        observations: dict[int, set[int]],
+    ) -> set[tuple[int, int]]:
+        """Obtain a minimal formula using the ESPRESSO heuristic.
+
+        Args:
+            in_size (int): Size of the input formula in terms of bits.
+            out_size (int): Size of the output formula in terms of bits.
+            pla_type (str): String to determine the optimization strategy, check espresso options
+                for more information
+            observations ({int: set(int)}): A dictionary with key being 1/0 representing the true and
+                false class. Value of the key is a set of ints being the input states for that class.
+        Returns:
+            result (set): see parse_out function output
+        Raises:
+            Exception: Output found on stderr!
+        """
+        return self._minimize(in_size, out_size, pla_type, observations, raw=False)  # type: ignore[return-value]
+
+    def _minimize(
+        self,
+        in_size: int,
+        out_size: int,
+        pla_type: str,
+        observations: dict[int, set[int]],
+        raw: bool = False,
+    ) -> set[tuple[int, int]] | bytes:
         """Obtain a minimal formula using the ESPRESSO heuristic.
 
         Args:
@@ -128,13 +179,17 @@ class Espresso(object):
         obs_string = '\n'.join(obs)
 
         command = command_template.format(in_size, out_size, pla_type, obs_string)
-        espresso = subprocess.Popen(
-            [self.path, '-t'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        espresso = subprocess.Popen(  # noqa: S603
+            [self.path, '-t'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
         stdout, stderr = espresso.communicate(command.encode())
         if stderr:
             raise EspressoException(stderr)
 
+        result: set[tuple[int, int]] | bytes
         if raw:
             result = stdout
         else:
@@ -143,9 +198,9 @@ class Espresso(object):
         return result
 
 
-def main():
+def main() -> None:
     espresso = Espresso()
-    obs = pickle.load(open('/tmp/test', 'rb'))
+    obs = pickle.load(open('/tmp/test', 'rb'))  # noqa: S108, S301
     espresso.minimize(32, 1, 'fr', obs)
     return
 
