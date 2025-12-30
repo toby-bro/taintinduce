@@ -1,11 +1,13 @@
+from capstone import *  # type: ignore[import-untyped]
+from keystone import *  # type: ignore[import-untyped]
 from unicorn import *
 from unicorn.arm64_const import *
-from capstone import *
-from keystone import *
 
-from .isa import ISA
 from .arm64_registers import *
+from .isa import ISA
 
+
+# ruff: noqa: F405, F403
 # Arm64 architecture
 class ARM64(ISA):
     def __init__(self):
@@ -43,7 +45,6 @@ class ARM64(ISA):
             ARM64_REG_X28(),
             ARM64_REG_X29(),
             ARM64_REG_X30(),
-
             ARM64_REG_Q0(),
             ARM64_REG_Q1(),
             ARM64_REG_Q2(),
@@ -77,12 +78,12 @@ class ARM64(ISA):
             ARM64_REG_Q30(),
             ARM64_REG_Q31(),
             ARM64_REG_XZR(),
-            #ARM64_REG_TPIDR_EL0(),
-            #ARM64_REG_TPIDRRO_EL0(),
-            #ARM64_REG_TPIDR_EL1(),
+            # ARM64_REG_TPIDR_EL0(),
+            # ARM64_REG_TPIDRRO_EL0(),
+            # ARM64_REG_TPIDR_EL1(),
             PC,
             ARM64_REG_SP(),
-            #ARM64_REG_CPACR_EL1(),
+            # ARM64_REG_CPACR_EL1(),
             NZCV,
         ]
 
@@ -317,36 +318,36 @@ class ARM64(ISA):
             ARM64_REG_Q30(),
             ARM64_REG_Q31(),
             ARM64_REG_XZR(),
-            #ARM64_REG_TPIDR_EL0(),
-            #ARM64_REG_TPIDRRO_EL0(),
-            #ARM64_REG_TPIDR_EL1(),
+            # ARM64_REG_TPIDR_EL0(),
+            # ARM64_REG_TPIDRRO_EL0(),
+            # ARM64_REG_TPIDR_EL1(),
             PC,
             ARM64_REG_SP(),
-            #ARM64_REG_CPACR_EL1(),
+            # ARM64_REG_CPACR_EL1(),
             NZCV,
         ]
 
-        self.cpu_read_emu_regs  = [ARM64_MEM_READ2(), ARM64_MEM_READ1()]
+        self.cpu_read_emu_regs = [ARM64_MEM_READ2(), ARM64_MEM_READ1()]
         self.cpu_write_emu_regs = [ARM64_MEM_WRITE1()]
 
-        self.pc_reg        = PC
-        self.flag_reg_str  = 'NZCV'
-        self.flag_reg      = [NZCV]
+        self.pc_reg = PC
+        self.flag_reg_str = 'NZCV'
+        self.flag_reg = [NZCV]
         self.state_reg_str = 'NZCV'
-        self.state_reg     = [NZCV]
+        self.state_reg = [NZCV]
 
         # Sub register
         self.reg_maps = {
-            'Q0' : ['V0' , 'Q0'],
-            'Q1' : ['V1' , 'Q1'],
-            'Q2' : ['V2' , 'Q2'],
-            'Q3' : ['V3' , 'Q3'],
-            'Q4' : ['V4' , 'Q4'],
-            'Q5' : ['V5' , 'Q5'],
-            'Q6' : ['V6' , 'Q6'],
-            'Q7' : ['V7' , 'Q7'],
-            'Q8' : ['V8' , 'Q8'],
-            'Q9' : ['V9' , 'Q9'],
+            'Q0': ['V0', 'Q0'],
+            'Q1': ['V1', 'Q1'],
+            'Q2': ['V2', 'Q2'],
+            'Q3': ['V3', 'Q3'],
+            'Q4': ['V4', 'Q4'],
+            'Q5': ['V5', 'Q5'],
+            'Q6': ['V6', 'Q6'],
+            'Q7': ['V7', 'Q7'],
+            'Q8': ['V8', 'Q8'],
+            'Q9': ['V9', 'Q9'],
             'Q10': ['V10', 'Q10'],
             'Q11': ['V11', 'Q11'],
             'Q12': ['V12', 'Q12'],
@@ -368,21 +369,21 @@ class ARM64(ISA):
             'Q28': ['V28', 'Q28'],
             'Q29': ['V29', 'Q29'],
             'Q30': ['V30', 'Q30'],
-            'Q31': ['V31', 'Q31']
+            'Q31': ['V31', 'Q31'],
         }
 
         # Replace the register with r that can be recognized by Unicorn
         self.sub_registers = {
-            'Q0' : ['B0' , 'H0',  'S0',  'D0'],
-            'Q1' : ['B1' , 'H1',  'S1',  'D1'],
-            'Q2' : ['B2' , 'H2',  'S2',  'D2'],
-            'Q3' : ['B3' , 'H3',  'S3',  'D3'],
-            'Q4' : ['B4' , 'H4',  'S4',  'D4'],
-            'Q5' : ['B5' , 'H5',  'S5',  'D5'],
-            'Q6' : ['B6' , 'H6',  'S6',  'D6'],
-            'Q7' : ['B7' , 'H7',  'S7',  'D7'],
-            'Q8' : ['B8' , 'H8',  'S8',  'D8'],
-            'Q9' : ['B9' , 'H9',  'S9',  'D9'],
+            'Q0': ['B0', 'H0', 'S0', 'D0'],
+            'Q1': ['B1', 'H1', 'S1', 'D1'],
+            'Q2': ['B2', 'H2', 'S2', 'D2'],
+            'Q3': ['B3', 'H3', 'S3', 'D3'],
+            'Q4': ['B4', 'H4', 'S4', 'D4'],
+            'Q5': ['B5', 'H5', 'S5', 'D5'],
+            'Q6': ['B6', 'H6', 'S6', 'D6'],
+            'Q7': ['B7', 'H7', 'S7', 'D7'],
+            'Q8': ['B8', 'H8', 'S8', 'D8'],
+            'Q9': ['B9', 'H9', 'S9', 'D9'],
             'Q10': ['B10', 'H10', 'S10', 'D10'],
             'Q11': ['B11', 'H11', 'S11', 'D11'],
             'Q12': ['B12', 'H12', 'S12', 'D12'],
@@ -405,16 +406,16 @@ class ARM64(ISA):
             'Q29': ['B29', 'H29', 'S29', 'D29'],
             'Q30': ['B30', 'H30', 'S30', 'D30'],
             'Q31': ['B31', 'H31', 'S31', 'D31'],
-            'X0' : ['W0'],
-            'X1' : ['W1' ],
-            'X2' : ['W2' ],
-            'X3' : ['W3' ],
-            'X4' : ['W4' ],
-            'X5' : ['W5' ],
-            'X6' : ['W6' ],
-            'X7' : ['W7' ],
-            'X8' : ['W8' ],
-            'X9' : ['W9' ],
+            'X0': ['W0'],
+            'X1': ['W1'],
+            'X2': ['W2'],
+            'X3': ['W3'],
+            'X4': ['W4'],
+            'X5': ['W5'],
+            'X6': ['W6'],
+            'X7': ['W7'],
+            'X8': ['W8'],
+            'X9': ['W9'],
             'X10': ['W10'],
             'X11': ['W11'],
             'X12': ['W12'],
@@ -436,15 +437,15 @@ class ARM64(ISA):
             'X28': ['W28'],
             'X29': ['W29'],
             'X30': ['W30'],
-            'X31': ['W31']
+            'X31': ['W31'],
         }
 
         self.uc_arch = (UC_ARCH_ARM64, UC_MODE_ARM)
         self.ks_arch = (KS_ARCH_ARM64, KS_MODE_LITTLE_ENDIAN)
         self.cs_arch = (CS_ARCH_ARM64, CS_MODE_ARM)
-        #self.code_mem = 2 * 1024 * 1024
+        # self.code_mem = 2 * 1024 * 1024
         self.code_mem = 4096
-        self.code_addr = 0x6d1c00000000000
+        self.code_addr = 0x6D1C00000000000
 
         self.addr_space = 64
 
@@ -452,8 +453,8 @@ class ARM64(ISA):
 
     def name2reg(self, name):
         name = name.upper()
-        name = name.replace('(','')
-        name = name.replace(')','')
+        name = name.replace('(', '')
+        name = name.replace(')', '')
         if 'MEM' in name:
             return eval('ARM64_{}()'.format(name))
 
@@ -461,8 +462,8 @@ class ARM64(ISA):
 
     def op2reg(self, name, size, structure=[]):
         name = name.upper()
-        name = name.replace('(','')
-        name = name.replace(')','')
+        name = name.replace('(', '')
+        name = name.replace(')', '')
         if 'MEM' in name:
             reg = eval('ARM64_{}()'.format(name))
         else:
@@ -474,18 +475,18 @@ class ARM64(ISA):
 
     def create_full_reg(self, name, bits=0, structure=[]):
         name = name.upper()
-        name = name.replace('(','')
-        name = name.replace(')','')
+        name = name.replace('(', '')
+        name = name.replace(')', '')
         if 'MEM' in name:
             reg = eval('ARM64_{}()'.format(name))
             reg.bits, reg.structure = bits, structure
             return reg
 
-        for full_reg_name, sub_regs_name in self.sub_registers.iteritems():
+        for full_reg_name, sub_regs_name in self.sub_registers.items():
             if name in sub_regs_name:
                 return eval('ARM64_REG_{}()'.format(full_reg_name))
 
-        for reg_name, to_replace_reg_name in self.reg_maps.iteritems():
+        for reg_name, to_replace_reg_name in self.reg_maps.items():
             if name in to_replace_reg_name:
                 return eval('ARM64_REG_{}()'.format(reg_name))
 

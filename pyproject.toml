@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taintinduce"
+version = "0.1.2"
+description = "TaintInduce - Automate creation of taint propagation rules for unknown instruction sets"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    {name = "Chua Zheng Leong", email = "czl@iiyume.org"}
+]
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "capstone>=5.0.0",
+    "keystone-engine>=0.9.2",
+    "tqdm>=4.0.0",
+    "unicorn>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/melynx/taintinduce/"
+Repository = "https://github.com/melynx/taintinduce/"
+
+[tool.setuptools]
+packages = ["taintinduce", "taintinduce.disassembler", "taintinduce.inference_engine", "taintinduce.isa", "taintinduce.observation_engine", "taintinduce.unicorn_cpu"]
+
+[tool.setuptools.package-data]
+"taintinduce.inference_engine" = ["espresso"]
+
+[dependency-groups]
+dev = [
+    "types-setuptools>=75.8.0.20250110",
+]

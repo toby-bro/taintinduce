@@ -1,21 +1,21 @@
-
-from .strategy import *
-from taintinduce.unicorn_cpu.unicorn_cpu import *
-
-from taintinduce.taintinduce_common import *
-
-from taintinduce.isa.x86 import *
-from taintinduce.isa.amd64 import *
-from taintinduce.isa.arm64 import *
-
-import pdb
 from tqdm import tqdm
 
+from taintinduce.isa.amd64 import *
+from taintinduce.isa.arm64 import *
+from taintinduce.isa.x86 import *
+from taintinduce.taintinduce_common import *
+from taintinduce.unicorn_cpu.unicorn_cpu import *
+
+from .strategy import *
+
+# ruff: noqa: F405, F403
+
+
 class ObservationEngine(object):
-    def __init__(self, bytestring, archstring, state_format):
+    def __init__(self, bytestring: str, archstring, state_format):
         self.arch = globals()[archstring]()
         self.cpu = UnicornCPU(archstring)
-        bytecode = bytes.fromhex(bytestring)
+        bytecode = bytes.fromhex(bytestring)  # noqa: F841
 
         mem_regs = [x for x in state_format if 'MEM' in x.name]
         self.cpu.set_memregs(mem_regs)
@@ -30,16 +30,15 @@ class ObservationEngine(object):
         self.state_format = state_format
         self.DEBUG_LOG = False
 
-
-    def observe_insn(self): #(, bytestring, archstring, state_format):
+    def observe_insn(self):  # (, bytestring, archstring, state_format):
         """Produces the observations for a particular instruction.
 
-        The planned signature of the method is as follows. 
+        The planned signature of the method is as follows.
             bytestring (string): String representing the bytes of the instruction in hex without space
             archstring (string): Architecture String (X86, AMD64, ARM32, ARM64)
             state_format (list(Register)): A list of registers which defines the order of the State object
 
-        But due to the extremely badly written UnicornCPU (the crazy memory stuff), 
+        But due to the extremely badly written UnicornCPU (the crazy memory stuff),
         we'll have to create the ObservationEngine in such a way that it instantiate the CPU once for the entire observation routine,
         or the performance will be extremely bad.
 
@@ -85,23 +84,23 @@ class ObservationEngine(object):
         for reg in self.state_format:
             if 'WRITE' in reg.name or 'ADDR' in reg.name:
                 continue
-            #for x in tqdm(range(reg.bits)):
-            for x in (range(reg.bits)):
+            # for x in tqdm(range(reg.bits)):
+            for x in range(reg.bits):
                 cpu.set_cpu_state(seed_in)
-                pos_val = (1<<x)
+                pos_val = 1 << x
                 mutate_val = seed_in[reg] ^ pos_val
                 cpu.write_reg(reg, mutate_val)
                 try:
                     sb, sa = cpu.execute(bytecode)
-                except UcError as e:
+                except UcError:
                     continue
-                except OutOfRangeException as e:
+                except OutOfRangeException:
                     continue
                 sbs = regs2bits(sb, state_format)
                 sas = regs2bits(sa, state_format)
                 if not sss.diff(sbs):
                     continue
-                assert(sss.diff(sbs))
+                assert sss.diff(sbs)
                 state_list.append((sbs, sas))
         return Observation((sss, rss), state_list, bytestring, archstring, state_format)
 
@@ -123,11 +122,10 @@ class ObservationEngine(object):
         seed_states = []
 
         # TODO: HACK to speed up, we'll ignore write and addr
-        temp_state_format = [x for x in state_format if ('WRITE' not in x.name
-            and 'ADDR' not in x.name)]
+        temp_state_format = [x for x in state_format if ('WRITE' not in x.name and 'ADDR' not in x.name)]
         for strategy in strategies:
             for seed_variation in tqdm(strategy.generator(temp_state_format)):
-                seed_io = self._gen_random_seed_io(bytestring, archstring, seed_variation) 
+                seed_io = self._gen_random_seed_io(bytestring, archstring, seed_variation)
                 # check if its successful or not, if not debug print
                 if seed_io:
                     seed_states.append(seed_io)
@@ -149,7 +147,7 @@ class ObservationEngine(object):
             Returns the seed input / output states as tuple(CPUState, CPUState) if successful.
             Otherwise returns None if it fails to find within num_tries
         Raises:
-            Exception 
+            Exception
         """
 
         cpu = self.cpu
@@ -160,15 +158,15 @@ class ObservationEngine(object):
                 cpu.set_cpu_state(seed_in)
                 sb, sa = cpu.execute(bytecode)
                 break
-            except OutOfRangeException as e:
-                if x == num_tries-1:
+            except OutOfRangeException:
+                if x == num_tries - 1:
                     return None
                 continue
-            except UcError as e:
-                if x == num_tries-1:
+            except UcError:
+                if x == num_tries - 1:
                     return None
                 continue
-        return sb,sa
+        return sb, sa
 
     def _gen_random_seed_io(self, bytestring, archstring, seed_variation, num_tries=255):
         """Generates a pair of in / out CPUState, seed_in, seed_out, by executing the instruction using a randomly generated CPUState with the seed_variation applied.
@@ -181,7 +179,7 @@ class ObservationEngine(object):
             Returns the seed input / output states as tuple(CPUState, CPUState) if successful.
             Otherwise returns None if it fails to find within num_tries
         Raises:
-            Exception 
+            Exception
         """
 
         cpu = self.cpu
@@ -194,12 +192,12 @@ class ObservationEngine(object):
                 cpu.write_regs(regs2mod, vals2mod)
                 sb, sa = cpu.execute(bytecode)
                 break
-            except UcError as e:
-                if x == num_tries-1:
+            except UcError:
+                if x == num_tries - 1:
                     return None
                 continue
-            except OutOfRangeException as e:
-                if x == num_tries-1:
+            except OutOfRangeException:
+                if x == num_tries - 1:
                     return None
                 continue
-        return sb,sa
+        return sb, sa

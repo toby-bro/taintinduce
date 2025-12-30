@@ -1,9 +1,12 @@
-from .isa import Register
+from capstone import *  # type: ignore[import-untyped]
+from keystone import *  # type: ignore[import-untyped]
 from unicorn import *
 from unicorn.arm64_const import *
-from capstone import *
-from keystone import *
 
+from .isa import Register
+
+
+# ruff: noqa: F405, F403
 class ARM64_MEM_READ1(Register):
     def __init__(self):
         self.name = 'MEM_READ1'
@@ -33,6 +36,7 @@ class ARM64_MEM_WRITE1(Register):
         self.value = 0
         self.address = 0
 
+
 class ARM64_REG_WSP(Register):
     def __init__(self):
         self.name = 'WSP'
@@ -41,6 +45,7 @@ class ARM64_REG_WSP(Register):
         self.structure = [32]
         self.value = None
         self.address = None
+
 
 class ARM64_REG_WSR(Register):
     def __init__(self):
@@ -51,6 +56,7 @@ class ARM64_REG_WSR(Register):
         self.value = None
         self.address = None
 
+
 class ARM64_REG_XZR(Register):
     def __init__(self):
         self.name = 'XZR'
@@ -59,6 +65,7 @@ class ARM64_REG_XZR(Register):
         self.structure = [64]
         self.value = None
         self.address = None
+
 
 class ARM64_REG_B0(Register):
     def __init__(self):

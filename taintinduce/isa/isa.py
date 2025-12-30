@@ -1,9 +1,11 @@
-import json
+from typing import Optional
 
-import squirrel.acorn.acorn as acorn
+from taintinduce.serialization import SerializableMixin
 
-class Register(acorn.Acorn):
-    structure = []
+
+class Register(SerializableMixin):
+    structure: Optional[list] = []
+
     def __init__(self, repr_str=None):
         self.name = None
         self.uc_const = None
@@ -16,12 +18,13 @@ class Register(acorn.Acorn):
         return hash(self.uc_const)
 
     def __eq__(self, other):
-        return (self.uc_const == other.uc_const)
+        return self.uc_const == other.uc_const
 
     def __ne__(self, other):
-        return not(self == other)
+        return not (self == other)
 
-class ISA(acorn.Acorn):
+
+class ISA(SerializableMixin):
     name = None
     cpu_regs = None
 
@@ -33,4 +36,3 @@ class ISA(acorn.Acorn):
 
     def create_full_reg(self, name, bits=0, structure=[]):
         pass
-

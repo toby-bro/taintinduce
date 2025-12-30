@@ -1,15 +1,15 @@
-from collections import defaultdict
-from itertools import zip_longest
-
-from .logic import Espresso
-from .logic import EspressoException, NonOrthogonalException
-from taintinduce.taintinduce_common import espresso2cond, extract_reg2bits, shift_espresso, Rule
-from taintinduce.isa.x86_registers import X86_REG_EFLAGS
-
-from squirrel.acorn.acorn import TaintRule
-
+# Replaced squirrel import with our own
 import pdb
+from collections import defaultdict
 
+from taintinduce.taintinduce_common import (
+    Rule,
+    espresso2cond,
+    extract_reg2bits,
+    shift_espresso,
+)
+
+from .logic import Espresso, EspressoException, NonOrthogonalException
 
 
 class InferenceEngine(object):
@@ -37,7 +37,7 @@ class InferenceEngine(object):
         # zl: we have the state_format in observation, assert that all observations in obs_list have the same state_format
         state_formats = [x.state_format for x in observations]
         state_format = state_formats[0]
-        assert(not state_formats or state_formats.count(state_formats[0]) == len(state_formats))
+        assert not state_formats or state_formats.count(state_formats[0]) == len(state_formats)
 
         for observation in observations:
             # single_obs_dep contains the dependency for a single observation
@@ -62,8 +62,8 @@ class InferenceEngine(object):
             bit_conditions = []
             bit_dataflows = []
             num_partitions = len(possible_flows[use_bit_pos])
-            assert(num_partitions > 0)
-            #print(num_partitions)
+            assert num_partitions > 0
+            # print(num_partitions)
 
             # ZL: ugly hack to collect all the possibly failed cond identification
             no_cond_dataflow_set = set()
@@ -77,7 +77,7 @@ class InferenceEngine(object):
                 for obs_dep, obs_mutate_in, seed_in in obs_deps:
                     if use_bit_pos in obs_dep and use_bit_pos in obs_mutate_in:
                         partitions[frozenset(obs_dep[use_bit_pos])].add(obs_mutate_in[use_bit_pos])
-                    #partitions[frozenset(obs_dep[use_bit_pos])].add(seed_in)
+                    # partitions[frozenset(obs_dep[use_bit_pos])].add(seed_in)
 
                 # ZL: The current heuristic is to always select the smaller partition first since
                 # it lowers the chances of the DNF exploding.
@@ -112,7 +112,6 @@ class InferenceEngine(object):
                 no_cond_dataflow_set = frozenset(no_cond_dataflow_set)
                 bit_dataflows.append(no_cond_dataflow_set)
 
-
             bit_conditions = tuple(bit_conditions)
             bit_dataflows = tuple(bit_dataflows)
             unique_conditions[bit_conditions].add((use_bit_pos, bit_dataflows))
@@ -121,7 +120,7 @@ class InferenceEngine(object):
         # merge the condition and create the rule...
         # TODO: ZL: Have to take a look at how correct this is.
         # Don't think this is correct in general
-        # The assumption here is that there will always be 2 sets, empty and the actual 
+        # The assumption here is that there will always be 2 sets, empty and the actual
         # condition list.
 
         if tuple() not in unique_conditions:
@@ -140,7 +139,7 @@ class InferenceEngine(object):
             # ZL: this cond_bits_list is probably not needed
             # i think we just need a set of all the cond_bits...
             # but ah well, let's keep it that way
-            # This list is used later to collect all the bits that are 
+            # This list is used later to collect all the bits that are
             # defined in the condition so that we can remove the indirect
             # flows
             for condition in condition_array:
@@ -154,7 +153,7 @@ class InferenceEngine(object):
             # stuff_to_destroy contains the indirect flows we're going to remove
             stuff_to_destroy = defaultdict(set)
             for use_bit, use_bit_dataflow in use_bit_dataflows:
-                assert(len(cond_bits_list) == len(use_bit_dataflow)-1)
+                assert len(cond_bits_list) == len(use_bit_dataflow) - 1
                 for dataflow_id, dep_set in enumerate(use_bit_dataflow):
                     if dataflow_id < len(cond_bits_list):
                         cond_bits = cond_bits_list[dataflow_id]
@@ -183,7 +182,7 @@ class InferenceEngine(object):
             for use_bit in merged_dataflows:
                 dataflows[-1][use_bit] |= merged_dataflows[use_bit]
             condition_array = []
-        assert(len(unique_conditions) == 0)
+        assert len(unique_conditions) == 0
 
         # add in the always true flows
         for dataflow in dataflows:
@@ -192,12 +191,11 @@ class InferenceEngine(object):
 
         rule = Rule(state_format, condition_array, dataflows)
 
-        #for conditions in unique_conditions:
+        # for conditions in unique_conditions:
         #    dataflow = defaultdict(set)
         #    for use_bit, dataflows in unique_conditions[conditions]:
         #        print(use_bit)
         #        print tuple(izip_longest(conditions, dataflows, fillvalue=None))
-
 
         return rule
 
@@ -214,7 +212,7 @@ class InferenceEngine(object):
         """
         partition_true = set()
         partition_false = set()
-        #pdb.set_trace()
+        # pdb.set_trace()
         state_bits = 0
         if cond_reg:
             for state in partition1:
@@ -231,17 +229,17 @@ class InferenceEngine(object):
                 partition_false.add(state.state_value)
             state_bits = sum([reg.bits for reg in state_format])
 
-        #print('True')
-        #for val in partition_true:
+        # print('True')
+        # for val in partition_true:
         #    print('{:064b}'.format(val))
-        #print('False')
-        #for val in partition_false:
+        # print('False')
+        # for val in partition_false:
         #    print('{:064b}'.format(val))
 
-        partitions = {1:partition_true, 0:partition_false}
+        partitions = {1: partition_true, 0: partition_false}
         try:
             dnf_condition = self.espresso.minimize(state_bits, 1, 'fr', partitions)
-        except NonOrthogonalException as e:
+        except NonOrthogonalException:
             return None
         except EspressoException as e:
             # ZL: have to make it a specific exception
@@ -253,4 +251,3 @@ class InferenceEngine(object):
         dnf_condition = shift_espresso(dnf_condition, cond_reg, state_format)
         condition = espresso2cond(dnf_condition)
         return condition
-

@@ -1,11 +1,14 @@
+from capstone import *  # type: ignore[import-untyped]
+from keystone import *  # type: ignore[import-untyped]
 from unicorn import *
-from unicorn.x86_const import *
 from unicorn.arm64_const import *
-from capstone import *
-from keystone import *
+from unicorn.x86_const import *
 
 from .isa import ISA
 from .x86_registers import *
+
+
+# ruff: noqa: F405, F403
 # x64 architecture
 class AMD64(ISA):
     def __init__(self):
@@ -46,7 +49,7 @@ class AMD64(ISA):
             X86_REG_FP5(),
             X86_REG_FP6(),
             X86_REG_FP7(),
-            X86_REG_FPSW()
+            X86_REG_FPSW(),
         ]
 
         self.full_cpu_regs = [
@@ -143,35 +146,35 @@ class AMD64(ISA):
             X86_REG_FP4(),
             X86_REG_FP5(),
             X86_REG_FP6(),
-            X86_REG_FPSW()
+            X86_REG_FPSW(),
         ]
 
-        self.cpu_read_emu_regs  = [X86_MEM_READ2(), X86_MEM_READ1()]
+        self.cpu_read_emu_regs = [X86_MEM_READ2(), X86_MEM_READ1()]
         self.cpu_write_emu_regs = [X86_MEM_WRITE1()]
 
-        self.pc_reg        = X86_REG_RIP()
-        self.flag_reg      = [X86_REG_EFLAGS()]
-        self.state_reg     = [X86_REG_FPSW()]
+        self.pc_reg = X86_REG_RIP()
+        self.flag_reg = [X86_REG_EFLAGS()]
+        self.state_reg = [X86_REG_FPSW()]
 
         self.register_map = {
-            'RAX'   : ['AL',   'AH',   'AX',   'EAX'],
-            'RBX'   : ['BL',   'BH',   'BX',   'EBX'],
-            'RCX'   : ['CL',   'CH',   'CX',   'ECX'],
-            'RDX'   : ['DL',   'DH',   'DX',   'EDX'],
-            'RSI'   : ['SI',   'SIL',  'ESI' ],
-            'RDI'   : ['DI',   'DIL',  'EDI' ],
-            'RBP'   : ['BP',   'BPL',  'EBP' ],
-            'RSP'   : ['SP',   'SPL',  'ESP' ],
+            'RAX': ['AL', 'AH', 'AX', 'EAX'],
+            'RBX': ['BL', 'BH', 'BX', 'EBX'],
+            'RCX': ['CL', 'CH', 'CX', 'ECX'],
+            'RDX': ['DL', 'DH', 'DX', 'EDX'],
+            'RSI': ['SI', 'SIL', 'ESI'],
+            'RDI': ['DI', 'DIL', 'EDI'],
+            'RBP': ['BP', 'BPL', 'EBP'],
+            'RSP': ['SP', 'SPL', 'ESP'],
             'RFLAGS': ['EFLAGS'],
-            'R8'    : ['R8D',  'R8W',  'R8B' ],
-            'R9'    : ['R9D',  'R9W',  'R9B' ],
-            'R10'   : ['R10D', 'R10W', 'R10B'],
-            'R11'   : ['R11D', 'R11W', 'R11B'],
-            'R12'   : ['R12D', 'R12W', 'R12B'],
-            'R13'   : ['R13D', 'R13W', 'R13B'],
-            'R14'   : ['R14D', 'R14W', 'R14B'],
-            'R15'   : ['R15D', 'R15W', 'R15B'],
-            'RIP'   : ['IP',   'EIP'],
+            'R8': ['R8D', 'R8W', 'R8B'],
+            'R9': ['R9D', 'R9W', 'R9B'],
+            'R10': ['R10D', 'R10W', 'R10B'],
+            'R11': ['R11D', 'R11W', 'R11B'],
+            'R12': ['R12D', 'R12W', 'R12B'],
+            'R13': ['R13D', 'R13W', 'R13B'],
+            'R14': ['R14D', 'R14W', 'R14B'],
+            'R15': ['R15D', 'R15W', 'R15B'],
+            'RIP': ['IP', 'EIP'],
             #'YMM0'  : ['XMM0'],
             #'YMM1'  : ['XMM1'],
             #'YMM2'  : ['XMM2'],
@@ -195,7 +198,7 @@ class AMD64(ISA):
             'FP4': ['ST(4)', 'ST4', 'MM4'],
             'FP5': ['ST(5)', 'ST5', 'MM5'],
             'FP6': ['ST(6)', 'ST6', 'MM6'],
-            'FP7': ['ST(7)', 'ST7', 'MM7']
+            'FP7': ['ST(7)', 'ST7', 'MM7'],
         }
 
         self.register_alias = {}
@@ -208,7 +211,7 @@ class AMD64(ISA):
         self.ks_arch = (KS_ARCH_X86, KS_MODE_64)
         self.cs_arch = (CS_ARCH_X86, CS_MODE_64)
         self.code_mem = 4096
-        self.code_addr = 0x6d1c00000000000
+        self.code_addr = 0x6D1C00000000000
 
         self.addr_space = 64
 
@@ -216,19 +219,19 @@ class AMD64(ISA):
 
     def name2reg(self, name):
         name = name.upper()
-        name = name.replace('(','')
-        name = name.replace(')','')
+        name = name.replace('(', '')
+        name = name.replace(')', '')
         if 'MEM' in name:
             t1 = 'X86_{}()'.format(name)
             t2 = 'X86_{}_ADDR64()'.format(name)
-            return (eval(t1),eval(t2))
+            return (eval(t1), eval(t2))
 
         return eval('X86_REG_{}()'.format(name))
 
     def create_full_reg(self, name, bits=0, structure=[]):
         name = name.upper()
-        name = name.replace('(','')
-        name = name.replace(')','')
+        name = name.replace('(', '')
+        name = name.replace(')', '')
         if 'MEM' in name:
             reg = eval('X86_{}()'.format(name))
             reg.bits, reg.structure = bits, structure

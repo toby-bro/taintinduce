@@ -1,11 +1,13 @@
+from capstone import *  # type: ignore[import-untyped]
+from keystone import *  # type: ignore[import-untyped]
 from unicorn import *
 from unicorn.x86_const import *
-from capstone import *
-from keystone import *
 
 from .isa import ISA
 from .x86_registers import *
 
+
+# ruff: noqa: F405, F403
 # x86 architecture
 class X86(ISA):
     def __init__(self):
@@ -36,7 +38,7 @@ class X86(ISA):
             X86_REG_FP5(),
             X86_REG_FP6(),
             X86_REG_FP7(),
-            X86_REG_FPSW()
+            X86_REG_FPSW(),
         ]
 
         self.full_cpu_regs = [
@@ -95,13 +97,13 @@ class X86(ISA):
         ]
 
         # XXX teo: can i remove these?
-        self.cpu_read_emu_regs  = [X86_MEM_READ2(), X86_MEM_READ1()]
+        self.cpu_read_emu_regs = [X86_MEM_READ2(), X86_MEM_READ1()]
         self.cpu_write_emu_regs = [X86_MEM_WRITE1()]
 
         # XXX teo: do we need these ??
-        self.pc_reg        = X86_REG_EIP()
-        self.flag_reg      = [X86_REG_EFLAGS()]
-        self.state_reg     = [X86_REG_FPSW()]
+        self.pc_reg = X86_REG_EIP()
+        self.flag_reg = [X86_REG_EFLAGS()]
+        self.state_reg = [X86_REG_FPSW()]
 
         # Sub register
         self.register_map = {
@@ -121,7 +123,7 @@ class X86(ISA):
             'FP4': ['ST(4)', 'ST4', 'MM4'],
             'FP5': ['ST(5)', 'ST5', 'MM5'],
             'FP6': ['ST(6)', 'ST6', 'MM6'],
-            'FP7': ['ST(7)', 'ST7', 'MM7']
+            'FP7': ['ST(7)', 'ST7', 'MM7'],
         }
 
         self.register_alias = {}
@@ -134,7 +136,7 @@ class X86(ISA):
         self.ks_arch = (KS_ARCH_X86, KS_MODE_32)
         self.cs_arch = (CS_ARCH_X86, CS_MODE_32)
         self.code_mem = 4096
-        self.code_addr = 0x6d1c000
+        self.code_addr = 0x6D1C000
 
         self.addr_space = 32
 
@@ -142,19 +144,19 @@ class X86(ISA):
 
     def name2reg(self, name):
         name = name.upper()
-        name = name.replace('(','')
-        name = name.replace(')','')
+        name = name.replace('(', '')
+        name = name.replace(')', '')
         if 'MEM' in name:
             t1 = 'X86_{}()'.format(name)
             t2 = 'X86_{}_ADDR32()'.format(name)
-            return (eval(t1),eval(t2))
+            return (eval(t1), eval(t2))
 
         return eval('X86_REG_{}()'.format(name))
 
     def create_full_reg(self, name, bits=0, structure=[]):
         name = name.upper()
-        name = name.replace('(','')
-        name = name.replace(')','')
+        name = name.replace('(', '')
+        name = name.replace(')', '')
         if 'MEM' in name:
             reg = eval('X86_{}()'.format(name))
             reg.bits, reg.structure = bits, structure

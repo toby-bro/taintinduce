@@ -1,10 +1,12 @@
-from .isa import Register
+from capstone import *  # type: ignore[import-untyped]
+from keystone import *  # type: ignore[import-untyped]
 from unicorn import *
 from unicorn.x86_const import *
-from capstone import *
-from keystone import *
+
+from .isa import Register
 
 
+# ruff: noqa: F405, F403
 class X86_REG_AH(Register):
     def __init__(self):
         self.name = 'AH'
@@ -125,66 +127,6 @@ class X86_REG_CR1(Register):
         self.address = None
 
 
-class X86_REG_CR10(Register):
-    def __init__(self):
-        self.name = 'CR10'
-        self.uc_const = UC_X86_REG_CR10
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_CR11(Register):
-    def __init__(self):
-        self.name = 'CR11'
-        self.uc_const = UC_X86_REG_CR11
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_CR12(Register):
-    def __init__(self):
-        self.name = 'CR12'
-        self.uc_const = UC_X86_REG_CR12
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_CR13(Register):
-    def __init__(self):
-        self.name = 'CR13'
-        self.uc_const = UC_X86_REG_CR13
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_CR14(Register):
-    def __init__(self):
-        self.name = 'CR14'
-        self.uc_const = UC_X86_REG_CR14
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_CR15(Register):
-    def __init__(self):
-        self.name = 'CR15'
-        self.uc_const = UC_X86_REG_CR15
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
 class X86_REG_CR2(Register):
     def __init__(self):
         self.name = 'CR2'
@@ -215,50 +157,10 @@ class X86_REG_CR4(Register):
         self.address = None
 
 
-class X86_REG_CR5(Register):
-    def __init__(self):
-        self.name = 'CR5'
-        self.uc_const = UC_X86_REG_CR5
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_CR6(Register):
-    def __init__(self):
-        self.name = 'CR6'
-        self.uc_const = UC_X86_REG_CR6
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_CR7(Register):
-    def __init__(self):
-        self.name = 'CR7'
-        self.uc_const = UC_X86_REG_CR7
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
 class X86_REG_CR8(Register):
     def __init__(self):
-        self.name = 'CR8'
+        self.name = 'CR5'
         self.uc_const = UC_X86_REG_CR8
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_CR9(Register):
-    def __init__(self):
-        self.name = 'CR9'
-        self.uc_const = UC_X86_REG_CR9
         self.bits = 64
         self.structure = [64]
         self.value = None
@@ -345,66 +247,6 @@ class X86_REG_DR1(Register):
         self.address = None
 
 
-class X86_REG_DR10(Register):
-    def __init__(self):
-        self.name = 'DR10'
-        self.uc_const = UC_X86_REG_DR10
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_DR11(Register):
-    def __init__(self):
-        self.name = 'DR11'
-        self.uc_const = UC_X86_REG_DR11
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_DR12(Register):
-    def __init__(self):
-        self.name = 'DR12'
-        self.uc_const = UC_X86_REG_DR12
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_DR13(Register):
-    def __init__(self):
-        self.name = 'DR13'
-        self.uc_const = UC_X86_REG_DR13
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_DR14(Register):
-    def __init__(self):
-        self.name = 'DR14'
-        self.uc_const = UC_X86_REG_DR14
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_DR15(Register):
-    def __init__(self):
-        self.name = 'DR15'
-        self.uc_const = UC_X86_REG_DR15
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
 class X86_REG_DR2(Register):
     def __init__(self):
         self.name = 'DR2'
@@ -459,26 +301,6 @@ class X86_REG_DR7(Register):
     def __init__(self):
         self.name = 'DR7'
         self.uc_const = UC_X86_REG_DR7
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_DR8(Register):
-    def __init__(self):
-        self.name = 'DR8'
-        self.uc_const = UC_X86_REG_DR8
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_DR9(Register):
-    def __init__(self):
-        self.name = 'DR9'
-        self.uc_const = UC_X86_REG_DR9
         self.bits = 64
         self.structure = [64]
         self.value = None
@@ -589,16 +411,6 @@ class X86_REG_EIP(Register):
     def __init__(self):
         self.name = 'EIP'
         self.uc_const = UC_X86_REG_EIP
-        self.bits = 32
-        self.structure = [32]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_EIZ(Register):
-    def __init__(self):
-        self.name = 'EIZ'
-        self.uc_const = UC_X86_REG_EIZ
         self.bits = 32
         self.structure = [32]
         self.value = None
@@ -1359,16 +1171,6 @@ class X86_REG_RIP(Register):
     def __init__(self):
         self.name = 'RIP'
         self.uc_const = UC_X86_REG_RIP
-        self.bits = 64
-        self.structure = [64]
-        self.value = None
-        self.address = None
-
-
-class X86_REG_RIZ(Register):
-    def __init__(self):
-        self.name = 'RIZ'
-        self.uc_const = UC_X86_REG_RIZ
         self.bits = 64
         self.structure = [64]
         self.value = None
@@ -2204,8 +2006,10 @@ class X86_MEM_WRITE1(Register):
         self.value = 0
         self.address = 0
 
+
 # ZL: quick hack!!!
 # TODO: convert to squirrel memoryslot
+
 
 class X86_MEM_READ1_ADDR32(Register):
     def __init__(self):
@@ -2216,6 +2020,7 @@ class X86_MEM_READ1_ADDR32(Register):
         self.value = 0
         self.address = 0
 
+
 class X86_MEM_READ2_ADDR32(Register):
     def __init__(self):
         self.name = 'MEM_READ2_ADDR32'
@@ -2224,6 +2029,7 @@ class X86_MEM_READ2_ADDR32(Register):
         self.structure = []
         self.value = 0
         self.address = 0
+
 
 class X86_MEM_WRITE1_ADDR32(Register):
     def __init__(self):
@@ -2234,6 +2040,7 @@ class X86_MEM_WRITE1_ADDR32(Register):
         self.value = 0
         self.address = 0
 
+
 class X86_MEM_READ1_ADDR64(Register):
     def __init__(self):
         self.name = 'MEM_READ1_ADDR64'
@@ -2243,6 +2050,7 @@ class X86_MEM_READ1_ADDR64(Register):
         self.value = 0
         self.address = 0
 
+
 class X86_MEM_READ2_ADDR64(Register):
     def __init__(self):
         self.name = 'MEM_READ2_ADDR64'
@@ -2251,6 +2059,7 @@ class X86_MEM_READ2_ADDR64(Register):
         self.structure = []
         self.value = 0
         self.address = 0
+
 
 class X86_MEM_WRITE1_ADDR64(Register):
     def __init__(self):
