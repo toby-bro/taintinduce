@@ -35,7 +35,7 @@ class TaintInduceDecoder(BaseDecoder):
 
 
 # TODO: All these classes should be shared with engine.py
-def query_yes_no(question, default="yes"):
+def query_yes_no(question, default='yes'):
     """Ask a yes/no question via raw_input() and return their answer.
     "question" is a string that is presented to the user.
     "default" is the presumed answer if the user just hits <Enter>.
@@ -43,13 +43,13 @@ def query_yes_no(question, default="yes"):
         an answer is required of the user).
     The "answer" return value is one of "yes" or "no".
     """
-    valid = {"yes": True, "y": True, "ye": True, "no": False, "n": False}
+    valid = {'yes': True, 'y': True, 'ye': True, 'no': False, 'n': False}
     if default is None:
-        prompt = " [y/n] "
-    elif default == "yes":
-        prompt = " [Y/n] "
-    elif default == "no":
-        prompt = " [y/N] "
+        prompt = ' [y/n] '
+    elif default == 'yes':
+        prompt = ' [Y/n] '
+    elif default == 'no':
+        prompt = ' [y/N] '
     else:
         raise ValueError("invalid default answer: '%s'" % default)
 
@@ -58,10 +58,9 @@ def query_yes_no(question, default="yes"):
         choice = input().lower()
         if default is not None and choice == '':
             return valid[default]
-        elif choice in valid:
+        if choice in valid:
             return valid[choice]
-        else:
-            sys.stdout.write("Please respond with 'yes' or 'no' " "(or 'y' or 'n').\n")
+        sys.stdout.write("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
 
 
 def check_ones(value):
@@ -77,13 +76,13 @@ def check_ones(value):
 
 
 def reg2pos(all_regs, reg):
-    '''Function which convert reg to its start postition in State value
+    """Function which convert reg to its start postition in State value
     Attribute:
         all_regs : a list of reg class
         reg: reg class
     Return:
         pos (int)
-    '''
+    """
     regs_list = sorted(all_regs, key=lambda reg: reg.uc_const)
     pos = 0
     for r in regs_list:
@@ -94,14 +93,14 @@ def reg2pos(all_regs, reg):
 
 
 def convert2rpn(all_regs, regs, masks, values):
-    '''convert reg+mask+values to condition rpn
+    """convert reg+mask+values to condition rpn
     Attribute:
         regs (a list of reg class)
         masks (a list of int): a list of reg mask
         values (a list of int): a list of reg value
     Return:
         rpn (): see Condition class
-    '''
+    """
     if len(regs) == 1:
         reg = regs[0]
         mask = masks[0]
@@ -109,19 +108,18 @@ def convert2rpn(all_regs, regs, masks, values):
         state_mask = mask << reg2pos(all_regs, reg)
         state_val = val << reg2pos(all_regs, reg)
         return state_mask, state_val
-    elif len(regs) == 2:
+    if len(regs) == 2:
         arg = list()
         for reg in regs:
             arg.append(((1 << reg.bits) - 1) << reg2pos(all_regs, reg))
         arg1 = arg[0]
         arg2 = arg[1]
         return arg1, arg2
-    else:
-        return None, None
+    return None, None
 
 
 def pos2reg(state1, state2, regs):
-    '''trans posval to reg'''
+    """trans posval to reg"""
     pos_val = list(state1.diff(state2))
     pos_val = sorted(pos_val, reverse=True)
     regs_list = sorted(regs, key=lambda reg: reg.uc_const)
@@ -143,9 +141,9 @@ def pos2reg(state1, state2, regs):
 
 
 def regs2bits(cpustate, state_format):
-    '''Converts CPUState into a State object using state_format
+    """Converts CPUState into a State object using state_format
     state: cpu_state dict()
-    '''
+    """
     bits = 0
     value = 0
     for reg in state_format:
@@ -156,9 +154,9 @@ def regs2bits(cpustate, state_format):
 
 
 def regs2bits2(cpustate, state_format):
-    '''Converts CPUState into a State object using state_format
+    """Converts CPUState into a State object using state_format
     state: cpu_state dict()
-    '''
+    """
     bits = 0
     value = 0
     for reg in state_format:
@@ -171,10 +169,10 @@ def regs2bits2(cpustate, state_format):
 
 
 def bits2regs(state, regs):
-    '''trans state object to cpu_state dict()
+    """trans state object to cpu_state dict()
     state: State object
     reg  : regs list
-    '''
+    """
     cpu_state = dict()
     value = state.state_value
     regs_list = sorted(regs, key=lambda reg: reg.uc_const)
@@ -218,8 +216,8 @@ def reg_pos(reg, state_format):
     return reg_start_pos
 
 
-'''Some bit manipulation functions
-'''
+"""Some bit manipulation functions
+"""
 
 
 def set_bit(value, pos):
@@ -333,7 +331,7 @@ class Observation(SerializableMixin):
     """
 
     def __init__(
-        self, iopair=None, mutated_iopairs=None, bytestring=None, archstring=None, state_format=None, repr_str=None
+        self, iopair=None, mutated_iopairs=None, bytestring=None, archstring=None, state_format=None, repr_str=None,
     ):
         """Initializes the Observation object with the .
 
@@ -398,7 +396,7 @@ class TaintCondition(SerializableMixin):
             return set()
         ops_name, ops_args = self.condition_ops
         cond_bits = set()
-        if ops_name == "DNF":
+        if ops_name == 'DNF':
             for mask, _ in ops_args:
                 cond_bits |= check_ones(mask)
         return cond_bits

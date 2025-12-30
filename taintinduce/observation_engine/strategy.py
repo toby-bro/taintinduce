@@ -1,15 +1,13 @@
-import math
-import random
 import itertools
+import random
 
-
-'''
+"""
 All Strategy classes must implement generator(regs) that returns a list of seed_variations.
 
 Each seed variation is a tuple of the form tuple(tuple(Register,...), tuple(value,...) ).
 
 These are the values to modify on an initial seed state, hence varying the seed value.
-'''
+"""
 
 class Strategy(object):
     def __init__(self, num_runs=1):
@@ -124,7 +122,7 @@ class IEEE754Extended(Strategy):
                 temp = self._gen_small_big(reg, regs, exponent)
                 self._check_val(temp[1])
                 inputs.append(temp)
-            
+
         return inputs
 
     def _check_val(self, vals):
@@ -142,7 +140,7 @@ class IEEE754Extended(Strategy):
         bit_63 = 1 << 62
 
         mantissa = random.getrandbits(6)
-        float_value = mantissa + exponent + sign 
+        float_value = mantissa + exponent + sign
         t_regs.append(small_reg)
         float_values.append(float_value)
 
@@ -150,7 +148,7 @@ class IEEE754Extended(Strategy):
         for reg in regs:
             if reg != small_reg:
                 mantissa = random.getrandbits(62)
-            float_value = mantissa + exponent + sign 
+            float_value = mantissa + exponent + sign
             t_regs.append(reg)
             float_values.append(float_value)
         return (tuple(t_regs), tuple(float_values))
@@ -165,7 +163,7 @@ class IEEE754Extended(Strategy):
         bit_63 = 1 << 62
 
         mantissa = random.getrandbits(62)
-        float_value = mantissa + exponent + sign 
+        float_value = mantissa + exponent + sign
         t_regs.append(big_reg)
         float_values.append(float_value)
 
@@ -173,7 +171,7 @@ class IEEE754Extended(Strategy):
         for reg in regs:
             if reg != big_reg:
                 mantissa = random.getrandbits(6)
-            float_value = mantissa + exponent + sign 
+            float_value = mantissa + exponent + sign
             t_regs.append(reg)
             float_values.append(float_value)
         return (tuple(t_regs), tuple(float_values))

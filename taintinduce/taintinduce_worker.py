@@ -10,7 +10,7 @@ from .taintinduce import taintinduce_infer
 
 
 def gen_obs_rule(archstring, bytestring):
-    print("Inferring ({}) - {}".format(archstring, bytestring))
+    print('Inferring ({}) - {}'.format(archstring, bytestring))
     insninfo, obs_list, rule = taintinduce_infer(archstring, bytestring)
     obs_str_list = [json.dumps(x, cls=TaintInduceEncoder) for x in obs_list]
     return (insninfo.serialize(), obs_str_list, rule.serialize())
@@ -38,10 +38,10 @@ def main():
     parser.add_argument('local_port', type=int)
     args = parser.parse_args()
 
-    print("Starting TaintInduce Service...")
+    print('Starting TaintInduce Service...')
     hostname = args.local_hostname
     port = args.local_port
-    print("URL: http://{}:{}".format(hostname, port))
+    print('URL: http://{}:{}'.format(hostname, port))
     server = SimpleXMLRPCServer((hostname, port))
     server.register_function(gen_obs_rule)
     server.register_function(test_connection)

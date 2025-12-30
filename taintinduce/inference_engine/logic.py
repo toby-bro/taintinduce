@@ -3,14 +3,14 @@ import pickle
 import subprocess
 from importlib.resources import files
 
-command_template = '''
+command_template = """
 .i {}
 .o {}
 .type {}
 {}
 .e
 
-'''
+"""
 
 
 class EspressoException(Exception):
@@ -36,7 +36,7 @@ class Espresso(object):
         self.path = path
 
     def parse_output(self, output):
-        '''Takes the output of Espresso and returns the conditions.
+        """Takes the output of Espresso and returns the conditions.
 
         Args:
             output (str): A string containing the output of berkeley's ESPRESSO tool
@@ -48,9 +48,9 @@ class Espresso(object):
         Raises:
             Exception: Illegal character in output string.
             Exception: Length of logic != number of phases.
-        '''
+        """
         result = dict()
-        output = output.decode("utf-8")
+        output = output.decode('utf-8')
         lines = output.split('\n')
         num_phase = None
         logic = []
@@ -99,7 +99,7 @@ class Espresso(object):
         return bool_cond
 
     def minimize(self, in_size, out_size, pla_type, observations, raw=False):
-        '''Obtain a minimal formula using the ESPRESSO heuristic.
+        """Obtain a minimal formula using the ESPRESSO heuristic.
 
         Args:
             in_size (int): Size of the input formula in terms of bits.
@@ -116,7 +116,7 @@ class Espresso(object):
 
         Raises:
             Exception: Output found on stderr!
-        '''
+        """
         input_size = '.i {}'.format(in_size)  # noqa: F841
         output_size = '.o {}'.format(out_size)  # noqa: F841
         in_format = '{{:0{}b}}'.format(in_size)
@@ -129,7 +129,7 @@ class Espresso(object):
 
         command = command_template.format(in_size, out_size, pla_type, obs_string)
         espresso = subprocess.Popen(
-            [self.path, '-t'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            [self.path, '-t'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         stdout, stderr = espresso.communicate(command.encode())
         if stderr:

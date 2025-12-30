@@ -47,12 +47,12 @@ class DisassemblerBase:
 
     def _setup_capstone(self) -> None:
         """Setup Capstone disassembler. Override in subclasses."""
-        raise NotImplementedError("Subclasses must implement _setup_capstone")
+        raise NotImplementedError('Subclasses must implement _setup_capstone')
 
     def disassemble(self, bytecode: bytes | str, address: int = 0x1000) -> InstructionWrapper:
         """Disassemble bytecode and return wrapped Capstone instruction object."""
         if not self.md:
-            raise RuntimeError("Capstone not initialized")
+            raise RuntimeError('Capstone not initialized')
 
         # Convert hex string to bytes if needed
         if isinstance(bytecode, str):
@@ -60,7 +60,7 @@ class DisassemblerBase:
 
         insns = list(self.md.disasm(bytecode, address))
         if not insns:
-            raise ParseInsnException(f"Failed to disassemble bytecode at address {hex(address)}")
+            raise ParseInsnException(f'Failed to disassemble bytecode at address {hex(address)}')
         return InstructionWrapper(insns[0])
 
 
@@ -79,7 +79,7 @@ class SquirrelDisassemblerCapstone(DisassemblerBase):
     def _setup_capstone(self) -> None:
         """Initialize Capstone for the specified architecture."""
         if self.arch_str not in self.arch_mapping:
-            raise ValueError(f"Unsupported architecture: {self.arch_str}")
+            raise ValueError(f'Unsupported architecture: {self.arch_str}')
 
         arch, mode = self.arch_mapping[self.arch_str]
         self.md = Cs(arch, mode)
@@ -92,4 +92,3 @@ class SquirrelDisassemblerZydis(SquirrelDisassemblerCapstone):
     Original squirrel used Zydis for x86/x64, but Capstone works fine.
     """
 
-    pass

@@ -51,7 +51,7 @@ class Int(object):
             BaseMutate.Bitfill(bitsnum)
             + BaseMutate.Bitwalk(bitsnum)
             + BaseMutate.Zerowalk(bitsnum)
-            + BaseMutate.Rannum(bitsnum)
+            + BaseMutate.Rannum(bitsnum),
         )
 
 
@@ -88,7 +88,7 @@ class Float16(object):
         self.value = (self.value & ((1 << 16) - 1 - ((1 << 10) - 1))) + (value & ((1 << 10) - 1))
 
     def __repr__(self):
-        return "{:x}".format(self.value)
+        return '{:x}'.format(self.value)
 
     @staticmethod
     def rand():
@@ -108,7 +108,6 @@ class Float32(object):
             self.s = s
             self.e = e
             self.f = f
-            pass
 
     @property
     def s(self):
@@ -135,7 +134,7 @@ class Float32(object):
         self.value = (self.value & 0xFF800000) + (value & 0x7FFFFF)
 
     def __repr__(self):
-        return "{:x}".format(self.value)
+        return '{:x}'.format(self.value)
 
     def __cmp__(self, other):
         return self.value - other.value
@@ -184,7 +183,7 @@ class Float64(object):
         self.value = (self.value & 0xFFF0000000000000) + (value & 0xFFFFFFFFFFFFF)
 
     def __repr__(self):
-        return "{:x}".format(self.value)
+        return '{:x}'.format(self.value)
 
     def __cmp__(self, other):
         return self.value - other.value
@@ -234,7 +233,7 @@ class Float80(object):
         self.value = (self.value & 0xFFFF8000000000000000) + (value & 0x7FFFFFFFFFFFFFFF)
 
     def __repr__(self):
-        return "{:x}".format(self.value)
+        return '{:x}'.format(self.value)
 
     def __cmp__(self, other):
         return self.value - other.value
@@ -284,7 +283,7 @@ class Float128(object):
         self.value = (self.value & ((1 << 128) - 1 - ((1 << 112) - 1))) + (value & ((1 << 112) - 1))
 
     def __repr__(self):
-        return "{:x}".format(self.value)
+        return '{:x}'.format(self.value)
 
     @staticmethod
     def rand():
@@ -330,7 +329,7 @@ class Float256(object):
         self.value = (self.value & ((1 << 256) - 1 - ((1 << 236) - 1))) + (value & ((1 << 236) - 1))
 
     def __repr__(self):
-        return "{:x}".format(self.value)
+        return '{:x}'.format(self.value)
 
     @staticmethod
     def rand():

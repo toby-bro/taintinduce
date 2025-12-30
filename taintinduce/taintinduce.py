@@ -54,7 +54,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('bytestring', type=str, help='Instruction bytestring in ' + 'hex, e.g. use dac3 for \\xda\\xc3')
     parser.add_argument(
-        'arch', type=str, choices=['X86', 'AMD64', 'ARM64'], help='Select the architecture of the instruction.'
+        'arch', type=str, choices=['X86', 'AMD64', 'ARM64'], help='Select the architecture of the instruction.',
     )
     parser.add_argument('--output-dir', type=str, default='output', help='Output directory.')
     parser.add_argument('--skip-gen', default=False, action='store_true', help='Skip generation of observation')

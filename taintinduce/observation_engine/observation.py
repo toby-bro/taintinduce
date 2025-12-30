@@ -131,7 +131,7 @@ class ObservationEngine(object):
                     seed_states.append(seed_io)
                 else:
                     if self.DEBUG_LOG:
-                        print("MAX_TRIES-{}-{}-{}-{}".format(bytestring, archstring, state_format, seed_variation))
+                        print('MAX_TRIES-{}-{}-{}-{}'.format(bytestring, archstring, state_format, seed_variation))
                     continue
 
         return seed_states

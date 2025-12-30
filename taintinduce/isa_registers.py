@@ -21,7 +21,7 @@ class SimpleReg:
         self.name: str = reg_name
 
     def __repr__(self) -> str:
-        return f"SimpleReg({self.name})"
+        return f'SimpleReg({self.name})'
 
 
 class RegisterBase:
@@ -56,18 +56,15 @@ class RegisterBase:
 class X86Registers(RegisterBase):
     """X86 register accessor."""
 
-    pass
 
 
 @register_arch('AMD64')
 class AMD64Registers(RegisterBase):
     """AMD64 register accessor."""
 
-    pass
 
 
 @register_arch('ARM64')
 class ARM64Registers(RegisterBase):
     """ARM64 register accessor."""
 
-    pass

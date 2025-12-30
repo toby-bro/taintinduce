@@ -1,8 +1,7 @@
 import os
-import sys
 import struct
+from ctypes import Structure, c_uint8, c_uint16, c_uint32, c_uint64, sizeof
 
-from ctypes import Structure, c_uint64, c_uint32, c_uint16, c_uint8, sizeof
 
 def read_struct(myfile, mystruct):
     x = mystruct()
@@ -72,45 +71,45 @@ class RegFileAMD64(Structure):
 
 
 
-ARCH_INFO = {0:None, 1:None, 2:None, 3:(RegFileAMD64, "AMD64")}
+ARCH_INFO = {0:None, 1:None, 2:None, 3:(RegFileAMD64, 'AMD64')}
 
 class Metadata(Structure):
     _fields_ = [('arch', c_uint32), ('version', c_uint32)]
 
-'''
+"""
 typedef struct insn_ref {
 	uint64_t pc;
 } insn_ref_t;
-'''
+"""
 class InsnRef(Structure):
     _fields_ = [('pc', c_uint64)]
 
-'''
+"""
 typedef struct bytes_map {
 	uint64_t pc;
 	uint32_t size;
 	uint8_t rawbytes[16];
 } bytes_map_t ;
-'''
+"""
 class BytesMap(Structure):
     _fields_ = [('pc', c_uint64), ('size', c_uint32), ('rawbytes', c_uint8*16)]
 
-'''
+"""
 typedef struct {
 	uint32_t length;	/* how many refs are there*/
 } memref_t;
-'''
+"""
 class MemRef(Structure):
     _fields_ = [('length', c_uint32)]
 
-'''
+"""
 typedef struct {
 	uint64_t addr;		/* memory address */
 	uint64_t value;		/* memory value */
 	uint32_t size;		/* how many bits are vaild in value */
 	uint32_t status; 	/* 0 for Read, 1 for write */
 } memfile_t;
-'''
+"""
 class MemFile(Structure):
     _fields_ = [('addr', c_uint64), ('value', c_uint64), ('size', c_uint32), ('status', c_uint32)]
 
@@ -122,7 +121,6 @@ class TraceInsn(object):
         self.num_mem = None
         self.mem = []
         self.regfile = None
-        pass
 
 class MemInfo(object):
     def __init__(self):
@@ -172,7 +170,7 @@ class PyPeekaboo(object):
         if not os.path.isfile(memrefs_offsets_path):
             # memfile offsets for each insn does not exist, create them
             # generate the memfile offsets
-            print("{} does not contain the cached offsets to memfile, generating...".format(trace_path))
+            print('{} does not contain the cached offsets to memfile, generating...'.format(trace_path))
             with open(memrefs_offsets_path, 'wb') as offset_file:
                 cur_offset = 0
                 memfile_offsets = []
@@ -216,10 +214,10 @@ class PyPeekaboo(object):
         my_insn.regfile = read_struct(self.regfile, self.regfile_struct)
         return my_insn
 
-    
+
     def pp(self):
         insn_ref = InsnRef()
         while self.insn_trace.readinto(insn_ref) == sizeof(InsnRef):
             rawbytes = self.bytesmap[insn_ref.pc]
-            print("{}\t: {}".format(hex(insn_ref.pc), [hex(x) for x in rawbytes]))
+            print('{}\t: {}'.format(hex(insn_ref.pc), [hex(x) for x in rawbytes]))
 

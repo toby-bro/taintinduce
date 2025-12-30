@@ -4,7 +4,7 @@ Uses dataclasses + custom JSON encoder/decoder for object serialization.
 """
 
 import json
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Optional, Self, TypeVar
 
 if TYPE_CHECKING:
     from taintinduce.isa_registers import RegisterBase
@@ -55,7 +55,7 @@ class TaintInduceDecoder(json.JSONDecoder):
             return obj
         except (ImportError, AttributeError) as e:
             # Fall back to dict if class not found
-            print(f"Warning: Could not deserialize {module_name}.{class_name}: {e}")
+            print(f'Warning: Could not deserialize {module_name}.{class_name}: {e}')
             return dct
 
 
@@ -67,7 +67,7 @@ class SerializableMixin:
         return json.dumps(self, cls=TaintInduceEncoder)
 
     @classmethod
-    def deserialize(cls: type[T], data: str) -> T:
+    def deserialize(cls, data: str) -> Self:
         """Deserialize object from JSON string."""
         return json.loads(data, cls=TaintInduceDecoder)
 
@@ -102,8 +102,8 @@ class TaintRule:
             num_regs = len(self.state_format) if hasattr(self.state_format, '__len__') else 0
 
         return (
-            f"TaintRule(state_format={num_regs} regs, "
-            f"conditions={len(self.conditions)}, dataflows={len(self.dataflows)})"
+            f'TaintRule(state_format={num_regs} regs, '
+            f'conditions={len(self.conditions)}, dataflows={len(self.dataflows)})'
         )
 
     def __repr__(self) -> str:
@@ -125,10 +125,10 @@ class StateFormat:
 class MemorySlot:
     """Simplified MemorySlot for memory access tracking."""
 
-    READ: str = "READ"
-    WRITE: str = "WRITE"
-    ADDR: str = "ADDR"
-    VALUE: str = "VALUE"
+    READ: str = 'READ'
+    WRITE: str = 'WRITE'
+    ADDR: str = 'ADDR'
+    VALUE: str = 'VALUE'
 
     def __init__(self, slot_id: int, access_type: str, size: int, mem_type: str) -> None:
         self.slot_id: int = slot_id

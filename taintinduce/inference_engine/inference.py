@@ -172,7 +172,7 @@ class InferenceEngine(object):
                 global_dataflows.add((use_bit, (frozenset(qq),)))
 
         else:
-            print("not 1 unique condition... merge")
+            print('not 1 unique condition... merge')
             merged_dataflows = defaultdict(set)
             for condition_array in list(unique_conditions):
                 use_bit_dataflows = unique_conditions.pop(condition_array)

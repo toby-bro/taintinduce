@@ -1,28 +1,15 @@
 #!/usr/bin/env python3
 
-import taintinduce.isa as isa
+import capstone  # type: ignore[import-untyped]
 
-from squirrel.squirrel_disassembler import SquirrelDisassemblerZydis, SquirrelDisassemblerCapstone
+from taintinduce.disassembler.compat import SquirrelDisassemblerZydis
+from taintinduce.disassembler.exceptions import (
+    UnsupportedArchException,
+    UnsupportedSizeException,
+)
+from taintinduce.isa import amd64, arm64, x86
+from taintinduce.isa_registers import get_register_arch
 from taintinduce.taintinduce_common import InsnInfo
-from squirrel.isa.registers import get_register_arch
-
-import pdb
-
-class ParseInsnException(Exception):
-    def __str__(self):
-        return "[ERROR] capstone disassemble cannot translate this instruction!"
-
-class UnsupportedArchException(Exception):
-    def __str__(self):
-        return "[ERROR] TaintInduce doesnt support this arch now!"
-
-class InsnInfoException(Exception):
-    def __str__(self):
-        return "[ERROR] insninfo cannot parse capstone information!"
-
-class UnsupportedSizeException(Exception):
-    def __str__(self):
-        return "[ERROR] size unsupport error!"
 
 
 class Disassembler(object):
@@ -37,22 +24,29 @@ class Disassembler(object):
         self.archstring = arch_str
         ISARegister = None
         if arch_str == 'X86':
-            self.arch = isa.x86.X86()
+            self.arch = x86.X86()
         elif arch_str == 'AMD64':
-            self.arch = isa.amd64.AMD64()
+            self.arch = amd64.AMD64()
         elif arch_str == 'ARM64':
-            self.arch = isa.arm64.ARM64()
+            self.arch = arm64.ARM64()
         else:
             raise UnsupportedArchException()
 
         ISARegister = get_register_arch(arch_str)
+        if ISARegister is None:
+            raise UnsupportedArchException()
 
         self.bytestring = bytestring
         dis = SquirrelDisassemblerZydis(arch_str)
+
+        # Set the Capstone instance for register name resolution
+        if ISARegister and hasattr(dis, 'md'):
+            ISARegister.set_capstone_instance(dis.md)
+
         insn = dis.disassemble(bytestring)
 
         # capstone register set
-        self.cs_reg_set     = []
+        self.cs_reg_set = []
 
         for reg_name in insn.reg_reads():
             reg_name = ISARegister.get_reg_name(reg_name)
@@ -68,8 +62,9 @@ class Disassembler(object):
                 self.cs_reg_set.remove(reg)
 
         reg_set = list(set(self.cs_reg_set))
-        self.insninfo = InsnInfo(arch_str, bytestring, reg_set, self.arch.cond_reg)
+        self.insn_info = InsnInfo(arch_str, bytestring, reg_set, self.arch.cond_reg)
 
+    # Weird function to check out later
     def _get_mem_bits(self, operand, regs):
         # for ARM32 and ARM64 capstone does not have a size
         # attribute for operands so we set it based on the other
@@ -84,16 +79,15 @@ class Disassembler(object):
             bits = reg0.bits * 8
         return bits
 
-
     def _set_mem_reg_structure(self, reg_bytes):
-        '''Took this code from yanhao. 
+        """Took this code from yanhao.
         THIS IS ONLY FOR IMPLICIT REGS DEFINED IN THE x86_insn_info_ct
             It sets the virtual registers for memory structure based on the
             register size.
 
             set args for a mem register
             92bits? doulble check
-        '''
+        """
         valid_size = [8, 16, 32, 64, 128, 256]
 
         bits = reg_bytes * 8
