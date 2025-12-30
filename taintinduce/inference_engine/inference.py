@@ -274,6 +274,8 @@ class InferenceEngine(object):
             pdb.set_trace()
             raise e
 
+        if cond_reg is None:
+            return None
         # dnf_conditions (set{(int, int)}): A set of tuples (mask, value) representing a DNF formula.
         # Each tuple is a boolean formula in CNF (input & mask == value).
         dnf_condition = shift_espresso(dnf_condition, cond_reg, state_format)

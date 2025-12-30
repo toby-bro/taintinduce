@@ -4,106 +4,104 @@ from unicorn import UC_ARCH_X86, UC_MODE_32
 
 from . import x86_registers
 from .isa import ISA, Register
-from .x86_registers import *
 
 
-# ruff: noqa: F405, F403
 # x86 architecture
 class X86(ISA):
     def __init__(self) -> None:
         self.cpu_regs = [
-            X86_REG_EAX(),
-            X86_REG_EBX(),
-            X86_REG_ECX(),
-            X86_REG_EDX(),
-            X86_REG_EBP(),
-            X86_REG_ESP(),
-            X86_REG_EDI(),
-            X86_REG_ESI(),
-            X86_REG_EFLAGS(),
-            X86_REG_EIP(),
-            X86_REG_XMM0(),
-            X86_REG_XMM1(),
-            X86_REG_XMM2(),
-            X86_REG_XMM3(),
-            X86_REG_XMM4(),
-            X86_REG_XMM5(),
-            X86_REG_XMM6(),
-            X86_REG_XMM7(),
-            X86_REG_FP0(),
-            X86_REG_FP1(),
-            X86_REG_FP2(),
-            X86_REG_FP3(),
-            X86_REG_FP4(),
-            X86_REG_FP5(),
-            X86_REG_FP6(),
-            X86_REG_FP7(),
-            X86_REG_FPSW(),
+            x86_registers.X86_REG_EAX(),
+            x86_registers.X86_REG_EBX(),
+            x86_registers.X86_REG_ECX(),
+            x86_registers.X86_REG_EDX(),
+            x86_registers.X86_REG_EBP(),
+            x86_registers.X86_REG_ESP(),
+            x86_registers.X86_REG_EDI(),
+            x86_registers.X86_REG_ESI(),
+            x86_registers.X86_REG_EFLAGS(),
+            x86_registers.X86_REG_EIP(),
+            x86_registers.X86_REG_XMM0(),
+            x86_registers.X86_REG_XMM1(),
+            x86_registers.X86_REG_XMM2(),
+            x86_registers.X86_REG_XMM3(),
+            x86_registers.X86_REG_XMM4(),
+            x86_registers.X86_REG_XMM5(),
+            x86_registers.X86_REG_XMM6(),
+            x86_registers.X86_REG_XMM7(),
+            x86_registers.X86_REG_FP0(),
+            x86_registers.X86_REG_FP1(),
+            x86_registers.X86_REG_FP2(),
+            x86_registers.X86_REG_FP3(),
+            x86_registers.X86_REG_FP4(),
+            x86_registers.X86_REG_FP5(),
+            x86_registers.X86_REG_FP6(),
+            x86_registers.X86_REG_FP7(),
+            x86_registers.X86_REG_FPSW(),
         ]
 
         self.full_cpu_regs = [
             # Byte Registers
-            X86_REG_AL(),
-            X86_REG_AH(),
-            X86_REG_BH(),
-            X86_REG_BL(),
-            X86_REG_CH(),
-            X86_REG_CL(),
-            X86_REG_DH(),
-            X86_REG_DL(),
-            X86_REG_DIL(),
-            X86_REG_SIL(),
+            x86_registers.X86_REG_AL(),
+            x86_registers.X86_REG_AH(),
+            x86_registers.X86_REG_BH(),
+            x86_registers.X86_REG_BL(),
+            x86_registers.X86_REG_CH(),
+            x86_registers.X86_REG_CL(),
+            x86_registers.X86_REG_DH(),
+            x86_registers.X86_REG_DL(),
+            x86_registers.X86_REG_DIL(),
+            x86_registers.X86_REG_SIL(),
             # Word Registers
-            X86_REG_AX(),
-            X86_REG_BX(),
-            X86_REG_CX(),
-            X86_REG_DX(),
-            X86_REG_DI(),
-            X86_REG_SI(),
-            X86_REG_BP(),
-            X86_REG_SP(),
-            X86_REG_IP(),
-            X86_REG_BPL(),
-            X86_REG_SPL(),
+            x86_registers.X86_REG_AX(),
+            x86_registers.X86_REG_BX(),
+            x86_registers.X86_REG_CX(),
+            x86_registers.X86_REG_DX(),
+            x86_registers.X86_REG_DI(),
+            x86_registers.X86_REG_SI(),
+            x86_registers.X86_REG_BP(),
+            x86_registers.X86_REG_SP(),
+            x86_registers.X86_REG_IP(),
+            x86_registers.X86_REG_BPL(),
+            x86_registers.X86_REG_SPL(),
             # Doubleword Registers
-            X86_REG_EAX(),
-            X86_REG_EBP(),
-            X86_REG_EBX(),
-            X86_REG_ECX(),
-            X86_REG_EDI(),
-            X86_REG_EDX(),
-            X86_REG_EFLAGS(),
-            X86_REG_EIP(),
-            X86_REG_ESI(),
-            X86_REG_ESP(),
+            x86_registers.X86_REG_EAX(),
+            x86_registers.X86_REG_EBP(),
+            x86_registers.X86_REG_EBX(),
+            x86_registers.X86_REG_ECX(),
+            x86_registers.X86_REG_EDI(),
+            x86_registers.X86_REG_EDX(),
+            x86_registers.X86_REG_EFLAGS(),
+            x86_registers.X86_REG_EIP(),
+            x86_registers.X86_REG_ESI(),
+            x86_registers.X86_REG_ESP(),
             # Multiword Registers
-            X86_REG_XMM0(),
-            X86_REG_XMM1(),
-            X86_REG_XMM2(),
-            X86_REG_XMM3(),
-            X86_REG_XMM4(),
-            X86_REG_XMM5(),
-            X86_REG_XMM6(),
-            X86_REG_XMM7(),
-            X86_REG_FP7(),
-            X86_REG_FP0(),
-            X86_REG_FP1(),
-            X86_REG_FP2(),
-            X86_REG_FP3(),
-            X86_REG_FP4(),
-            X86_REG_FP5(),
-            X86_REG_FP6(),
-            X86_REG_FPSW(),
+            x86_registers.X86_REG_XMM0(),
+            x86_registers.X86_REG_XMM1(),
+            x86_registers.X86_REG_XMM2(),
+            x86_registers.X86_REG_XMM3(),
+            x86_registers.X86_REG_XMM4(),
+            x86_registers.X86_REG_XMM5(),
+            x86_registers.X86_REG_XMM6(),
+            x86_registers.X86_REG_XMM7(),
+            x86_registers.X86_REG_FP7(),
+            x86_registers.X86_REG_FP0(),
+            x86_registers.X86_REG_FP1(),
+            x86_registers.X86_REG_FP2(),
+            x86_registers.X86_REG_FP3(),
+            x86_registers.X86_REG_FP4(),
+            x86_registers.X86_REG_FP5(),
+            x86_registers.X86_REG_FP6(),
+            x86_registers.X86_REG_FPSW(),
         ]
 
         # XXX: teo: can i remove these?
-        self.cpu_read_emu_regs = [X86_MEM_READ2(), X86_MEM_READ1()]
-        self.cpu_write_emu_regs = [X86_MEM_WRITE1()]
+        self.cpu_read_emu_regs = [x86_registers.X86_MEM_READ2(), x86_registers.X86_MEM_READ1()]
+        self.cpu_write_emu_regs = [x86_registers.X86_MEM_WRITE1()]
 
         # XXX: teo: do we need these ??
-        self.pc_reg = X86_REG_EIP()
-        self.flag_reg = [X86_REG_EFLAGS()]
-        self.state_reg = [X86_REG_FPSW()]
+        self.pc_reg = x86_registers.X86_REG_EIP()
+        self.flag_reg = [x86_registers.X86_REG_EFLAGS()]
+        self.state_reg = [x86_registers.X86_REG_FPSW()]
 
         # Sub register
         self.register_map = {
@@ -140,7 +138,7 @@ class X86(ISA):
 
         self.addr_space = 32
 
-        self.cond_reg = X86_REG_EFLAGS()
+        self.cond_reg = x86_registers.X86_REG_EFLAGS()
 
     def name2reg(self, name: str) -> Register | tuple[Register, Register]:
         name = name.upper()

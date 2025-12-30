@@ -1,9 +1,10 @@
 import itertools
 import sys
-from typing import Optional
+from typing import Any, ClassVar, Optional, Sequence
 
 import taintinduce.isa.x86_registers as x86_registers
-import taintinduce.taintinduce_common
+from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
+from taintinduce.isa.isa import Register
 from taintinduce.isa_registers import MemorySlot, get_register_arch
 from taintinduce.serialization import (
     SerializableMixin,
@@ -16,15 +17,16 @@ from taintinduce.serialization import TaintInduceDecoder as BaseDecoder
 
 
 class TaintInduceDecoder(BaseDecoder):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
-    def object_hook(self, dct):
+    def object_hook(self, dct: dict[str, Any]) -> Any:
         if '_obj_name' not in dct:
             return dct
         obj_name = dct['_obj_name']
-        if hasattr(taintinduce.taintinduce_common, obj_name):
-            obj = getattr(taintinduce.taintinduce_common, obj_name)()
+        current_module = sys.modules[__name__]
+        if hasattr(current_module, obj_name):
+            obj = getattr(current_module, obj_name)()
             obj.__dict__ = dct['data']
         elif hasattr(x86_registers, obj_name):
             obj = getattr(x86_registers, obj_name)()
@@ -35,7 +37,7 @@ class TaintInduceDecoder(BaseDecoder):
 
 
 # TODO: All these classes should be shared with engine.py
-def query_yes_no(question, default='yes'):
+def query_yes_no(question: str, default: Optional[str] = 'yes') -> bool:
     """Ask a yes/no question via raw_input() and return their answer.
     "question" is a string that is presented to the user.
     "default" is the presumed answer if the user just hits <Enter>.
@@ -63,9 +65,9 @@ def query_yes_no(question, default='yes'):
         sys.stdout.write("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
 
 
-def check_ones(value):
+def check_ones(value: int) -> set[int]:
     """Obtains the position of bits that are set"""
-    result_set = set()
+    result_set: set[int] = set()
     pos = 0
     while value:
         if value & 1:
@@ -75,7 +77,7 @@ def check_ones(value):
     return result_set
 
 
-def reg2pos(all_regs, reg):
+def reg2pos(all_regs: Sequence[Register], reg: Register) -> int:
     """Function which convert reg to its start postition in State value
     Attribute:
         all_regs : a list of reg class
@@ -92,7 +94,12 @@ def reg2pos(all_regs, reg):
     return pos
 
 
-def convert2rpn(all_regs, regs, masks, values):
+def convert2rpn(
+    all_regs: Sequence[Register],
+    regs: Sequence[Register],
+    masks: Sequence[int],
+    values: Sequence[int],
+) -> tuple[Optional[int], Optional[int]]:
     """convert reg+mask+values to condition rpn
     Attribute:
         regs (a list of reg class)
@@ -109,7 +116,7 @@ def convert2rpn(all_regs, regs, masks, values):
         state_val = val << reg2pos(all_regs, reg)
         return state_mask, state_val
     if len(regs) == 2:
-        arg = list()
+        arg = []
         for reg in regs:
             arg.append(((1 << reg.bits) - 1) << reg2pos(all_regs, reg))
         arg1 = arg[0]
@@ -118,7 +125,7 @@ def convert2rpn(all_regs, regs, masks, values):
     return None, None
 
 
-def pos2reg(state1, state2, regs):
+def pos2reg(state1: 'State', state2: 'State', regs: Sequence[Register]) -> list[tuple[Register, int]]:
     """trans posval to reg"""
     pos_val = list(state1.diff(state2))
     pos_val = sorted(pos_val, reverse=True)
@@ -140,7 +147,7 @@ def pos2reg(state1, state2, regs):
     return list(res_regs)
 
 
-def regs2bits(cpustate, state_format):
+def regs2bits(cpustate: dict[Register, int], state_format: Sequence[Register]) -> 'State':
     """Converts CPUState into a State object using state_format
     state: cpu_state dict()
     """
@@ -153,7 +160,7 @@ def regs2bits(cpustate, state_format):
     return State(bits, value)
 
 
-def regs2bits2(cpustate, state_format):
+def regs2bits2(cpustate: dict[Register, int], state_format: Sequence[Register]) -> 'State':
     """Converts CPUState into a State object using state_format
     state: cpu_state dict()
     """
@@ -168,12 +175,12 @@ def regs2bits2(cpustate, state_format):
     return State(bits, value)
 
 
-def bits2regs(state, regs):
+def bits2regs(state: 'State', regs: Sequence[Register]) -> dict[Register, int]:
     """trans state object to cpu_state dict()
     state: State object
     reg  : regs list
     """
-    cpu_state = dict()
+    cpu_state: dict[Register, int] = {}
     value = state.state_value
     regs_list = sorted(regs, key=lambda reg: reg.uc_const)
     for reg in regs_list:
@@ -182,7 +189,7 @@ def bits2regs(state, regs):
     return cpu_state
 
 
-def bitpos2reg(bitpos, state_format):
+def bitpos2reg(bitpos: int, state_format: Sequence[Register]) -> Register:
     remaining_pos = bitpos
     for reg in state_format:
         remaining_pos -= reg.bits
@@ -191,7 +198,7 @@ def bitpos2reg(bitpos, state_format):
     return reg
 
 
-def extract_reg2bits(state, reg, state_format):
+def extract_reg2bits(state: 'State', reg: Register, state_format: Sequence[Register]) -> 'State':
     reg_start_pos = reg_pos(reg, state_format)
     reg_mask = (1 << reg.bits) - 1
 
@@ -203,11 +210,11 @@ def extract_reg2bits(state, reg, state_format):
     return State(reg.bits, reg_value)
 
 
-def print_bin(value):
+def print_bin(value: int) -> None:
     print('{:064b}'.format(value))
 
 
-def reg_pos(reg, state_format):
+def reg_pos(reg: Register, state_format: Sequence[Register]) -> int:
     reg_start_pos = 0
     for reg2 in state_format:
         if reg == reg2:
@@ -220,21 +227,25 @@ def reg_pos(reg, state_format):
 """
 
 
-def set_bit(value, pos):
+def set_bit(value: int, pos: int) -> int:
     return value | (1 << pos)
 
 
-def unset_bit(value, pos):
+def unset_bit(value: int, pos: int) -> int:
     return value & (~(1 << pos))
 
 
-def invert_bit(value, pos):
+def invert_bit(value: int, pos: int) -> int:
     return value ^ (1 << pos)
 
 
-def shift_espresso(espresso_cond, reg, state_format):
+def shift_espresso(
+    espresso_cond: set[tuple[int, int]],
+    reg: Register,
+    state_format: Sequence[Register],
+) -> set[tuple[int, int]]:
     reg_start_pos = reg_pos(reg, state_format)
-    new_espresso_cond = set()
+    new_espresso_cond: set[tuple[int, int]] = set()
     for conditional_bitmask, conditional_value in espresso_cond:
         new_bitmask = conditional_bitmask << reg_start_pos
         new_value = conditional_value << reg_start_pos
@@ -242,24 +253,24 @@ def shift_espresso(espresso_cond, reg, state_format):
     return new_espresso_cond
 
 
-def espresso2cond(espresso_cond):
+def espresso2cond(espresso_cond: set[tuple[int, int]]) -> 'TaintCondition':
     """Converts ESPRESSO conditions into Condition object"""
     return TaintCondition(('DNF', list(espresso_cond)))
 
 
-def serialize_list(baseobj_list):
+def serialize_list(baseobj_list: Sequence[Any]) -> list[tuple[str, str]]:
     return [serialize_obj(x) for x in baseobj_list]
 
 
-def deserialize_list(baseobj_list):
+def deserialize_list(baseobj_list: Sequence[tuple[str, str]]) -> list[Any]:
     return [deserialize_obj(x) for x in baseobj_list]
 
 
-def serialize_obj(myobj):
+def serialize_obj(myobj: Any) -> tuple[str, str]:
     return (myobj.__class__.__name__, repr(myobj))
 
 
-def deserialize_obj(serialized_str):
+def deserialize_obj(serialized_str: tuple[str, str]) -> Any:
     # print(serialized_str)
     class_name, obj_str = serialized_str
     class_obj = globals()[class_name]()
@@ -274,7 +285,15 @@ class State(SerializableMixin):
         state_bits (int): Bitvector to represent the state stored as an integer.
     """
 
-    def __init__(self, num_bits=None, state_value=None, repr_str=None):
+    state_value: int
+    num_bits: int
+
+    def __init__(
+        self,
+        num_bits: Optional[int] = None,
+        state_value: Optional[int] = None,
+        repr_str: Optional[str] = None,
+    ) -> None:
         """Initializes the State object to length num_bits.
 
         The __init__ method takes in an argument num_bits and initializes the state_array.
@@ -290,11 +309,13 @@ class State(SerializableMixin):
 
         if repr_str:
             self.deserialize(repr_str)
-        else:
+        elif num_bits is not None and state_value is not None:
             self.num_bits = num_bits
             self.state_value = state_value
+        else:
+            raise Exception('Invalid arguments to State constructor!')
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Produces the corresponding bit string for the given state.
         Args:
             None
@@ -303,10 +324,9 @@ class State(SerializableMixin):
                 is "00000010"
         """
 
-        bitstring = '{{:<0{}b}}'.format(self.num_bits).format(self.state_value)
-        return bitstring
+        return '{{:<0{}b}}'.format(self.num_bits).format(self.state_value)
 
-    def diff(self, other_state):
+    def diff(self, other_state: 'State') -> set[int]:
         """Obtains the difference between two States.
         Args:
             other_state (State): The other state which we will be comparing against.
@@ -314,11 +334,11 @@ class State(SerializableMixin):
         Returns:
             A set of integers which identifies which position are different between the two States.
         """
+        if self.state_value is None or other_state.state_value is None:
+            raise Exception('State values not initialized!')
 
         value_changed = self.state_value ^ other_state.state_value
-        result_set = check_ones(value_changed)
-
-        return result_set
+        return check_ones(value_changed)
 
 
 class Observation(SerializableMixin):
@@ -328,11 +348,17 @@ class Observation(SerializableMixin):
     Attributes:
         seed_io (IOPair): A tuple representing the seed state. (input_state, output_state).
         mutated_ios (list of IOPair): A list containing all IOPairs of mutated states.
-    """
+    """  # noqa: E501
 
     def __init__(
-        self, iopair=None, mutated_iopairs=None, bytestring=None, archstring=None, state_format=None, repr_str=None,
-    ):
+        self,
+        iopair: Optional[tuple[State, State]] = None,
+        mutated_iopairs: Optional[list[tuple[State, State]]] = None,
+        bytestring: Optional[str] = None,
+        archstring: Optional[str] = None,
+        state_format: Optional[list[Register]] = None,
+        repr_str: Optional[str] = None,
+    ) -> None:
         """Initializes the Observation object with the .
 
         The __init__ method takes in an argument num_bits and initializes the state_array
@@ -367,15 +393,19 @@ class TaintCondition(SerializableMixin):
     For example, a DNF can be represented as [('DNF', [(1024, 0),(64,1),...]), ...]
     """
 
-    OPS_FN_MAP = {'DNF': '_dnf_eval', 'LOGIC': '_logic_eval', 'CMP': '_cmp_eval'}
+    OPS_FN_MAP: ClassVar[dict[str, str]] = {'DNF': '_dnf_eval', 'LOGIC': '_logic_eval', 'CMP': '_cmp_eval'}
 
-    def __init__(self, conditions=None, repr_str=None):
+    def __init__(
+        self,
+        conditions: Optional[tuple[str, list[tuple[int, int]]]] = None,
+        repr_str: Optional[str] = None,
+    ) -> None:
         if repr_str:
             self.deserialize(repr_str)
         else:
             self.condition_ops = conditions
 
-    def eval(self, state):
+    def eval(self, state: State) -> bool:
         """The eval() method takes in a State object and checks if the condition evaluates to True or False.
         Args:
             state (State): The State object to which the condition is being evaluated on.
@@ -391,7 +421,7 @@ class TaintCondition(SerializableMixin):
         result &= getattr(self, self.OPS_FN_MAP[ops_name])(state, ops_args)
         return result
 
-    def get_cond_bits(self):
+    def get_cond_bits(self) -> set[int]:
         if self.condition_ops is None:
             return set()
         ops_name, ops_args = self.condition_ops
@@ -401,21 +431,22 @@ class TaintCondition(SerializableMixin):
                 cond_bits |= check_ones(mask)
         return cond_bits
 
-    def _dnf_eval(self, state, dnf_args):
-        result = any([(state.state_value & bitmask == value) for bitmask, value in dnf_args])
-        return result
+    def _dnf_eval(self, state: State, dnf_args: list[tuple[int, int]]) -> bool:
+        if state.state_value is None:
+            raise Exception('State value not initialized!')
+        return any((state.state_value & bitmask == value) for bitmask, value in dnf_args)
 
-    def _logic_eval(self, state, logic_args):
-        raise Exception('Not yet implemented!')
+    def _logic_eval(self, state: State, logic_args: Any) -> bool:  # noqa: ARG002
+        raise Exception('Not yet implemented')
 
-    def _cmp_eval(self, state, cmp_args):
-        raise Exception('Not yet implemented!')
+    def _cmp_eval(self, state: State, cmp_args: Any) -> bool:  # noqa: ARG002
+        raise Exception('Not yet implemented')
 
 
-def reg2memslot(reg):
+def reg2memslot(reg: Register) -> MemorySlot:
     assert 'MEM' in reg.name
-    mem_access = None
-    mem_slot = None
+    mem_access: Optional[str] = None
+    mem_slot: Optional[int] = None
     q = reg.name.split('_')
     mem_type = MemorySlot.ADDR if len(q) == 3 else MemorySlot.VALUE
     t = q[1]
@@ -429,8 +460,9 @@ def reg2memslot(reg):
     if mem_slot is None or mem_access is None:
         raise Exception('Cannot convert register to memslot!')
     # pdb.set_trace()
-    temp_mem = MemorySlot.get_mem(mem_slot, mem_access, mem_size, mem_type)
-    return temp_mem
+    if not isinstance(mem_slot, int):
+        raise Exception('mem_slot is not int!')
+    return MemorySlot.get_mem(mem_slot, mem_access, mem_size, mem_type)
 
 
 class Rule(SerializableMixin):
@@ -439,19 +471,25 @@ class Rule(SerializableMixin):
     Attributes:
         state_format (list of Register): a list of registers that defines the format of the state.
         conditions (list of Condition): a list of strings which represents the condition (reverse polish notation)
-        dataflows ({True:{int: set(int)}}, False:{int:set(int)}): a list of dictionaries with key being the bit position being used and the set being the bit position
-            being defined.
+        dataflows ({True:{int: set(int)}}, False:{int:set(int)}): a list of dictionaries with key being the bit position
+            being used and the set being the bit position being defined.
     """
 
-    def __init__(self, state_format=[], conditions=[], dataflows=[{}], repr_str=None):
+    def __init__(
+        self,
+        state_format: Optional[list[Register]] = None,
+        conditions: Optional[list[TaintCondition]] = None,
+        dataflows: Optional[list[dict[int, set[int]]]] = None,
+        repr_str: Optional[str] = None,
+    ) -> None:
         if repr_str:
             self.deserialize(repr_str)
         else:
-            self.state_format = state_format
-            self.conditions = conditions
-            self.dataflows = dataflows
+            self.state_format = state_format if state_format is not None else []
+            self.conditions = conditions if conditions is not None else []
+            self.dataflows = dataflows if dataflows is not None else [{}]
 
-    def convert2squirrel(self, archstring):
+    def convert2squirrel(self, archstring: str) -> TaintRule:
         """Convert internal representation to TaintRule format."""
         g = archstring
         ISARegister = get_register_arch(g)
@@ -476,7 +514,7 @@ class Rule(SerializableMixin):
                 taintrule.dataflows[df_id][src_pos] = dataflow[src_pos].copy()
         return taintrule
 
-    def web_string(self):
+    def web_string(self) -> str:
         mystr_list = []
         mystr_list.append(str(self.state_format))
         mystr_list.append('')
@@ -494,12 +532,13 @@ class Rule(SerializableMixin):
 class InsnInfo(SerializableMixin):
     def __init__(
         self,
+        *,
         archstring: Optional[str] = None,
         bytestring: Optional[str] = None,
-        state_format: Optional[list] = None,
-        cond_reg=None,
-        repr_str=None,
-    ):
+        state_format: Optional[list[Register]] = None,
+        cond_reg: Optional[x86_registers.X86_REG_EFLAGS | ARM64_REG_NZCV] = None,
+        repr_str: Optional[str] = None,
+    ) -> None:
         if repr_str:
             self.deserialize(repr_str)
         else:
