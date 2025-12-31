@@ -61,7 +61,7 @@ class TaintCondition(SerializableMixin):
             return result
         ops_name, ops_args = self.condition_ops
         result &= getattr(self, self.OPS_FN_MAP[ops_name])(state, ops_args)
-        return result
+        return result  # type: ignore[no-any-return]
 
     def get_cond_bits(self) -> set[int]:
         if self.condition_ops is None:

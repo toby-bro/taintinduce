@@ -85,7 +85,7 @@ class ObservationEngine(object):
         archstring = self.archstring
         state_format = self.state_format
 
-        observations = []
+        observations: list[Observation] = []
         seed_ios = self._gen_seeds(bytestring, archstring, state_format)
         for seed_io in tqdm(seed_ios):
             observations.append(self._gen_observation(bytestring, archstring, state_format, seed_io))

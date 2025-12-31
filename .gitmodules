@@ -1,0 +1,3 @@
+[submodule "peekaboo"]
+	path = peekaboo
+	url = https://github.com/melynx/peekaboo

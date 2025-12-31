@@ -1,14 +1,15 @@
 import itertools
 import random
+from typing import Optional
 
 
 class BaseMutate(object):
-    bitwalk_array = None
-    bitfill_array = None
-    zerowalk_array = None
+    bitwalk_array: Optional[list[int]] = None
+    bitfill_array: Optional[list[int]] = None
+    zerowalk_array: Optional[list[int]] = None
 
     @staticmethod
-    def Bitwalk(bitnum):
+    def Bitwalk(bitnum: int) -> list[int]:
         if BaseMutate.bitwalk_array is None:
             BaseMutate.bitwalk_array = []
             for i in range(256):
@@ -16,7 +17,7 @@ class BaseMutate(object):
         return BaseMutate.bitwalk_array[:bitnum]
 
     @staticmethod
-    def Bitfill(bitnum):
+    def Bitfill(bitnum: int) -> list[int]:
         if BaseMutate.bitfill_array is None:
             BaseMutate.bitfill_array = []
             for i in range(256):
@@ -24,7 +25,7 @@ class BaseMutate(object):
         return BaseMutate.bitfill_array[:bitnum]
 
     @staticmethod
-    def Zerowalk(bitnum):
+    def Zerowalk(bitnum: int) -> list[int]:
         mask = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF  # 128bit 1
         mask2 = (1 << bitnum) - 1
         if BaseMutate.zerowalk_array is None:
@@ -34,7 +35,7 @@ class BaseMutate(object):
         return [c & mask2 for c in BaseMutate.zerowalk_array[:bitnum]]
 
     @staticmethod
-    def Rannum(bitnum):
+    def Rannum(bitnum: int) -> list[int]:
         inputs = []
         for _ in range(bitnum):
             inputs += [random.getrandbits(bitnum)]
@@ -42,11 +43,11 @@ class BaseMutate(object):
 
 
 class Int(object):
-    def __init__(self, bitsnum):
-        self.value = random.getrandbits(bitsnum)
+    def __init__(self, bitsnum: int) -> None:
+        self.value: int = random.getrandbits(bitsnum)
 
     @staticmethod
-    def rand(bitsnum):
+    def rand(bitsnum: int) -> set[int]:
         return set(
             BaseMutate.Bitfill(bitsnum)
             + BaseMutate.Bitwalk(bitsnum)
@@ -56,42 +57,42 @@ class Int(object):
 
 
 class Float16(object):
-    def __init__(self, s=None, e=None, f=None):
-        self.value = random.getrandbits(16)
+    def __init__(self, s: Optional[int] = None, e: Optional[int] = None, f: Optional[int] = None) -> None:
+        self.value: int = random.getrandbits(16)
         if s is not None and e is not None and f is not None:
             self.s = s
             self.e = e
             self.f = f
 
     @property
-    def s(self):
+    def s(self) -> int:
         return self.value >> 15
 
     @s.setter
-    def s(self, value):
+    def s(self, value: int) -> None:
         self.value = (self.value & ((1 << 15) - 1)) + ((value & 0x1) << 15)
 
     @property
-    def e(self):
+    def e(self) -> int:
         return (self.value & ((1 << 15) - 1)) >> 10
 
     @e.setter
-    def e(self, value):
+    def e(self, value: int) -> None:
         self.value = (self.value & ((1 << 15) + ((1 << 10) - 1))) + ((value & ((1 << 5) - 1)) << 10)
 
     @property
-    def f(self):
+    def f(self) -> int:
         return self.value & ((1 << 10) - 1)
 
     @f.setter
-    def f(self, value):
+    def f(self, value: int) -> None:
         self.value = (self.value & ((1 << 16) - 1 - ((1 << 10) - 1))) + (value & ((1 << 10) - 1))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '{:x}'.format(self.value)
 
     @staticmethod
-    def rand():
+    def rand() -> set[int]:
         ss = [0]
         es = BaseMutate.Bitfill(5) + BaseMutate.Bitwalk(5) + BaseMutate.Zerowalk(5) + BaseMutate.Rannum(5)
         fs = BaseMutate.Bitfill(10) + BaseMutate.Bitwalk(10) + BaseMutate.Zerowalk(10) + BaseMutate.Rannum(10)
@@ -102,45 +103,45 @@ class Float16(object):
 
 
 class Float32(object):
-    def __init__(self, s=None, e=None, f=None):
-        self.value = random.getrandbits(32)
+    def __init__(self, s: Optional[int] = None, e: Optional[int] = None, f: Optional[int] = None) -> None:
+        self.value: int = random.getrandbits(32)
         if s is not None and e is not None and f is not None:
             self.s = s
             self.e = e
             self.f = f
 
     @property
-    def s(self):
+    def s(self) -> int:
         return self.value >> 31
 
     @s.setter
-    def s(self, value):
+    def s(self, value: int) -> None:
         self.value = (self.value & 0x7FFFFFFF) + ((value & 0x1) << 31)
 
     @property
-    def e(self):
+    def e(self) -> int:
         return (self.value & 0x7FFFFFFF) >> 23
 
     @e.setter
-    def e(self, value):
+    def e(self, value: int) -> None:
         self.value = (self.value & 0x807FFFFF) + ((value & 0xFF) << 23)
 
     @property
-    def f(self):
+    def f(self) -> int:
         return self.value & 0x7FFFFF
 
     @f.setter
-    def f(self, value):
+    def f(self, value: int) -> None:
         self.value = (self.value & 0xFF800000) + (value & 0x7FFFFF)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '{:x}'.format(self.value)
 
-    def __cmp__(self, other):
+    def __cmp__(self, other: 'Float32') -> int:
         return self.value - other.value
 
     @staticmethod
-    def rand():
+    def rand() -> set[int]:
         ss = [0]
         es = BaseMutate.Bitfill(8) + BaseMutate.Bitwalk(8) + BaseMutate.Zerowalk(8) + BaseMutate.Rannum(8)
         fs = BaseMutate.Bitfill(23) + BaseMutate.Bitwalk(23) + BaseMutate.Zerowalk(23) + BaseMutate.Rannum(23)
@@ -151,45 +152,45 @@ class Float32(object):
 
 
 class Float64(object):
-    def __init__(self, s=None, e=None, f=None):
-        self.value = random.getrandbits(64)
+    def __init__(self, s: Optional[int] = None, e: Optional[int] = None, f: Optional[int] = None) -> None:
+        self.value: int = random.getrandbits(64)
         if s is not None and e is not None and f is not None:
             self.s = s
             self.e = e
             self.f = f
 
     @property
-    def s(self):
+    def s(self) -> int:
         return self.value >> 63
 
     @s.setter
-    def s(self, value):
+    def s(self, value: int) -> None:
         self.value = (self.value & 0x7FFFFFFFFFFFFFFF) + ((value & 0x1) << 63)
 
     @property
-    def e(self):
+    def e(self) -> int:
         return (self.value & 0x7FFFFFFFFFFFFFFF) >> 52
 
     @e.setter
-    def e(self, value):
+    def e(self, value: int) -> None:
         self.value = (self.value & 0x800FFFFFFFFFFFFF) + ((value & 0x7FF) << 52)
 
     @property
-    def f(self):
+    def f(self) -> int:
         return self.value & 0xFFFFFFFFFFFFF
 
     @f.setter
-    def f(self, value):
+    def f(self, value: int) -> None:
         self.value = (self.value & 0xFFF0000000000000) + (value & 0xFFFFFFFFFFFFF)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '{:x}'.format(self.value)
 
-    def __cmp__(self, other):
+    def __cmp__(self, other: 'Float64') -> int:
         return self.value - other.value
 
     @staticmethod
-    def rand():
+    def rand() -> set[int]:
         ss = [0]
         es = BaseMutate.Bitfill(11) + BaseMutate.Bitwalk(11) + BaseMutate.Zerowalk(11) + BaseMutate.Rannum(11)
         fs = BaseMutate.Bitfill(52) + BaseMutate.Bitwalk(52) + BaseMutate.Zerowalk(52) + BaseMutate.Rannum(52)
@@ -200,8 +201,8 @@ class Float64(object):
 
 
 class Float80(object):
-    def __init__(self, s=None, e=None, f=None):
-        self.value = random.getrandbits(80)
+    def __init__(self, s: Optional[int] = None, e: Optional[int] = None, f: Optional[int] = None) -> None:
+        self.value: int = random.getrandbits(80)
         self.value |= 1 << 63
         if s is not None and e is not None and f is not None:
             self.s = s
@@ -209,37 +210,37 @@ class Float80(object):
             self.f = f
 
     @property
-    def s(self):
+    def s(self) -> int:
         return self.value >> 79
 
     @s.setter
-    def s(self, value):
+    def s(self, value: int) -> None:
         self.value = (self.value & 0x7FFFFFFFFFFFFFFFFFFF) + ((value & 0x1) << 79)
 
     @property
-    def e(self):
+    def e(self) -> int:
         return (self.value & 0x7FFFFFFFFFFFFFFFFFFF) >> 64
 
     @e.setter
-    def e(self, value):
+    def e(self, value: int) -> None:
         self.value = (self.value & 0x8000FFFFFFFFFFFFFFFF) + ((value & 0x7FFF) << 64)
 
     @property
-    def f(self):
+    def f(self) -> int:
         return self.value & 0x7FFFFFFFFFFFFFFF
 
     @f.setter
-    def f(self, value):
+    def f(self, value: int) -> None:
         self.value = (self.value & 0xFFFF8000000000000000) + (value & 0x7FFFFFFFFFFFFFFF)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '{:x}'.format(self.value)
 
-    def __cmp__(self, other):
+    def __cmp__(self, other: 'Float80') -> int:
         return self.value - other.value
 
     @staticmethod
-    def rand():
+    def rand() -> set[int]:
         ss = [0]
         es = BaseMutate.Bitfill(15) + BaseMutate.Bitwalk(15) + BaseMutate.Zerowalk(15) + BaseMutate.Rannum(15)
         fs = BaseMutate.Bitfill(63) + BaseMutate.Bitwalk(63) + BaseMutate.Zerowalk(63) + BaseMutate.Rannum(63)
@@ -250,8 +251,8 @@ class Float80(object):
 
 
 class Float128(object):
-    def __init__(self, s=None, e=None, f=None):
-        self.value = random.getrandbits(128)
+    def __init__(self, s: Optional[int] = None, e: Optional[int] = None, f: Optional[int] = None) -> None:
+        self.value: int = random.getrandbits(128)
         self.value |= 1 << 112
         if s is not None and e is not None and f is not None:
             self.s = s
@@ -259,34 +260,34 @@ class Float128(object):
             self.f = f
 
     @property
-    def s(self):
+    def s(self) -> int:
         return self.value >> 127
 
     @s.setter
-    def s(self, value):
+    def s(self, value: int) -> None:
         self.value = (self.value & ((1 << 127) - 1)) + ((value & 0x1) << 127)
 
     @property
-    def e(self):
+    def e(self) -> int:
         return (self.value & ((1 << 127) - 1)) >> 112
 
     @e.setter
-    def e(self, value):
+    def e(self, value: int) -> None:
         self.value = (self.value & ((1 << 127) + ((1 << 112) - 1))) + ((value & 0x7FFF) << 112)
 
     @property
-    def f(self):
+    def f(self) -> int:
         return self.value & ((1 << 112) - 1)
 
     @f.setter
-    def f(self, value):
+    def f(self, value: int) -> None:
         self.value = (self.value & ((1 << 128) - 1 - ((1 << 112) - 1))) + (value & ((1 << 112) - 1))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '{:x}'.format(self.value)
 
     @staticmethod
-    def rand():
+    def rand() -> set[int]:
         ss = [0]
         es = BaseMutate.Bitfill(15) + BaseMutate.Bitwalk(15) + BaseMutate.Zerowalk(15) + BaseMutate.Rannum(15)
         fs = BaseMutate.Bitfill(112) + BaseMutate.Bitwalk(112) + BaseMutate.Zerowalk(112) + BaseMutate.Rannum(112)
@@ -297,42 +298,42 @@ class Float128(object):
 
 
 class Float256(object):
-    def __init__(self, s=None, e=None, f=None):
-        self.value = random.getrandbits(256)
+    def __init__(self, s: Optional[int] = None, e: Optional[int] = None, f: Optional[int] = None) -> None:
+        self.value: int = random.getrandbits(256)
         if s is not None and e is not None and f is not None:
             self.s = s
             self.e = e
             self.f = f
 
     @property
-    def s(self):
+    def s(self) -> int:
         return self.value >> 255
 
     @s.setter
-    def s(self, value):
+    def s(self, value: int) -> None:
         self.value = (self.value & ((1 << 255) - 1)) + ((value & 0x1) << 255)
 
     @property
-    def e(self):
+    def e(self) -> int:
         return (self.value & ((1 << 255) - 1)) >> 236
 
     @e.setter
-    def e(self, value):
+    def e(self, value: int) -> None:
         self.value = (self.value & ((1 << 255) + ((1 << 236) - 1))) + ((value & ((1 << 19) - 1)) << 236)
 
     @property
-    def f(self):
+    def f(self) -> int:
         return self.value & ((1 << 236) - 1)
 
     @f.setter
-    def f(self, value):
+    def f(self, value: int) -> None:
         self.value = (self.value & ((1 << 256) - 1 - ((1 << 236) - 1))) + (value & ((1 << 236) - 1))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '{:x}'.format(self.value)
 
     @staticmethod
-    def rand():
+    def rand() -> set[int]:
         ss = [0]
         es = BaseMutate.Bitfill(19) + BaseMutate.Bitwalk(19) + BaseMutate.Zerowalk(19) + BaseMutate.Rannum(19)
         fs = BaseMutate.Bitfill(236) + BaseMutate.Bitwalk(236) + BaseMutate.Zerowalk(236) + BaseMutate.Rannum(236)

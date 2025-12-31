@@ -65,7 +65,7 @@ class SerializableMixin:
     @classmethod
     def deserialize(cls, data: str) -> Self:
         """Deserialize object from JSON string."""
-        return json.loads(data, cls=TaintInduceDecoder)
+        return json.loads(data, cls=TaintInduceDecoder)  # type: ignore[no-any-return]
 
     def to_dict(self) -> dict[str, Any]:
         """Convert object to dictionary."""

@@ -26,7 +26,7 @@ def is_overlap(x1: int, x2: int, y1: int, y2: int) -> bool:
 def sign2unsign(value: int, bits: int) -> int:
     if value >= 0:
         return value
-    return (value + 2 ** (bits - 1)) | 2 ** (bits - 1)
+    return int((value + 2 ** (bits - 1)) | 2 ** (bits - 1))
 
 
 def filter_address(address: int, size: int, state: list[Any]) -> bool:

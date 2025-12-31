@@ -1,55 +1,97 @@
 # taintinduce
+
 TaintInduce is a project which aims to automate the creation of taint
 propagation rules for unknown instruction sets.
 
 ## References
+
 One Engine To Serve 'em All: Inferring Taint Rules Without Architectural
 Semantics
 
 Zheng Leong Chua, Yanhao Wang, Teodora Băluță, Prateek Saxena, Zhenkai Liang,
-Purui Su. 
+Purui Su.
 
 In the Network and Distributed System Security Symposium 2019, San Diego, CA,
-US, Feb 2019. 
+US, Feb 2019.
 
 ## Disclaimer
+
+### Initial disclaimer
+
 We are currently in the process of rewriting the prototype to better serve our
 goal of providing an online taint service for different architectures.
 For people who are interested in the implementation used in the paper, feel free
 to contact us.
 
+### New disclaimer
+
+This project has been quite a bit reorganized to be able to run properly in 2025.
+
+Problems encountered:
+
+- Squirrelflowdb which does not exist on the PyPi -> Rewrote the serialization and deserialisation
+- Initially released for Python 3.6 -> Migrated it to 3.12 with type checking and linting
+- Fixed a bug on ARM and memory which was not implemented
+- Migrated to use `uv` to run the project
+- peekaboo did not compile so added a patch to make it run
+
 ## Requirements
-### Python3.6
-- capstone 
+
+### Python3.12
+
+- capstone
 - keystone
 - unicorn
 - tqdm
-- squirrel-framework
 
 ## Usage
-@TODO
 
-taintinduce.py provides the inference interface and is the CLI tool to generate the rule.\
-Checkout the --help option on how to use the CLI tool.
+### If you want to run the tracer
 
-python -m taintinduce.taintinduce c3 X86
+You need to install [dynamorio](https://github.com/DynamoRIO/dynamorio)
 
-taintinduce_worker.py is the compute process that SquirrelFlowDB uses.
+```sh
+git submodule update --init --recursive  # clone peekaboo
+./patch.sh                               # apply fix to be able to compile
+cd peekaboo
 
-python -m taintinduce.taintinduce_worker localhost 1234
+DYNAMORIO_PATH=
 
-##### Issue with virtual env (Ubuntu 16.04, Python 2.7.12)
-When installing `capstone` and `keystone-engine` with `pip` in a virtual
-environment, the shared library files are expected to be in a folder like
-`~/.virtualenvs/<virtual_env>/lib/python2.7/site-packages/capstone`. If not, you
-might run into an import error:
-`ImportError: ERROR: fail to load the dynamic library.`
+# To compile the tracer
+cd peekaboo_dr
+mkdir build
+cd build
+DynamoRIO_DIR=($DYNAMORIO_PATH) cmake ..
+make
 
-A quick solution is to find where the library is and copy it to the expected
-path. For example, `find - name libcapstone*` inside
-`~/.virtualenvs/<virtual_env>`  and copy it to
-`~/.virtualenvs/<virtual_env>/lib/python2.7/site-packages/capstone`.
+# Then you can run the tracer with the wrapper trace.sh
+# Examples:
+./trace.sh --help
+./trace.sh -- ls -la
+./trace.sh -o trace_ls -- ls
+./trace.sh -o trace_cat -- cat /etc/passwd
+```
 
-## Format of rules
-@TODO
+### To run taintinduce on a simple instruction
 
+```sh
+uv run python -m taintinduce.taintinduce 2303 X86
+```
+
+### To run it on a trace
+
+- Adjust `-j` for the number of threads you want to use (default 1)
+- the `PID` must be adjusted to the output you get from your command
+
+```sh
+uv run python -m taintinduce.train_trace trace_ls/ls-<PID>/<PID> -j 8
+```
+
+## Contributing
+
+At the moment the checks which are enforced are
+
+```sh
+uv run ruff check .
+uv run mypy .
+```
