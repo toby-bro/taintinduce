@@ -5,7 +5,7 @@ Uses dataclasses + custom JSON encoder/decoder for object serialization.
 
 import importlib
 import json
-from typing import Any, Optional, Self, TypeVar
+from typing import Any, Self, TypeVar
 
 T = TypeVar('T')
 
@@ -71,52 +71,6 @@ class SerializableMixin:
     def to_dict(self) -> dict[str, Any]:
         """Convert object to dictionary."""
         return {'_class': self.__class__.__name__, '_module': self.__class__.__module__, **self.__dict__}
-
-
-class TaintRule:
-    """
-    Simplified TaintRule to replace squirrel.acorn.acorn.TaintRule.
-    Represents taint propagation rules.
-    """
-
-    def __init__(self, state_format: Optional[Any] = None, conditions: Optional[list[Any]] = None) -> None:
-        self.state_format: Any = state_format or []
-        self.conditions: list[Any] = conditions or []
-        self.dataflows: list[dict[Any, Any]] = [{}]  # List of dataflow dicts
-
-    def serialize(self) -> str:
-        return json.dumps(self, cls=TaintInduceEncoder)
-
-    @classmethod
-    def deserialize(cls: type['TaintRule'], data: str) -> 'TaintRule':
-        return json.loads(data, cls=TaintInduceDecoder)
-
-    def __str__(self) -> str:
-        # Handle both list and StateFormat objects
-        if isinstance(self.state_format, StateFormat):
-            num_regs = len(self.state_format.registers) + len(self.state_format.mem_slots)
-        else:
-            num_regs = len(self.state_format) if hasattr(self.state_format, '__len__') else 0
-
-        return (
-            f'TaintRule(state_format={num_regs} regs, '
-            f'conditions={len(self.conditions)}, dataflows={len(self.dataflows)})'
-        )
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class StateFormat:
-    """Simplified StateFormat to replace squirrel's version."""
-
-    def __init__(self, arch: str, registers: Optional[list[Any]] = None, mem_slots: Optional[list[Any]] = None) -> None:
-        self.arch: str = arch
-        self.registers: list[Any] = registers or []
-        self.mem_slots: list[Any] = mem_slots or []
-
-    def serialize(self) -> str:
-        return json.dumps(self, cls=TaintInduceEncoder)
 
 
 class MemorySlot:

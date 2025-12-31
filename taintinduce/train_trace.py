@@ -37,7 +37,7 @@ class RuleDatabase:
 
     def check_and_generate_rules(self, arch: str, insn_set: set[str]) -> None:
         """Check which instructions need rules and generate them."""
-        missing_rules = []
+        missing_rules: list[str] = []
         for bytestring in insn_set:
             if not self.has_rule(arch, bytestring):
                 missing_rules.append(bytestring)

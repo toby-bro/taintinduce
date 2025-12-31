@@ -14,6 +14,7 @@ from taintinduce.isa.arm64 import ARM64
 from taintinduce.isa.isa import ISA
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86 import X86
+from taintinduce.taintinduce_common import CpuRegisterMap
 
 from . import cpu
 
@@ -133,8 +134,8 @@ class UnicornCPU(cpu.CPU):
         self.pc_reg: Register = self.arch.pc_reg
         self.state_reg = self.arch.state_reg
         self.cpu_regs: list[Register] = self.arch.cpu_regs
-        self.mem_regs: dict[Register, int] = {}
-        self.mem_addrs: dict[Register, int] = {}
+        self.mem_regs: CpuRegisterMap = {}
+        self.mem_addrs: CpuRegisterMap = {}
         self.pages: set[int] = set()
         self.rep_cnt: int = 0
 
@@ -465,8 +466,8 @@ class UnicornCPU(cpu.CPU):
             fstr = '{{: <8}}: {{:0{}b}}'.format(reg.bits)
             print(fstr.format(reg.name, self.read_reg(reg)))
 
-    def get_cpu_state(self) -> dict[Register, int]:
-        result: dict[Register, int] = {}
+    def get_cpu_state(self) -> CpuRegisterMap:
+        result: CpuRegisterMap = {}
 
         for reg in self.cpu_regs:
             result[reg] = self.read_reg(reg)
@@ -477,7 +478,7 @@ class UnicornCPU(cpu.CPU):
 
         return result
 
-    def set_cpu_state(self, cpu_state: dict[Register, int]) -> None:
+    def set_cpu_state(self, cpu_state: CpuRegisterMap) -> None:
         for reg, value in cpu_state.items():
             self.write_reg(reg, value)
 
@@ -507,7 +508,8 @@ class UnicornCPU(cpu.CPU):
     def execute(
         self,
         code: bytes,
-    ) -> tuple[dict[Register, int], dict[Register, int]]:
+    ) -> tuple[CpuRegisterMap, CpuRegisterMap]:
+        """Execute code in Unicorn and return CPU state before and after execution."""
         self.init_state()
         self.clear_page()
         self.rep_cnt = 0

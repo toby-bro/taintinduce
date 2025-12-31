@@ -9,16 +9,30 @@ from taintinduce.isa.isa import ISA
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86 import X86
 from taintinduce.observation_engine.strategy import BitFill, Bitwalk, IEEE754Extended, RandomNumber, ZeroWalk
-from taintinduce.taintinduce_common import Observation, State, regs2bits
+from taintinduce.taintinduce_common import CpuRegisterMap, Observation, State, regs2bits
 from taintinduce.unicorn_cpu.unicorn_cpu import OutOfRangeException, UnicornCPU
 
 from .strategy import SeedVariation, Strategy
 
 
 class ObservationEngine(object):
-    arch: ISA
+    """Engine to observe instruction behavior under various input states.
+    Attributes:
+    bytestring (str): Hex string representing the instruction bytes.
+    archstring (str): Architecture string (e.g., X86, AMD64, ARM64).
+    state_format (list[Register]): List of registers defining the CPU state format.
+    Methods:
+    observe_insn(): Generates observations for the instruction.
+    """
 
-    def __init__(self, bytestring: str, archstring: str, state_format: list) -> None:
+    arch: ISA
+    bytestring: str
+    cpu: UnicornCPU
+    archstring: str
+    state_format: list[Register]
+    DEBUG_LOG: bool
+
+    def __init__(self, bytestring: str, archstring: str, state_format: list[Register]) -> None:
         match archstring:
             case 'X86':
                 self.arch = X86()
@@ -80,7 +94,7 @@ class ObservationEngine(object):
         bytestring: str,
         archstring: str,
         state_format: list[Register],
-        seed_io: tuple[dict[Register, int], dict[Register, int]],
+        seed_io: tuple[CpuRegisterMap, CpuRegisterMap],
     ) -> Observation:
         """Generates the Observation object for the provided seed state by performing a one-bit bitflip.
 
@@ -97,8 +111,8 @@ class ObservationEngine(object):
         cpu = self.cpu
         bytecode = bytes.fromhex(bytestring)
         seed_in, seed_out = seed_io
-        sss = regs2bits(seed_in, state_format)
-        rss = regs2bits(seed_out, state_format)
+        seed_state = regs2bits(seed_in, state_format)
+        result_state = regs2bits(seed_out, state_format)
         state_list: list[tuple[State, State]] = []
 
         # for reg in self.potential_use_regs:
@@ -117,13 +131,12 @@ class ObservationEngine(object):
                     continue
                 except OutOfRangeException:
                     continue
-                sbs = regs2bits(sb, state_format)
-                sas = regs2bits(sa, state_format)
-                if not sss.diff(sbs):
+                state_before = regs2bits(sb, state_format)
+                state_after = regs2bits(sa, state_format)
+                if not seed_state.diff(state_before):
                     continue
-                assert sss.diff(sbs)
-                state_list.append((sbs, sas))
-        return Observation((sss, rss), state_list, bytestring, archstring, state_format)
+                state_list.append((state_before, state_after))
+        return Observation((seed_state, result_state), state_list, bytestring, archstring, state_format)
 
     def _gen_seeds(
         self,
@@ -131,7 +144,7 @@ class ObservationEngine(object):
         archstring: str,
         state_format: list[Register],
         strategies: Optional[list[Strategy]] = None,
-    ) -> list[tuple[dict[Register, int], dict[Register, int]]]:
+    ) -> list[tuple[CpuRegisterMap, CpuRegisterMap]]:
         """Generates a set of seed states based on the state_format using the strategies defined.
 
         Args:
@@ -147,7 +160,7 @@ class ObservationEngine(object):
         if not strategies:
             strategies = [RandomNumber(100), Bitwalk(), ZeroWalk(), BitFill(), IEEE754Extended(10)]
 
-        seed_states: list[tuple[dict[Register, int], dict[Register, int]]] = []
+        seed_states: list[tuple[CpuRegisterMap, CpuRegisterMap]] = []
 
         # TODO: HACK to speed up, we'll ignore write and addr
         temp_state_format = [x for x in state_format if ('WRITE' not in x.name and 'ADDR' not in x.name)]
@@ -168,9 +181,9 @@ class ObservationEngine(object):
         self,
         bytestring: str,
         archstring: str,  # noqa: ARG002
-        seed_in: dict[Register, int],
+        seed_in: CpuRegisterMap,
         num_tries: int = 255,
-    ) -> tuple[dict[Register, int], dict[Register, int]] | None:
+    ) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:
         """Generates a pair of in / out CPUState, seed_in, seed_out,
         by executing the instruction using a the provided CPUState
 
@@ -209,7 +222,7 @@ class ObservationEngine(object):
         archstring: str,  # noqa: ARG002
         seed_variation: SeedVariation,
         num_tries: int = 255,
-    ) -> tuple[dict[Register, int], dict[Register, int]] | None:
+    ) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:
         """Generates a pair of in / out CPUState, seed_in, seed_out, by executing the instruction using a randomly
         generated CPUState with the seed_variation applied.
 

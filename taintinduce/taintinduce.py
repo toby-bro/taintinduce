@@ -14,10 +14,10 @@ from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
 
 # Replaced squirrel imports with our own serialization
-from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder, TaintRule
+from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder
 from taintinduce.unicorn_cpu.unicorn_cpu import UnicornCPU
 
-from .taintinduce_common import InsnInfo, Observation, Rule
+from .taintinduce_common import InsnInfo, Observation, Rule, TaintRule
 
 
 def gen_insninfo(archstring: str, bytestring: str, emu_verify: bool = True) -> InsnInfo:
@@ -85,6 +85,9 @@ def main() -> None:
         assert args.output_dir
         with open(obs_path, 'r') as f:
             obs_list = json.load(f, cls=TaintInduceDecoder)
+            if not isinstance(obs_list, list):
+                raise Exception('Loaded observations is not a list!')
+            assert all(isinstance(obs, Observation) for obs in obs_list)
     else:
         obs_list = gen_obs(args.arch, insn.bytestring, insn.state_format)
         print('Writing observations to {}'.format(obs_path))

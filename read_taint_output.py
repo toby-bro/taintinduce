@@ -25,14 +25,14 @@ def read_rule(rule_file: str) -> None:
 
     print(f'\n📊 Rule: {rule}')
     print('\n🏗️  State Format:')
-    print(f'   Architecture: {rule.state_format.arch}')
-    print(f'   Registers ({len(rule.state_format.registers)}):')
-    for i, reg in enumerate(rule.state_format.registers, 1):
+    print(f'   Architecture: {rule.format.arch}')
+    print(f'   Registers ({len(rule.format.registers)}):')
+    for i, reg in enumerate(rule.format.registers, 1):
         reg_name = reg.name if hasattr(reg, 'name') else str(reg)
         print(f'     {i}. {reg_name}')
 
-    print(f'\n   Memory Slots ({len(rule.state_format.mem_slots)}):')
-    for i, mem in enumerate(rule.state_format.mem_slots, 1):
+    print(f'\n   Memory Slots ({len(rule.format.mem_slots)}):')
+    for i, mem in enumerate(rule.format.mem_slots, 1):
         access = mem.access_type if hasattr(mem, 'access_type') else '?'
         mem_type = mem.mem_type if hasattr(mem, 'mem_type') else '?'
         size = mem.size if hasattr(mem, 'size') else '?'

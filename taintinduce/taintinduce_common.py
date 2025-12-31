@@ -1,6 +1,6 @@
 import itertools
 import sys
-from typing import Any, ClassVar, Optional, Sequence
+from typing import Any, ClassVar, Optional, Sequence, TypeAlias
 
 import taintinduce.isa.x86_registers as x86_registers
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
@@ -8,12 +8,13 @@ from taintinduce.isa.register import Register
 from taintinduce.serialization import (
     MemorySlot,
     SerializableMixin,
-    StateFormat,
-    TaintRule,
+)
+from taintinduce.serialization import (
+    TaintInduceDecoder as BaseDecoder,
 )
 
-# Replaced squirrel imports with our own serialization
-from taintinduce.serialization import TaintInduceDecoder as BaseDecoder
+# Type alias for register-mapped CPU state representation
+CpuRegisterMap: TypeAlias = dict[Register, int]
 
 
 class TaintInduceDecoder(BaseDecoder):
@@ -147,8 +148,8 @@ def pos2reg(state1: 'State', state2: 'State', regs: Sequence[Register]) -> list[
     return list(res_regs)
 
 
-def regs2bits(cpustate: dict[Register, int], state_format: Sequence[Register]) -> 'State':
-    """Converts CPUState into a State object using state_format
+def regs2bits(cpustate: CpuRegisterMap, state_format: Sequence[Register]) -> 'State':
+    """Converts CpuRegisterMap into a State object using state_format
     state: cpu_state dict()
     """
     bits = 0
@@ -160,8 +161,8 @@ def regs2bits(cpustate: dict[Register, int], state_format: Sequence[Register]) -
     return State(bits, value)
 
 
-def regs2bits2(cpustate: dict[Register, int], state_format: Sequence[Register]) -> 'State':
-    """Converts CPUState into a State object using state_format
+def regs2bits2(cpustate: CpuRegisterMap, state_format: Sequence[Register]) -> 'State':
+    """Converts CpuRegisterMap into a State object using state_format
     state: cpu_state dict()
     """
     bits = 0
@@ -175,12 +176,12 @@ def regs2bits2(cpustate: dict[Register, int], state_format: Sequence[Register]) 
     return State(bits, value)
 
 
-def bits2regs(state: 'State', regs: Sequence[Register]) -> dict[Register, int]:
+def bits2regs(state: 'State', regs: Sequence[Register]) -> CpuRegisterMap:
     """trans state object to cpu_state dict()
     state: State object
     reg  : regs list
     """
-    cpu_state: dict[Register, int] = {}
+    cpu_state: CpuRegisterMap = {}
     value = state.state_value
     regs_list = sorted(regs, key=lambda reg: reg.uc_const)
     for reg in regs_list:
@@ -330,6 +331,12 @@ class Observation(SerializableMixin):
         mutated_ios (list of IOPair): A list containing all IOPairs of mutated states.
     """  # noqa: E501
 
+    seed_io: tuple[State, State]
+    mutated_ios: list[tuple[State, State]]
+    bytestring: str
+    archstring: str
+    state_format: list[Register]
+
     def __init__(
         self,
         iopair: Optional[tuple[State, State]] = None,
@@ -354,7 +361,23 @@ class Observation(SerializableMixin):
 
         if repr_str:
             self.deserialize(repr_str)
+            if (
+                self.seed_io is None
+                or self.mutated_ios is None
+                or self.bytestring is None
+                or self.archstring is None
+                or self.state_format is None
+            ):
+                raise Exception('Invalid serialized Observation!')
         else:
+            if (
+                iopair is None
+                or mutated_iopairs is None
+                or bytestring is None
+                or archstring is None
+                or state_format is None
+            ):
+                raise Exception('Invalid arguments to Observation constructor!')
             self.seed_io = iopair
             self.mutated_ios = mutated_iopairs
             self.bytestring = bytestring
@@ -423,6 +446,57 @@ class TaintCondition(SerializableMixin):
         raise Exception('Not yet implemented')
 
 
+class TaintRuleFormat:
+    """State format metadata for serialized TaintRules.
+
+    Contains architecture info and register/memory layout for taint rules.
+    This is distinct from state_format (list[Register]) used for State decoding.
+    """
+
+    def __init__(
+        self,
+        arch: str,
+        registers: list[Register],
+        mem_slots: list[MemorySlot],
+    ) -> None:
+        self.arch: str = arch
+        self.registers: list[Register] = registers or []
+        self.mem_slots: list[MemorySlot] = mem_slots or []
+
+
+class TaintRule(SerializableMixin):
+    """
+    Simplified TaintRule to replace squirrel.acorn.acorn.TaintRule.
+    Represents taint propagation rules.
+    """
+
+    format: TaintRuleFormat
+    conditions: list[TaintCondition]
+    dataflows: list[dict[int, set[int]]]
+
+    def __init__(
+        self,
+        format: TaintRuleFormat,
+        conditions: list[TaintCondition],
+        dataflows: list[dict[int, set[int]]],
+    ) -> None:
+        self.format = format
+        self.conditions = conditions
+        self.dataflows = [{} for _ in dataflows]
+        for df_id, dataflow in enumerate(dataflows):
+            for src_pos in dataflow:
+                self.dataflows[df_id][src_pos] = dataflow[src_pos].copy()
+
+    def __str__(self) -> str:
+        # Handle both list and TaintRuleFormat objects
+        num_regs = len(self.format.registers) + len(self.format.mem_slots)
+
+        return f'TaintRule(format={num_regs} regs, conditions={len(self.conditions)}, dataflows={len(self.dataflows)})'
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
 def reg2memslot(reg: Register) -> MemorySlot:
     assert 'MEM' in reg.name
     mem_access: Optional[str] = None
@@ -455,6 +529,10 @@ class Rule(SerializableMixin):
             being used and the set being the bit position being defined.
     """
 
+    state_format: list[Register]
+    conditions: list[TaintCondition]
+    dataflows: list[dict[int, set[int]]]
+
     def __init__(
         self,
         state_format: Optional[list[Register]] = None,
@@ -464,30 +542,29 @@ class Rule(SerializableMixin):
     ) -> None:
         if repr_str:
             self.deserialize(repr_str)
+            if self.state_format is None or self.conditions is None or self.dataflows is None:
+                raise Exception('Invalid serialized Rule!')
         else:
-            self.state_format = state_format if state_format is not None else []
-            self.conditions = conditions if conditions is not None else []
-            self.dataflows = dataflows if dataflows is not None else [{}]
+            if state_format is None or conditions is None or dataflows is None:
+                raise Exception('Invalid arguments to Rule constructor!')
+            self.state_format = state_format
+            self.conditions = conditions
+            self.dataflows = dataflows
 
     def convert2squirrel(self, archstring: str) -> TaintRule:
         """Convert internal representation to TaintRule format."""
         g = archstring
-        reg_list = []
-        mem_list = []
+        reg_list: list[Register] = []
+        mem_list: list[MemorySlot] = []
         for reg in self.state_format:
             if 'MEM' in reg.name:
                 mem_list.append(reg2memslot(reg))
             else:
                 reg_list.append(reg)
 
-        state_format = StateFormat(g, reg_list, mem_list)
+        taint_rule_format = TaintRuleFormat(g, reg_list, mem_list)
         # Use TaintCondition objects directly - they're already serializable
-        taintrule = TaintRule(state_format, self.conditions)
-
-        for df_id, dataflow in enumerate(self.dataflows):
-            for src_pos in dataflow:
-                taintrule.dataflows[df_id][src_pos] = dataflow[src_pos].copy()
-        return taintrule
+        return TaintRule(taint_rule_format, self.conditions, self.dataflows)
 
     def web_string(self) -> str:
         mystr_list = []
