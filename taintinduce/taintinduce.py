@@ -129,11 +129,14 @@ def main() -> None:
     taintrule = rule.convert2squirrel(args.arch)
     if args.output_dir:
         with open(rule_path, 'w') as myfile:
-            myfile.write(taintrule.serialize())
+            json.dump(taintrule, myfile, cls=TaintInduceEncoder, indent=2)
 
-    q = taintrule.serialize()
-    qq = TaintRule.deserialize(q)
-    print(qq)
+    # Verify serialization round-trip
+    # serialized = json.dumps(taintrule, cls=TaintInduceEncoder)
+    # deserialized = json.loads(serialized, cls=TaintInduceDecoder)
+    # if taintrule != deserialized:
+    #     print('Serialization round-trip failed!')
+    #     return
     print('Writing rule to {}'.format(rule_path))
     print('')
 

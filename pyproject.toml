@@ -171,13 +171,13 @@ warn_unused_ignores = true
 warn_unused_configs = true
 namespace_packages = true
 pretty = true
-files = ["taintinduce/**/*.py"]
 exclude = [
     ".venv/",
     ".git/",
     "__pycache__/",
     "output/",
     "peekaboo/",
+    "tools/",
 ]
 
 [[tool.mypy.overrides]]

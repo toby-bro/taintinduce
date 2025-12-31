@@ -102,6 +102,24 @@ class TaintRuleFormat:
         self.registers: list[Register] = registers or []
         self.mem_slots: list[MemorySlot] = mem_slots or []
 
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, TaintRuleFormat):
+            return False
+        return (
+            self.arch == value.arch
+            and all(r1 == r2 for r1, r2 in zip(self.registers, value.registers, strict=True))
+            and all(m1 == m2 for m1, m2 in zip(self.mem_slots, value.mem_slots, strict=True))
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.arch,
+                tuple(self.registers),
+                tuple(self.mem_slots),
+            ),
+        )
+
 
 class TaintRule(SerializableMixin):
     """Taint propagation rule for an instruction.
@@ -133,6 +151,27 @@ class TaintRule(SerializableMixin):
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, TaintRule):
+            return False
+        return (
+            self.format == value.format
+            and self.conditions == value.conditions
+            and all(
+                all(self.dataflows[i][k] == value.dataflows[i][k] for k in self.dataflows[i] if k in value.dataflows[i])
+                for i in range(len(self.dataflows))
+            )
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.format,
+                tuple(self.conditions),
+                tuple(frozenset((k, frozenset(v)) for k, v in df.items()) for df in self.dataflows),
+            ),
+        )
 
 
 def reg2memslot(reg: Register) -> MemorySlot:
