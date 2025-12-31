@@ -11,7 +11,33 @@ import json
 import sys
 from pathlib import Path
 
+from taintinduce.rules import TaintRule
 from taintinduce.serialization import TaintInduceDecoder
+from taintinduce.state import Observation
+
+
+def _print_dataflow_propagations(dataflow: dict[int, set[int]]) -> None:
+    """Print sample taint propagations for a dataflow."""
+    if not dataflow:
+        return
+
+    print('\n   Sample taint propagations (input bit → output bits):')
+    for _, (src_bit, dest_bits) in enumerate(list(dataflow.items())[:5]):
+        # Handle sets that were serialized
+        dest_list = sorted(dest_bits)
+
+        # Convert src_bit to int if it's a string
+        src_bit_val = src_bit
+
+        if len(dest_list) > 10:
+            print(
+                f"     Bit {src_bit_val:3d} → [{', '.join(map(str, dest_list[:5]))}... +{len(dest_list)-5} more]",
+            )
+        else:
+            print(f'     Bit {src_bit_val:3d} → {dest_list}')
+
+    if len(dataflow) > 5:
+        print(f'     ... and {len(dataflow) - 5} more input bits')
 
 
 def read_rule(rule_file: str) -> None:
@@ -22,6 +48,9 @@ def read_rule(rule_file: str) -> None:
 
     with open(rule_file, 'r') as f:
         rule = json.load(f, cls=TaintInduceDecoder)
+    if not isinstance(rule, TaintRule):
+        print('❌ Error: Loaded object is not a TaintRule.')
+        return
 
     print(f'\n📊 Rule: {rule}')
     print('\n🏗️  State Format:')
@@ -41,30 +70,7 @@ def read_rule(rule_file: str) -> None:
     print(f'\n🔀 Dataflows ({len(rule.dataflows)} dataflow sets):')
     for df_id, dataflow in enumerate(rule.dataflows):
         print(f'   Dataflow {df_id}: {len(dataflow)} input bits tracked')
-
-        if dataflow:
-            print('\n   Sample taint propagations (input bit → output bits):')
-            for _, (src_bit, dest_bits) in enumerate(list(dataflow.items())[:5]):
-                # Handle sets that were serialized
-                if isinstance(dest_bits, dict) and '_set' in dest_bits:
-                    dest_list = dest_bits['values']
-                elif isinstance(dest_bits, set):
-                    dest_list = sorted(dest_bits)
-                else:
-                    dest_list = dest_bits
-
-                # Convert src_bit to int if it's a string
-                src_bit_val = int(src_bit) if isinstance(src_bit, str) else src_bit
-
-                if len(dest_list) > 10:
-                    print(
-                        f"     Bit {src_bit_val:3d} → [{', '.join(map(str, dest_list[:5]))}... +{len(dest_list)-5} more]",  # noqa: E501
-                    )
-                else:
-                    print(f'     Bit {src_bit_val:3d} → {dest_list}')
-
-            if len(dataflow) > 5:
-                print(f'     ... and {len(dataflow) - 5} more input bits')
+        _print_dataflow_propagations(dataflow)
 
     print(f'\n🎯 Conditions: {len(rule.conditions)}')
     if rule.conditions:
@@ -84,11 +90,17 @@ def read_observations(obs_file: str, limit: int = 5) -> None:
 
     with open(obs_file, 'r') as f:
         obs_list = json.load(f, cls=TaintInduceDecoder)
+    if not isinstance(obs_list, list):
+        print('❌ Error: Expected a list of observations in the file.')
+        return
 
     print(f'\n📝 Total observations: {len(obs_list)}')
 
     if obs_list:
         first_obs = obs_list[0]
+        if not isinstance(first_obs, Observation):
+            print('❌ Error: Invalid observation structure.')
+            return
         print('\n📊 Observation structure:')
         print(f'   Instruction: {first_obs.bytestring} ({first_obs.archstring})')
         print(f'   State format: {len(first_obs.state_format)} elements')
@@ -97,6 +109,7 @@ def read_observations(obs_file: str, limit: int = 5) -> None:
 
         print(f'\n🔍 Showing first {min(limit, len(obs_list))} observations:')
         for i, obs in enumerate(obs_list[:limit]):
+            assert isinstance(obs, Observation)
             seed_in, seed_out = obs.seed_io
             print(f'\n   Observation {i+1}:')
             print(f'     Seed input state:  {seed_in.num_bits} bits, value={hex(seed_in.state_value)[:20]}...')
