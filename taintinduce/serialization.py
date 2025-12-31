@@ -5,10 +5,7 @@ Uses dataclasses + custom JSON encoder/decoder for object serialization.
 
 import importlib
 import json
-from typing import TYPE_CHECKING, Any, Callable, Optional, Self, TypeVar
-
-if TYPE_CHECKING:
-    from taintinduce.isa_registers import RegisterBase
+from typing import Any, Optional, Self, TypeVar
 
 T = TypeVar('T')
 
@@ -139,22 +136,3 @@ class MemorySlot:
     @staticmethod
     def get_mem(slot_id: int, access_type: str, size: int, mem_type: str) -> 'MemorySlot':
         return MemorySlot(slot_id, access_type, size, mem_type)
-
-
-# Registry for architecture-specific register implementations
-_register_archs: dict[str, type['RegisterBase']] = {}
-
-
-def register_arch(arch_name: str) -> Callable[[type['RegisterBase']], type['RegisterBase']]:
-    """Decorator to register architecture implementations."""
-
-    def decorator(cls: type['RegisterBase']) -> type['RegisterBase']:
-        _register_archs[arch_name] = cls
-        return cls
-
-    return decorator
-
-
-def get_register_arch(arch_name: str) -> Optional[type['RegisterBase']]:
-    """Get the register class for a specific architecture."""
-    return _register_archs.get(arch_name)

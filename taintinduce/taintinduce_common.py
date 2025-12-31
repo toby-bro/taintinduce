@@ -4,9 +4,9 @@ from typing import Any, ClassVar, Optional, Sequence
 
 import taintinduce.isa.x86_registers as x86_registers
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
-from taintinduce.isa.isa import Register
-from taintinduce.isa_registers import MemorySlot, get_register_arch
+from taintinduce.isa.register import Register
 from taintinduce.serialization import (
+    MemorySlot,
     SerializableMixin,
     StateFormat,
     TaintRule,
@@ -258,26 +258,6 @@ def espresso2cond(espresso_cond: set[tuple[int, int]]) -> 'TaintCondition':
     return TaintCondition(('DNF', list(espresso_cond)))
 
 
-def serialize_list(baseobj_list: Sequence[Any]) -> list[tuple[str, str]]:
-    return [serialize_obj(x) for x in baseobj_list]
-
-
-def deserialize_list(baseobj_list: Sequence[tuple[str, str]]) -> list[Any]:
-    return [deserialize_obj(x) for x in baseobj_list]
-
-
-def serialize_obj(myobj: Any) -> tuple[str, str]:
-    return (myobj.__class__.__name__, repr(myobj))
-
-
-def deserialize_obj(serialized_str: tuple[str, str]) -> Any:
-    # print(serialized_str)
-    class_name, obj_str = serialized_str
-    class_obj = globals()[class_name]()
-    class_obj.deserialize(obj_str)
-    return class_obj
-
-
 class State(SerializableMixin):
     """Represention of the input / output of an instruction.
     Attributes:
@@ -492,18 +472,13 @@ class Rule(SerializableMixin):
     def convert2squirrel(self, archstring: str) -> TaintRule:
         """Convert internal representation to TaintRule format."""
         g = archstring
-        ISARegister = get_register_arch(g)
         reg_list = []
         mem_list = []
         for reg in self.state_format:
             if 'MEM' in reg.name:
                 mem_list.append(reg2memslot(reg))
             else:
-                if ISARegister:
-                    sq_reg = ISARegister.get_reg(reg.name)
-                    reg_list.append(sq_reg)
-                else:
-                    reg_list.append(reg)  # Fallback to original register
+                reg_list.append(reg)
 
         state_format = StateFormat(g, reg_list, mem_list)
         # Use TaintCondition objects directly - they're already serializable

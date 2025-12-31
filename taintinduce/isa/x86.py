@@ -1,9 +1,10 @@
 from capstone import CS_ARCH_X86, CS_MODE_32
-from keystone import KS_ARCH_X86, KS_MODE_32
+from keystone.keystone_const import KS_ARCH_X86, KS_MODE_32
 from unicorn import UC_ARCH_X86, UC_MODE_32
 
 from . import x86_registers
-from .isa import ISA, Register
+from .isa import ISA
+from .register import Register
 
 
 # x86 architecture
@@ -140,12 +141,16 @@ class X86(ISA):
 
         self.cond_reg = x86_registers.X86_REG_EFLAGS()
 
-    def name2reg(self, name: str) -> Register | tuple[Register, Register]:
+    def name2mem(self, name: str) -> tuple[Register, Register]:
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
-        if 'MEM' in name:
-            return (getattr(x86_registers, f'X86_{name}')(), getattr(x86_registers, f'X86_{name}_ADDR32')())
+        return (getattr(x86_registers, f'X86_{name}')(), getattr(x86_registers, f'X86_{name}_ADDR32')())
+
+    def name2reg(self, name: str) -> Register:
+        name = name.upper()
+        name = name.replace('(', '')
+        name = name.replace(')', '')
 
         return getattr(x86_registers, f'X86_REG_{name}')()
 

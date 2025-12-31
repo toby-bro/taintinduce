@@ -1,9 +1,13 @@
 from typing import Optional
 
 from tqdm import tqdm
-from unicorn import UcError
+from unicorn.unicorn import UcError
 
-from taintinduce.isa.isa import Register
+from taintinduce.isa.amd64 import AMD64
+from taintinduce.isa.arm64 import ARM64
+from taintinduce.isa.isa import ISA
+from taintinduce.isa.register import Register
+from taintinduce.isa.x86 import X86
 from taintinduce.observation_engine.strategy import BitFill, Bitwalk, IEEE754Extended, RandomNumber, ZeroWalk
 from taintinduce.taintinduce_common import Observation, State, regs2bits
 from taintinduce.unicorn_cpu.unicorn_cpu import OutOfRangeException, UnicornCPU
@@ -12,8 +16,19 @@ from .strategy import SeedVariation, Strategy
 
 
 class ObservationEngine(object):
+    arch: ISA
+
     def __init__(self, bytestring: str, archstring: str, state_format: list) -> None:
-        self.arch = globals()[archstring]()
+        match archstring:
+            case 'X86':
+                self.arch = X86()
+            case 'AMD64':
+                self.arch = AMD64()
+            case 'ARM64':
+                self.arch = ARM64()
+            case _:
+                raise Exception('Unsupported architecture: {}'.format(archstring))
+
         self.cpu = UnicornCPU(archstring)
         bytecode = bytes.fromhex(bytestring)  # noqa: F841
 

@@ -1,9 +1,10 @@
 from capstone import CS_ARCH_ARM64, CS_MODE_ARM
-from keystone import KS_ARCH_ARM64, KS_MODE_LITTLE_ENDIAN
+from keystone.keystone_const import KS_ARCH_ARM64, KS_MODE_LITTLE_ENDIAN
 from unicorn import UC_ARCH_ARM64, UC_MODE_ARM
 
 from . import arm64_registers
-from .isa import ISA, Register
+from .isa import ISA
+from .register import Register
 
 
 # Arm64 architecture
@@ -453,10 +454,13 @@ class ARM64(ISA):
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
-        if 'MEM' in name:
-            return getattr(arm64_registers, f'ARM64_{name}')()
-
         return getattr(arm64_registers, f'ARM64_REG_{name}')()
+
+    def name2mem(self, name: str) -> tuple[Register, Register]:
+        name = name.upper()
+        name = name.replace('(', '')
+        name = name.replace(')', '')
+        return (getattr(arm64_registers, f'ARM64_{name}')(), getattr(arm64_registers, f'ARM64_{name}_ADDR64')())
 
     def op2reg(self, name: str, size: int, structure: list[int] = []) -> Register:  # noqa: B006
         name = name.upper()

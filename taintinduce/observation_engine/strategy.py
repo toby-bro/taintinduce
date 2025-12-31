@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Sequence
 
-from taintinduce.isa.isa import Register
+from taintinduce.isa.register import Register
 
 """
 All Strategy classes must implement generator(regs) that returns a list of seed_variations.

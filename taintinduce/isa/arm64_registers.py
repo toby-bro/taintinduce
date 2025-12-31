@@ -1,6 +1,6 @@
 import unicorn.arm64_const as uc_arm64
 
-from .isa import Register
+from .register import Register
 
 
 class ARM64_MEM_READ1(Register):
@@ -28,6 +28,36 @@ class ARM64_MEM_WRITE1(Register):
         self.name = 'MEM_WRITE1'
         self.uc_const = uc_arm64.UC_ARM64_REG_ENDING + 3
         self.bits = 0
+        self.structure = []
+        self.value = 0
+        self.address = 0
+
+
+class ARM64_MEM_READ1_ADDR64(Register):
+    def __init__(self):
+        self.name = 'MEM_READ1_ADDR64'
+        self.uc_const = uc_arm64.UC_ARM64_REG_ENDING + 4
+        self.bits = 64
+        self.structure = []
+        self.value = 0
+        self.address = 0
+
+
+class ARM64_MEM_READ2_ADDR64(Register):
+    def __init__(self):
+        self.name = 'MEM_READ2_ADDR64'
+        self.uc_const = uc_arm64.UC_ARM64_REG_ENDING + 5
+        self.bits = 64
+        self.structure = []
+        self.value = 0
+        self.address = 0
+
+
+class ARM64_MEM_WRITE1_ADDR64(Register):
+    def __init__(self):
+        self.name = 'MEM_WRITE1_ADDR64'
+        self.uc_const = uc_arm64.UC_ARM64_REG_ENDING + 6
+        self.bits = 64
         self.structure = []
         self.value = 0
         self.address = 0

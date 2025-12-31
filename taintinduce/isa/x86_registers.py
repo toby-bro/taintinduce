@@ -1,6 +1,6 @@
 import unicorn.x86_const as uc_x86
 
-from .isa import Register
+from .register import Register
 
 
 class X86_REG_AH(Register):

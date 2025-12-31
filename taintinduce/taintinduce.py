@@ -10,7 +10,7 @@ import taintinduce.disassembler.insn_info as insn_info
 import taintinduce.inference_engine.inference as inference_engine
 import taintinduce.observation_engine.observation as observation_engine
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
-from taintinduce.isa.isa import Register
+from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
 
 # Replaced squirrel imports with our own serialization

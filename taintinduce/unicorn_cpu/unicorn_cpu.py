@@ -4,13 +4,16 @@ from binascii import unhexlify
 from typing import Any, Optional, Sequence
 
 import capstone as cs
-import keystone as ks
-import unicorn as uc
+import keystone.keystone as ks
+import unicorn.unicorn as unc
+import unicorn.unicorn_const as uc_const
 
+from taintinduce.isa import x86_registers
 from taintinduce.isa.amd64 import AMD64
-from taintinduce.isa.isa import Register
+from taintinduce.isa.arm64 import ARM64
+from taintinduce.isa.isa import ISA
+from taintinduce.isa.register import Register
 from taintinduce.isa.x86 import X86
-from taintinduce.isa.x86_registers import X86_REG_FPSW
 
 from . import cpu
 
@@ -110,11 +113,21 @@ class OutOfRangeException(Exception):
 
 
 class UnicornCPU(cpu.CPU):
+    arch: ISA
+
     def __init__(self, archstring: str, debug: bool = False) -> None:
         self.debug: bool = debug
-        self.arch = globals()[archstring]()
+        match archstring:
+            case 'X86':
+                self.arch = X86()
+            case 'AMD64':
+                self.arch = AMD64()
+            case 'ARM64':
+                self.arch = ARM64()
+            case _:
+                raise Exception('Unsupported architecture: {}'.format(archstring))
         self.ks: ks.Ks = ks.Ks(self.arch.ks_arch[0], self.arch.ks_arch[1])
-        self.mu: uc.Uc = uc.Uc(self.arch.uc_arch[0], self.arch.uc_arch[1])
+        self.mu: unc.Uc = unc.Uc(self.arch.uc_arch[0], self.arch.uc_arch[1])
         self.md: cs.Cs = cs.Cs(self.arch.cs_arch[0], self.arch.cs_arch[1])
 
         self.pc_reg: Register = self.arch.pc_reg
@@ -127,12 +140,12 @@ class UnicornCPU(cpu.CPU):
 
         self.mu.mem_map(self.arch.code_addr, self.arch.code_mem)
         self._mem_invalid_hook_handle = self.mu.hook_add(
-            uc.UC_HOOK_MEM_READ_UNMAPPED | uc.UC_HOOK_MEM_WRITE_UNMAPPED,
+            uc_const.UC_HOOK_MEM_READ_UNMAPPED | uc_const.UC_HOOK_MEM_WRITE_UNMAPPED,
             self._invalid_mem,
         )
         # self._mem_invalid_hook2 = self.mu.hook_add(UC_HOOK_MEM_FETCH_UNMAPPED, self._invalid_mem_fetch)
         self._code_hook_handle = self.mu.hook_add(
-            uc.UC_HOOK_CODE,
+            uc_const.UC_HOOK_CODE,
             self._code_hook,
             None,
             self.arch.code_addr,
@@ -143,7 +156,7 @@ class UnicornCPU(cpu.CPU):
         # self.rw_struct = [[0,0],[None, None, None], False]
         self.rw_struct: list[Any] = [[0, 0], [None, None, False], False]
         self._mem_rw_hook_handle = self.mu.hook_add(
-            uc.UC_HOOK_MEM_WRITE | uc.UC_HOOK_MEM_READ,
+            uc_const.UC_HOOK_MEM_WRITE | uc_const.UC_HOOK_MEM_READ,
             self._mem_hook,
             self.rw_struct,
         )
@@ -169,7 +182,7 @@ class UnicornCPU(cpu.CPU):
 
     def _invalid_mem(
         self,
-        uc: Any,
+        uc: Any,  # noqa: ARG002
         access: int,  # noqa: ARG002
         address: int,
         size: int,
@@ -181,16 +194,16 @@ class UnicornCPU(cpu.CPU):
         page_addresses.add(address & ~0b111111111111)
         page_addresses.add(address + size & ~0b111111111111)
         for page_address in page_addresses:
-            uc.mem_map(page_address, 4096)
+            self.mu.mem_map(page_address, 4096)
             # for x in range(4096):
-            #    uc.mem_write(page_address+x, '\x04')
+            #    self.mu.mem_write(page_address+x, '\x04')
             self.pages.add(page_address)
         return True
 
     def _mem_read(self, address: int, size: int, value: int, count: int) -> bool:  # noqa: ARG002
         mem_reg_name = 'MEM_READ{}'.format(count)
-        mem_reg = globals()['X86_{}'.format(mem_reg_name)]()
-        mem_addr_reg = globals()['X86_{}_ADDR{}'.format(mem_reg_name, self.arch.addr_space)]()
+        mem_reg = getattr(x86_registers, 'X86_{}'.format(mem_reg_name))()
+        mem_addr_reg = getattr(x86_registers, 'X86_{}_ADDR{}'.format(mem_reg_name, self.arch.addr_space))()
         assert mem_reg
         try:
             self.mu.mem_write(address, long_to_bytes(self.mem_regs[mem_reg], size * 8))
@@ -202,8 +215,8 @@ class UnicornCPU(cpu.CPU):
 
     def _mem_write(self, address: int, size: int, value: int, count: int) -> bool:  # noqa: ARG002
         mem_reg_name = 'MEM_WRITE{}'.format(count)
-        mem_reg = globals()['X86_{}'.format(mem_reg_name)]()
-        mem_addr_reg = globals()['X86_{}_ADDR{}'.format(mem_reg_name, self.arch.addr_space)]()
+        mem_reg = getattr(x86_registers, 'X86_{}'.format(mem_reg_name))()
+        mem_addr_reg = getattr(x86_registers, 'X86_{}_ADDR{}'.format(mem_reg_name, self.arch.addr_space))()
         assert mem_reg
         self.write_reg(mem_reg, value)
         self.mem_addrs[mem_addr_reg] = address
@@ -211,7 +224,7 @@ class UnicornCPU(cpu.CPU):
 
     def _mem_hook(
         self,
-        uc: Any,
+        uc: Any,  # noqa: ARG002
         access: int,
         address: int,
         size: int,
@@ -228,14 +241,14 @@ class UnicornCPU(cpu.CPU):
         #    return True
         value = sign2unsign(value, size * 8)
         if is_increase(address, size, user_data[1]):
-            if access == uc.UC_MEM_READ:
+            if access == uc_const.UC_MEM_READ:
                 user_data[0][0] += 1
-            elif access == uc.UC_MEM_WRITE:
+            elif access == uc_const.UC_MEM_WRITE:
                 user_data[0][1] += 1
-        if access == uc.UC_MEM_READ:
+        if access == uc_const.UC_MEM_READ:
             # user_data[0][0] += 1
             self._mem_read(address, size, value, user_data[0][0])
-        elif access == uc.UC_MEM_WRITE:
+        elif access == uc_const.UC_MEM_WRITE:
             # user_data[0][1] += 1
             self._mem_write(address, size, value, user_data[0][1])
         else:
@@ -268,7 +281,7 @@ class UnicornCPU(cpu.CPU):
         mem_access: dict[int, tuple[int, int, Optional[int]]] = {}
         state: list[Optional[int]] = [None, None, None]
         test_mem_state = (mem_access, state)
-        h = self.mu.hook_add(uc.UC_HOOK_MEM_READ | uc.UC_HOOK_MEM_WRITE, self._test_mem, test_mem_state)
+        h = self.mu.hook_add(uc_const.UC_HOOK_MEM_READ | uc_const.UC_HOOK_MEM_WRITE, self._test_mem, test_mem_state)
         self.mu.hook_del(self._mem_rw_hook_handle)
 
         count = 0
@@ -282,7 +295,7 @@ class UnicornCPU(cpu.CPU):
             self.randomize_regs()
             try:
                 sa, sb = self.execute(code)
-            except uc.UcError as e:
+            except unc.UcError as e:
                 # print(e)
                 # print(e.errno)
                 fail += 1
@@ -345,12 +358,12 @@ class UnicornCPU(cpu.CPU):
             rc = 0
             for _, (access, size, _) in mem_access.items():
                 mem_reg = None
-                if access == uc.UC_MEM_WRITE:
+                if access == uc_const.UC_MEM_WRITE:
                     wc += 1
-                    mem_reg, addr_reg = self.arch.name2reg('MEM_WRITE{}'.format(wc))
-                elif access == uc.UC_MEM_READ:
+                    mem_reg, addr_reg = self.arch.name2mem('MEM_WRITE{}'.format(wc))
+                elif access == uc_const.UC_MEM_READ:
                     rc += 1
-                    mem_reg, addr_reg = self.arch.name2reg('MEM_READ{}'.format(rc))
+                    mem_reg, addr_reg = self.arch.name2mem('MEM_READ{}'.format(rc))
                 else:
                     raise Exception
 
@@ -368,7 +381,7 @@ class UnicornCPU(cpu.CPU):
 
         self.mu.hook_del(h)
         self._mem_rw_hook_handle = self.mu.hook_add(
-            uc.UC_HOOK_MEM_WRITE | uc.UC_HOOK_MEM_READ,
+            uc_const.UC_HOOK_MEM_WRITE | uc_const.UC_HOOK_MEM_READ,
             self._mem_hook,
             self.rw_struct,
         )
@@ -484,7 +497,7 @@ class UnicornCPU(cpu.CPU):
 
     def init_state(self) -> None:
         if isinstance(self.arch, AMD64) or isinstance(self.arch, X86):
-            self.write_reg(X86_REG_FPSW(), 0)
+            self.write_reg(x86_registers.X86_REG_FPSW(), 0)
 
         # TODO: have to figure out how to remove this state... :(
         self.rw_struct[0] = [0, 0]
@@ -504,8 +517,8 @@ class UnicornCPU(cpu.CPU):
             self.mu.mem_write(self.arch.code_addr, code)
             start_pc = self.read_reg(self.pc_reg)  # noqa: F841
             self.mu.emu_start(self.arch.code_addr, self.arch.code_addr + len(code))
-        except uc.UcError as e:
-            if e.errno != uc.UC_ERR_FETCH_UNMAPPED:
+        except unc.UcError as e:
+            if e.errno != uc_const.UC_ERR_FETCH_UNMAPPED:
                 raise e
 
         if self.rw_struct[2]:

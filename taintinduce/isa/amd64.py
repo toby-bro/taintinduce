@@ -1,9 +1,10 @@
 from capstone import CS_ARCH_X86, CS_MODE_64
-from keystone import KS_ARCH_X86, KS_MODE_64
+from keystone.keystone_const import KS_ARCH_X86, KS_MODE_64
 from unicorn import UC_ARCH_X86, UC_MODE_64
 
 from . import x86_registers
-from .isa import ISA, Register
+from .isa import ISA
+from .register import Register
 
 
 # x64 architecture
@@ -214,14 +215,17 @@ class AMD64(ISA):
 
         self.cond_reg = x86_registers.X86_REG_EFLAGS()
 
-    def name2reg(self, name: str) -> Register | tuple[Register, Register]:
+    def name2reg(self, name: str) -> Register:
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
-        if 'MEM' in name:
-            return (getattr(x86_registers, f'X86_{name}')(), getattr(x86_registers, f'X86_{name}_ADDR64')())
-
         return getattr(x86_registers, f'X86_REG_{name}')()
+
+    def name2mem(self, name: str) -> tuple[Register, Register]:
+        name = name.upper()
+        name = name.replace('(', '')
+        name = name.replace(')', '')
+        return (getattr(x86_registers, f'X86_{name}')(), getattr(x86_registers, f'X86_{name}_ADDR64')())
 
     def create_full_reg(self, name: str, bits: int = 0, structure: list[int] = []) -> Register:  # noqa: B006
         name = name.upper()

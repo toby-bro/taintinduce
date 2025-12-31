@@ -7,8 +7,7 @@ from taintinduce.disassembler.exceptions import (
     UnsupportedSizeException,
 )
 from taintinduce.isa import amd64, arm64, x86
-from taintinduce.isa.isa import Register
-from taintinduce.isa_registers import RegisterBase, get_register_arch
+from taintinduce.isa.register import Register
 from taintinduce.taintinduce_common import InsnInfo
 
 
@@ -26,7 +25,6 @@ class Disassembler(object):
                             bytes
         """
         self.archstring = arch_str
-        ISARegister: type[RegisterBase] | None = None
         if arch_str == 'X86':
             self.arch = x86.X86()
         elif arch_str == 'AMD64':
@@ -36,16 +34,8 @@ class Disassembler(object):
         else:
             raise UnsupportedArchException
 
-        ISARegister = get_register_arch(arch_str)
-        if ISARegister is None:
-            raise UnsupportedArchException
-
         self.bytestring = bytestring
         dis = SquirrelDisassemblerZydis(arch_str)
-
-        # Set the Capstone instance for register name resolution
-        if ISARegister and hasattr(dis, 'md'):
-            ISARegister.set_capstone_instance(dis.md)
 
         insn = dis.disassemble(bytestring)
 
@@ -53,11 +43,11 @@ class Disassembler(object):
         self.cs_reg_set = []
 
         for reg_i in insn.reg_reads():
-            reg_name = ISARegister.get_reg_name(reg_i)
+            reg_name = dis.md.reg_name(reg_i).upper() if dis.md else str(reg_i)
             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
 
         for reg_i in insn.reg_writes():
-            reg_name = ISARegister.get_reg_name(reg_i)
+            reg_name = dis.md.reg_name(reg_i).upper() if dis.md else str(reg_i)
             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
 
         # we don't fuck around with FPSW cause unicorn can't write stuff in it

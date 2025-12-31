@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Optional
 
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
-from taintinduce.isa.isa import Register
+from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
 from taintinduce.taintinduce_common import (
     Observation,
