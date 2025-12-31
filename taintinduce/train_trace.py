@@ -7,6 +7,7 @@ for unique instructions found in the trace.
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 from .pypeekaboo import PyPeekaboo
 from .serialization import TaintInduceEncoder
@@ -28,7 +29,7 @@ class RuleDatabase:
         """Check if a rule already exists."""
         return self.get_rule_path(arch, bytestring).exists()
 
-    def save_rule(self, arch: str, bytestring: str, rule_data: dict) -> None:
+    def save_rule(self, arch: str, bytestring: str, rule_data: dict[str, Any]) -> None:
         """Save a taint rule to disk."""
         rule_path = self.get_rule_path(arch, bytestring)
         with open(rule_path, 'w') as f:

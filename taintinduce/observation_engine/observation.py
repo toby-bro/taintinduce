@@ -9,7 +9,9 @@ from taintinduce.isa.isa import ISA
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86 import X86
 from taintinduce.observation_engine.strategy import BitFill, Bitwalk, IEEE754Extended, RandomNumber, ZeroWalk
-from taintinduce.taintinduce_common import CpuRegisterMap, Observation, State, regs2bits
+from taintinduce.state import Observation, State
+from taintinduce.state_utils import regs2bits
+from taintinduce.types import CpuRegisterMap
 from taintinduce.unicorn_cpu.unicorn_cpu import OutOfRangeException, UnicornCPU
 
 from .strategy import SeedVariation, Strategy

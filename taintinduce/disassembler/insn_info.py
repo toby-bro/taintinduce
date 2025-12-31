@@ -8,7 +8,7 @@ from taintinduce.disassembler.exceptions import (
 )
 from taintinduce.isa import amd64, arm64, x86
 from taintinduce.isa.register import Register
-from taintinduce.taintinduce_common import InsnInfo
+from taintinduce.rules import InsnInfo
 
 
 class Disassembler(object):

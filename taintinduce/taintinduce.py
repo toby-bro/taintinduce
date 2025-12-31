@@ -4,6 +4,7 @@ import argparse
 import binascii
 import json
 import os
+import sys
 from typing import Optional
 
 import taintinduce.disassembler.insn_info as insn_info
@@ -12,12 +13,42 @@ import taintinduce.observation_engine.observation as observation_engine
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
+from taintinduce.rules import InsnInfo, Rule, TaintRule
 
 # Replaced squirrel imports with our own serialization
 from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder
+from taintinduce.state import Observation
 from taintinduce.unicorn_cpu.unicorn_cpu import UnicornCPU
 
-from .taintinduce_common import InsnInfo, Observation, Rule, TaintRule
+
+def query_yes_no(question: str, default: Optional[str] = 'yes') -> bool:
+    """Ask a yes/no question via raw_input() and return their answer.
+
+    Args:
+        question: string that is presented to the user.
+        default: presumed answer if the user just hits <Enter>.
+            It must be "yes" (the default), "no" or None (meaning an answer is required).
+    Returns:
+        Boolean answer
+    """
+    valid = {'yes': True, 'y': True, 'ye': True, 'no': False, 'n': False}
+    if default is None:
+        prompt = ' [y/n] '
+    elif default == 'yes':
+        prompt = ' [Y/n] '
+    elif default == 'no':
+        prompt = ' [y/N] '
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while True:
+        sys.stdout.write(question + prompt)
+        choice = input().lower()
+        if default is not None and choice == '':
+            return valid[default]
+        if choice in valid:
+            return valid[choice]
+        sys.stdout.write("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
 
 
 def gen_insninfo(archstring: str, bytestring: str, emu_verify: bool = True) -> InsnInfo:

@@ -14,7 +14,7 @@ from taintinduce.isa.arm64 import ARM64
 from taintinduce.isa.isa import ISA
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86 import X86
-from taintinduce.taintinduce_common import CpuRegisterMap
+from taintinduce.types import CpuRegisterMap
 
 from . import cpu
 

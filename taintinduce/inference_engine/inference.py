@@ -1,32 +1,26 @@
 # Replaced squirrel import with our own
 import pdb
 from collections import defaultdict
-from typing import Optional, TypeAlias
+from typing import Optional
 
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
-from taintinduce.taintinduce_common import (
-    Observation,
-    Rule,
-    State,
-    TaintCondition,
-    espresso2cond,
-    extract_reg2bits,
-    shift_espresso,
+from taintinduce.rule_utils import espresso2cond, shift_espresso
+from taintinduce.rules import Rule, TaintCondition
+from taintinduce.state import Observation, State
+from taintinduce.state_utils import extract_reg2bits
+from taintinduce.types import (
+    BehaviorPattern,
+    BitPosition,
+    ConditionKey,
+    Dataflow,
+    DataflowSet,
+    ObservationDependency,
+    OutputBits,
 )
 
 from .logic import Espresso, EspressoException, NonOrthogonalException
-
-# Type aliases for clarity in taint inference
-BitPosition: TypeAlias = int
-OutputBits: TypeAlias = set[int]
-Dataflow: TypeAlias = dict[BitPosition, OutputBits]  # Maps input bit position → output bit positions
-BehaviorPattern: TypeAlias = tuple[int, ...]  # Tuple of output bit positions (sorted)
-MutatedInputStates: TypeAlias = dict[BitPosition, State]  # Maps flipped bit → mutated input state
-ObservationDependency: TypeAlias = tuple[Dataflow, MutatedInputStates, State]  # (dependencies, mutated_states, seed)
-ConditionKey: TypeAlias = tuple[TaintCondition, ...]  # Tuple of conditions
-DataflowSet: TypeAlias = set[tuple[BitPosition, tuple[BehaviorPattern, ...]]]  # Set of (bit_pos, behaviors)
 
 
 class InferenceEngine(object):
