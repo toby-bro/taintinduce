@@ -258,9 +258,10 @@ class RegFileARM64(Structure):
 
 
 ARCH_INFO = {
-    0: (RegFileX86, 'X86'),
-    1: (RegFileARM64, 'ARM64'),
-    2: (RegFileAMD64, 'AMD64'),
+    0: (RegFileARM64, 'AARCH32'),  # ARCH_AARCH32
+    1: (RegFileARM64, 'AARCH64'),  # ARCH_AARCH64 / ARM64
+    2: (RegFileX86, 'X86'),        # ARCH_X86
+    3: (RegFileAMD64, 'AMD64'),    # ARCH_AMD64
 }
 
 

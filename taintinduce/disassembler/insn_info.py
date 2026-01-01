@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 
+from capstone.arm64 import ARM64_OP_REG
+from capstone.x86 import X86_OP_REG
+
 from taintinduce.disassembler.compat import SquirrelDisassemblerZydis
 from taintinduce.disassembler.exceptions import (
     UnsupportedArchException,
@@ -42,13 +45,30 @@ class Disassembler(object):
         # capstone register set
         self.cs_reg_set = []
 
-        for reg_i in insn.reg_reads():
-            reg_name = dis.md.reg_name(reg_i).upper() if dis.md else str(reg_i)
+        # Add implicit register reads/writes
+        for reg_i in insn.regs_read:
+            reg_name = dis.md.reg_name(reg_i).upper()
             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
 
-        for reg_i in insn.reg_writes():
-            reg_name = dis.md.reg_name(reg_i).upper() if dis.md else str(reg_i)
+        for reg_i in insn.regs_write:
+            reg_name = dis.md.reg_name(reg_i).upper()
             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
+
+        # Add explicit register operands (fixed bug where EAX, EBX etc. weren't tracked)
+        for operand in insn.operands:
+            # Check if operand is a register (type varies by architecture)
+            if hasattr(operand, 'type'):
+                # Import the constants for register operand type check
+                if arch_str in ('X86', 'AMD64'):
+
+                    if operand.type == X86_OP_REG:
+                        reg_name = dis.md.reg_name(operand.reg).upper()
+                        self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
+                elif arch_str == 'ARM64':
+
+                    if operand.type == ARM64_OP_REG:
+                        reg_name = dis.md.reg_name(operand.reg).upper()
+                        self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
 
         # we don't fuck around with FPSW cause unicorn can't write stuff in it
         for reg in self.cs_reg_set:
