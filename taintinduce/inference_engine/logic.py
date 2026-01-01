@@ -2,7 +2,6 @@ import os
 import pickle
 import subprocess
 from importlib.resources import files
-from typing import Optional
 
 command_template = """
 .i {}
@@ -23,7 +22,7 @@ class NonOrthogonalException(Exception):
 
 
 class Espresso(object):
-    def __init__(self, path: Optional[str] = None) -> None:
+    def __init__(self) -> None:
         # Use importlib.resources instead of deprecated pkg_resources
         try:
             espresso_file = files('taintinduce.inference_engine').joinpath('espresso')
