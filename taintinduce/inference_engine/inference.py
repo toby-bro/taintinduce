@@ -27,7 +27,7 @@ class InferenceEngine(object):
     def __init__(self, espresso_path: str = './inference_engine/espresso') -> None:
         self.espresso = Espresso(espresso_path)
 
-    def infer(self, observations: list[Observation], cond_reg: Optional[X86_REG_EFLAGS | ARM64_REG_NZCV]) -> Rule:
+    def infer(self, observations: list[Observation], cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV) -> Rule:
         """Infers the dataflow of the instruction using the obesrvations.
 
         Args:
@@ -227,7 +227,7 @@ class InferenceEngine(object):
         partition1: set[State],
         partition2: set[State],
         state_format: list[Register],
-        cond_reg: Optional[X86_REG_EFLAGS | ARM64_REG_NZCV] = None,
+        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
     ) -> Optional[TaintCondition]:
         """
         Args:
@@ -243,20 +243,14 @@ class InferenceEngine(object):
         partition_false: set[int] = set()
         # pdb.set_trace()
         state_bits = 0
-        if cond_reg:
-            for state in partition1:
-                cond_reg_value = extract_reg2bits(state, cond_reg, state_format).state_value
-                partition_true.add(cond_reg_value)
-            for state in partition2:
-                cond_reg_value = extract_reg2bits(state, cond_reg, state_format).state_value
-                partition_false.add(cond_reg_value)
-            state_bits = cond_reg.bits
-        else:
-            for state in partition1:
-                partition_true.add(state.state_value)
-            for state in partition2:
-                partition_false.add(state.state_value)
-            state_bits = sum([reg.bits for reg in state_format])
+
+        for state in partition1:
+            cond_reg_value = extract_reg2bits(state, cond_reg, state_format).state_value
+            partition_true.add(cond_reg_value)
+        for state in partition2:
+            cond_reg_value = extract_reg2bits(state, cond_reg, state_format).state_value
+            partition_false.add(cond_reg_value)
+        state_bits = cond_reg.bits
 
         # print('True')
         # for val in partition_true:
@@ -277,8 +271,6 @@ class InferenceEngine(object):
             pdb.set_trace()
             raise e
 
-        if cond_reg is None:
-            return None
         # dnf_conditions (set{(int, int)}): A set of tuples (mask, value) representing a DNF formula.
         # Each tuple is a boolean formula in CNF (input & mask == value).
         dnf_condition = shift_espresso(dnf_condition, cond_reg, state_format)

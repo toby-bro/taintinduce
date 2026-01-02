@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from taintinduce.serialization import SerializableMixin
 
@@ -19,7 +18,7 @@ class ISA(ABC, SerializableMixin):
     pc_reg: Register
     flag_reg: list[Register]
     state_reg: list[Register]
-    cond_reg: Optional[X86_REG_EFLAGS | ARM64_REG_NZCV]
+    cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV
     uc_arch: tuple[int, int]
     ks_arch: tuple[int, int]
     cs_arch: tuple[int, int]

@@ -258,6 +258,11 @@ class Rule(SerializableMixin):
 class InsnInfo(SerializableMixin):
     """Instruction information including state format and conditional register."""
 
+    archstring: str
+    bytestring: str
+    state_format: list[Register]
+    cond_reg: x86_registers.X86_REG_EFLAGS | ARM64_REG_NZCV
+
     def __init__(
         self,
         *,
@@ -272,6 +277,8 @@ class InsnInfo(SerializableMixin):
         else:
             if state_format is None:
                 state_format = []
+            if archstring is None or bytestring is None or cond_reg is None:
+                raise Exception('Invalid arguments to InsnInfo constructor!')
             self.archstring = archstring
             self.bytestring = bytestring
             self.state_format = state_format

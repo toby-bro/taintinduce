@@ -16,18 +16,6 @@ def gen_obs_rule(archstring: str, bytestring: str) -> tuple[str, list[str], str]
     return (insninfo.serialize(), obs_str_list, rule.serialize())
 
 
-# def gen_observation(archstring, bytestring):
-#    insn = taintinduce.gen_insninfo(archstring, bytestring)
-#    obs_list = taintinduce.gen_obs(archstring, bytestring, insn.arch.cond_reg)
-#    return obs_list
-#
-# def gen_insninfo(archstring, bytestring):
-#    return taintinduce.gen_insninfo(archstring, bytestring)
-#
-# def infer(obs_list, cond_reg):
-#    return taintinduce.infer(obs_list, cond_reg)
-
-
 def test_connection() -> bool:
     return True
 

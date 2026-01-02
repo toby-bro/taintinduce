@@ -71,7 +71,7 @@ def gen_obs(archstring: str, bytestring: str, state_format: list[Register]) -> l
     return obs_engine.observe_insn()
 
 
-def infer(observations: list[Observation], cond_reg: Optional[X86_REG_EFLAGS | ARM64_REG_NZCV]) -> Rule:
+def infer(observations: list[Observation], cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV) -> Rule:
     infer_engine = inference_engine.InferenceEngine()
     return infer_engine.infer(observations, cond_reg)
 
@@ -108,9 +108,6 @@ def main() -> None:
     output_rule_file = args.bytestring + '_' + args.arch + '_rule.json'
     obs_path = os.path.join(args.output_dir, output_obs_file)
     rule_path = os.path.join(args.output_dir, output_rule_file)
-    if insn.bytestring is None:
-        print('Failed to disassemble instruction: {}'.format(args.bytestring))
-        return
 
     if args.skip_gen:
         assert args.output_dir
