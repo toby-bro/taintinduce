@@ -134,8 +134,8 @@ class UnicornCPU(cpu.CPU):
         self.pc_reg: Register = self.arch.pc_reg
         self.state_reg = self.arch.state_reg
         self.cpu_regs: list[Register] = self.arch.cpu_regs
-        self.mem_regs: CpuRegisterMap = {}
-        self.mem_addrs: CpuRegisterMap = {}
+        self.mem_regs = CpuRegisterMap()
+        self.mem_addrs = CpuRegisterMap()
         self.pages: set[int] = set()
         self.rep_cnt: int = 0
 
@@ -467,7 +467,7 @@ class UnicornCPU(cpu.CPU):
             print(fstr.format(reg.name, self.read_reg(reg)))
 
     def get_cpu_state(self) -> CpuRegisterMap:
-        result: CpuRegisterMap = {}
+        result = CpuRegisterMap()
 
         for reg in self.cpu_regs:
             result[reg] = self.read_reg(reg)

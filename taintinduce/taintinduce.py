@@ -119,6 +119,15 @@ def main() -> None:
     else:
         obs_list = gen_obs(args.arch, insn.bytestring, insn.state_format)
         print('Writing observations to {}'.format(obs_path))
+        # Verify serialization round-trip
+        # serialized = json.dumps(obs_list, cls=TaintInduceEncoder)
+        # deserialized = json.loads(serialized, cls=TaintInduceDecoder)
+        # if set(obs_list) != set(deserialized):
+        #     print('Serialization round-trip failed!')
+        #     return
+        # if obs_list != deserialized:
+        #     print('Serialization round-trip failed!')
+        #     return
         with open(obs_path, 'w') as f:
             json.dump(obs_list, f, cls=TaintInduceEncoder)
 

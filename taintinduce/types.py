@@ -4,35 +4,90 @@ This module contains all type aliases used throughout the codebase
 to make complex type signatures more readable.
 """
 
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, NewType
 
 from taintinduce.isa.register import Register
 
 # Forward declarations for circular type hints
 if TYPE_CHECKING:
-    from taintinduce.rules import TaintCondition
     from taintinduce.state import State
 
+
 # CPU state representation as register-value mapping
-CpuRegisterMap: TypeAlias = dict[Register, int]
+class CpuRegisterMap(dict[Register, int]):
+    """Maps CPU registers to their integer values."""
+
 
 # Taint dataflow types
-class BitPosition(int):
-    """Position of an input bit in the instruction's input state."""
 
-    def inc(self) -> None:
-        """Increment the BitPosition by 1."""
-        self.__add__(1)
+BitPosition = NewType('BitPosition', int)
 
 
-OutputBits: TypeAlias = set[int]
-Dataflow: TypeAlias = dict[BitPosition, OutputBits]  # Maps input bit position → output bit positions
-BehaviorPattern: TypeAlias = tuple[int, ...]  # Tuple of output bit positions (sorted)
-MutatedInputStates: TypeAlias = dict[BitPosition, 'State']  # Maps flipped bit → mutated input state
-ObservationDependency: TypeAlias = tuple[Dataflow, MutatedInputStates, 'State']  # (dependencies, mutated_states, seed)
-ConditionKey: TypeAlias = tuple['TaintCondition', ...]  # Tuple of conditions
-DataflowSet: TypeAlias = set[tuple[BitPosition, tuple[BehaviorPattern, ...]]]  # Set of (bit_pos, behaviors)
+class Dataflow(
+    dict[
+        BitPosition,
+        frozenset[BitPosition],
+    ],
+):
+    """Maps input bit position -> output bit positions"""
+
+    def inputs(self) -> set[BitPosition]:
+        """Get all input bit positions in the dataflow."""
+        return set(self.keys())
+
+    def get_modified_outputs(self, input_bit: BitPosition) -> frozenset[BitPosition]:
+        """Get all output bits tainted by the given input bit."""
+        return self.get(input_bit, frozenset())
+
+    def __getitem__(
+        self,
+        key: BitPosition,
+    ) -> frozenset[BitPosition]:  # I just added it but I think I should delete it...
+        if key not in self:
+            self[key] = frozenset()
+        return super().__getitem__(key)
 
 
-class StateValue(int):
-    """Integer representing a state value."""
+BehaviorPattern = NewType('BehaviorPattern', set[BitPosition])
+
+
+class MutatedInputStates(
+    dict[
+        BitPosition,
+        'State',
+    ],
+):
+    """Maps input bit position -> mutated input State."""
+
+    def mutated_bits(self) -> set[BitPosition]:
+        """Get all mutated input bit positions."""
+        return set(self.keys())
+
+    def get_input_state(self, bitpos: BitPosition) -> 'State':
+        """Get the mutated input State for a given bit position."""
+        return self[bitpos]
+
+
+class ObservationDependency:
+    """Holds dataflow and mutated inputs for a single observation."""
+
+    dataflow: Dataflow
+    mutated_inputs: MutatedInputStates
+    original_output: 'State'
+
+    def __init__(
+        self,
+        dataflow: Dataflow,
+        mutated_inputs: MutatedInputStates,
+        original_output: 'State',
+    ) -> None:
+        self.dataflow = dataflow
+        self.mutated_inputs = mutated_inputs
+        self.original_output = original_output
+
+
+class DataflowSet(dict[BitPosition, set[frozenset[BitPosition]]]):
+    """Set of (bit_pos, behaviors)."""
+
+
+StateValue = NewType('StateValue', int)

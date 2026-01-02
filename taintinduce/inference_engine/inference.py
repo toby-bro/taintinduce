@@ -11,21 +11,20 @@ from taintinduce.rules import Rule, TaintCondition
 from taintinduce.state import Observation, State
 from taintinduce.state_utils import extract_reg2bits
 from taintinduce.types import (
-    BehaviorPattern,
     BitPosition,
-    ConditionKey,
     Dataflow,
     DataflowSet,
+    MutatedInputStates,
     ObservationDependency,
-    OutputBits,
+    StateValue,
 )
 
 from .logic import Espresso, EspressoException, NonOrthogonalException
 
 
 class InferenceEngine(object):
-    def __init__(self, espresso_path: str = './inference_engine/espresso') -> None:
-        self.espresso = Espresso(espresso_path)
+    def __init__(self) -> None:
+        self.espresso = Espresso()
 
     def infer(self, observations: list[Observation], cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV) -> Rule:
         """Infers the dataflow of the instruction using the obesrvations.
@@ -39,9 +38,6 @@ class InferenceEngine(object):
             None
         """
 
-        obs_deps: list[ObservationDependency] = []
-        unique_conditions: defaultdict[ConditionKey, DataflowSet] = defaultdict(set)
-
         if len(observations) == 0:
             raise Exception('No observations to infer from!')
 
@@ -51,73 +47,7 @@ class InferenceEngine(object):
             raise Exception('State format is None!')
         assert all(obs.state_format == state_format for obs in observations)
 
-        self.extract_observation_dependencies(observations, obs_deps)
-
-        # iterate through all the dependencies from the observations and identify what are the possible flows
-        possible_flows: defaultdict[BitPosition, set[BehaviorPattern]] = defaultdict(set)
-        for obs_dep, _, _ in obs_deps:
-            for use_bit_pos in obs_dep:
-                possible_flows[use_bit_pos].add(tuple(sorted(obs_dep[use_bit_pos])))
-
-        condition_threshold = 10
-        for use_bit_pos in possible_flows:
-            bit_conditions: list[TaintCondition] = []
-            bit_dataflows: list[BehaviorPattern] = []
-            num_partitions = len(possible_flows[use_bit_pos])
-            assert num_partitions > 0
-            # print(num_partitions)
-
-            # ZL: ugly hack to collect all the possibly failed cond identification
-            no_cond_dataflow_set: set[BehaviorPattern] = set()
-            # ZL: TODO: Hack for cond_reg, do a check if state_format contains the cond_reg, if no, then skip condition inference  # noqa: E501
-            if num_partitions > 1 and num_partitions < condition_threshold and cond_reg in state_format:
-                # generate the two sets...
-                # iterate across all observations and extract the behavior for the partitions...
-                partitions: defaultdict[BehaviorPattern, set[State]] = defaultdict(set)
-
-                # for each observation, get the dep behavior, and add the seed to it
-                for obs_dep, obs_mutate_in, _ in obs_deps:
-                    if use_bit_pos in obs_dep and use_bit_pos in obs_mutate_in:
-                        partitions[tuple(sorted(obs_dep[use_bit_pos]))].add(obs_mutate_in[use_bit_pos])
-                    # partitions[frozenset(obs_dep[use_bit_pos])].add(seed_in)
-
-                # ZL: The current heuristic is to always select the smaller partition first since
-                # it lowers the chances of the DNF exploding.
-                sorted_behavior = sorted(partitions.keys(), key=lambda x: len(partitions[x]), reverse=True)
-
-                for behavior in sorted_behavior[:-1]:
-                    partition: set[State] = set()
-                    not_partition: set[State] = set()
-                    for behavior2 in partitions:
-                        if behavior != behavior2:
-                            current_partition = not_partition
-                        else:
-                            current_partition = partition
-
-                        for state in partitions[behavior2]:
-                            current_partition.add(state)
-
-                    mycond = self._gen_condition(partition, not_partition, state_format, cond_reg)
-                    if mycond:
-                        bit_conditions.append(mycond)
-                        bit_dataflows.append(behavior)
-                    else:
-                        no_cond_dataflow_set.add(behavior)
-
-                remaining_behavior = sorted_behavior[-1]
-                if no_cond_dataflow_set:
-                    for behavior in no_cond_dataflow_set:
-                        remaining_behavior = tuple(sorted(set(remaining_behavior) | set(behavior)))
-                bit_dataflows.append(remaining_behavior)
-            else:
-                no_cond_dataflow_set_flat: OutputBits = set()
-                for behavior in possible_flows[use_bit_pos]:
-                    no_cond_dataflow_set_flat |= set(behavior)
-                bit_dataflows.append(tuple(sorted(no_cond_dataflow_set_flat)))
-
-            bit_conditions_tuple = tuple(bit_conditions)
-            bit_dataflows_tuple = tuple(bit_dataflows)
-            unique_conditions[bit_conditions_tuple].add((use_bit_pos, bit_dataflows_tuple))
+        unique_conditions = self.infer_flow_conditions(observations, cond_reg, state_format)
 
         # at this point, we have all the conditions for all the bits
         # merge the condition and create the rule...
@@ -126,20 +56,13 @@ class InferenceEngine(object):
         # The assumption here is that there will always be 2 sets, empty and the actual
         # condition list.
 
-        global_dataflows: DataflowSet
-        if () not in unique_conditions:
-            global_dataflows = set()
-        else:
-            global_dataflows = unique_conditions.pop(())
         dataflows: list[Dataflow] = []
-        condition_array: ConditionKey | list[TaintCondition] = []
-        dataflows.append(defaultdict(set))
+        condition_array: frozenset[TaintCondition]
 
         if len(unique_conditions) == 1:
-            condition_array = next(iter(unique_conditions.keys()))
-            use_bit_dataflows = unique_conditions.pop(condition_array)
+            condition_array, use_bit_dataflows = next(iter(unique_conditions.items()))
 
-            cond_bits_list = []
+            cond_bits_list: list[frozenset[BitPosition]] = []
             # ZL: this cond_bits_list is probably not needed
             # i think we just need a set of all the cond_bits...
             # but ah well, let's keep it that way
@@ -150,48 +73,24 @@ class InferenceEngine(object):
                 cond_bits = condition.get_cond_bits()
                 cond_bits_list.append(cond_bits)
 
-            # ZL: my brain can't work anymore, i'm just going to make it work and fix it later
-            for _ in range(len(condition_array)):
-                dataflows.append(defaultdict(set))
-
-            # stuff_to_destroy contains the indirect flows we're going to remove
-            stuff_to_destroy: Dataflow = defaultdict(set)
-            for use_bit, use_bit_dataflow in use_bit_dataflows:
-                assert len(cond_bits_list) == len(use_bit_dataflow) - 1
-                for dataflow_id, dep_set in enumerate(use_bit_dataflow):
-                    if dataflow_id < len(cond_bits_list):
-                        cond_bits = cond_bits_list[dataflow_id]
-                        for cond_bit in cond_bits:
-                            stuff_to_destroy[cond_bit].update(dep_set)
-                    dataflows[dataflow_id][use_bit].update(dep_set)
-
-            # remove the global flows...
-            old = global_dataflows
-            global_dataflows = set()
-            for use_bit, def_bits in old:
-                if use_bit in stuff_to_destroy:
-                    qq = set(def_bits[0]) - stuff_to_destroy[use_bit]
-                else:
-                    qq = set(def_bits[0])
-                global_dataflows.add((use_bit, (tuple(sorted(qq)),)))
+            for use_bit, use_bit_dataflow in use_bit_dataflows.items():
+                if len(cond_bits_list) != len(use_bit_dataflow) - 1:
+                    raise Exception('Mismatch in condition bits and dataflow sets!')
+                for dep_set in use_bit_dataflow:
+                    dataflows.append(Dataflow())
+                    dataflows[-1][use_bit] = dep_set
 
         else:
             # Multiple unique conditions detected; merging all dataflows
-            merged_dataflows: Dataflow = defaultdict(set)
-            for condition_array in list(unique_conditions):
-                use_bit_dataflows = unique_conditions.pop(condition_array)
-                for use_bit, use_bit_dataflow in use_bit_dataflows:
+            merged_dataflows = Dataflow()
+            for use_bit_dataflows in unique_conditions.values():
+                for use_bit, use_bit_dataflow in use_bit_dataflows.items():
                     for dep_set in use_bit_dataflow:
-                        merged_dataflows[use_bit].update(dep_set)
+                        merged_dataflows[use_bit] = merged_dataflows[use_bit].union(dep_set)
+            dataflows.append(Dataflow())
             for use_bit, merged_dep_set in merged_dataflows.items():
-                dataflows[-1][use_bit].update(merged_dep_set)
-            condition_array = []
-        assert len(unique_conditions) == 0
-
-        # add in the always true flows
-        for dataflow in dataflows:
-            for use_bit, dep_set_tuple in global_dataflows:
-                dataflow[use_bit].update(dep_set_tuple[0])
+                dataflows[-1][use_bit] = merged_dep_set
+            condition_array = frozenset()
 
         rule = Rule(state_format, list(condition_array), dataflows)
 
@@ -203,51 +102,153 @@ class InferenceEngine(object):
 
         return rule  # noqa: RET504
 
+    def infer_flow_conditions(
+        self,
+        observations: list[Observation],
+        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        state_format: list[Register],
+    ) -> defaultdict[frozenset[TaintCondition], DataflowSet]:
+
+        observation_dependencies: list[ObservationDependency] = self.extract_observation_dependencies(observations)
+
+        # iterate through all the dependencies from the observations and identify what are the possible flows
+        possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
+        for observation in observation_dependencies:
+            for mutated_input_bit, modified_output_bits in observation.dataflow.items():
+                possible_flows[mutated_input_bit].add(modified_output_bits)
+
+        unique_conditions: defaultdict[frozenset[TaintCondition], DataflowSet] = defaultdict(DataflowSet)
+
+        condition_threshold = 10
+        for mutated_input_bit in possible_flows:
+            bit_conditions: set[TaintCondition] = set()
+            bit_dataflows: set[frozenset[BitPosition]] = set()
+            num_partitions = len(possible_flows[mutated_input_bit])
+            if num_partitions == 0:
+                raise Exception(f'No possible flows for mutated input bit {mutated_input_bit}')
+            # print(num_partitions)
+            # ZL: ugly hack to collect all the possibly failed cond identification
+            no_cond_dataflow_set: set[frozenset[BitPosition]] = set()
+
+            # ZL: TODO: Hack for cond_reg, do a check if state_format contains the cond_reg, if no, then skip condition inference  # noqa: E501
+            if num_partitions == 1 or cond_reg not in state_format:
+                # no conditional dataflow
+                no_cond_dataflow_set_flat: set[BitPosition] = set()
+                for output_set in possible_flows[mutated_input_bit]:
+                    no_cond_dataflow_set_flat |= set(output_set)
+                bit_dataflows.add(frozenset(no_cond_dataflow_set_flat))
+
+            elif num_partitions < condition_threshold:
+                # generate the two sets...
+                # iterate across all observations and extract the behavior for the partitions...
+                partitions = self.link_affected_outputs_to_their_input_states(
+                    observation_dependencies,
+                    mutated_input_bit,
+                )
+
+                # ZL: The current heuristic is to always select the smaller partition first since
+                # it lowers the chances of the DNF exploding.
+                ordered_output_sets = sorted(partitions.keys(), key=lambda x: len(partitions[x]), reverse=True)
+
+                for output_set in ordered_output_sets[:-1]:
+                    agreeing_partition: set[State] = set()
+                    disagreeing_partition: set[State] = set()
+                    for (
+                        alternative_modified_output_set,
+                        input_states,
+                    ) in partitions.items():  # Why not use the sorted behaviors ?
+                        if output_set != alternative_modified_output_set:
+                            disagreeing_partition.update(input_states)
+                        else:
+                            agreeing_partition.update(input_states)
+
+                    mycond = self._gen_condition(agreeing_partition, disagreeing_partition, state_format, cond_reg)
+                    if mycond:
+                        bit_conditions.add(mycond)
+                        bit_dataflows.add(output_set)
+                    else:
+                        no_cond_dataflow_set.add(output_set)
+
+                remaining_behavior = ordered_output_sets[-1]
+                if len(no_cond_dataflow_set) > 0:
+                    for behavior in no_cond_dataflow_set:
+                        remaining_behavior = remaining_behavior.union(behavior)
+                bit_dataflows.add(remaining_behavior)
+
+            else:
+                raise Exception(f'Too many partitions ({num_partitions}), cannot infer condition!')
+            old_cond = unique_conditions[frozenset(bit_conditions)].get(mutated_input_bit, set())
+            unique_conditions[frozenset(bit_conditions)][mutated_input_bit] = old_cond.union(bit_dataflows)
+        return unique_conditions
+
+    def link_affected_outputs_to_their_input_states(
+        self,
+        observation_dependencies: list[ObservationDependency],
+        mutated_input_bit: BitPosition,
+    ) -> dict[frozenset[BitPosition], set[State]]:
+        """Get a dictionary mapping modified output bits to their input states IF the given input bit was mutated."""
+        partitions: defaultdict[frozenset[BitPosition], set[State]] = defaultdict(set)
+
+        # for each observation, get the dep behavior, and add the seed to it
+        for observation in observation_dependencies:
+            dataflow = observation.dataflow
+            mutated_input_states = observation.mutated_inputs
+            if mutated_input_bit in dataflow.inputs() and mutated_input_bit in mutated_input_states.mutated_bits():
+                partitions[dataflow.get_modified_outputs(mutated_input_bit)].add(
+                    mutated_input_states.get_input_state(mutated_input_bit),
+                )
+
+        return partitions
+
     def extract_observation_dependencies(
         self,
         observations: list[Observation],
-        obs_deps: list[ObservationDependency],
-    ) -> None:
+    ) -> list[ObservationDependency]:
+        """Extracts the bit that are flipped in each response to a bit flip in the input."""
+        obs_deps: list[ObservationDependency] = []
         for observation in observations:
             # single_obs_dep contains the dependency for a single observation
-            obs_dep = {}
-            obs_mutate_in = {}
+            obs_dep = Dataflow()
+            obs_mutate_in = MutatedInputStates()
             seed_in, seed_out = observation.seed_io
             for mutate_in, mutate_out in observation.mutated_ios:
-                bitflip_pos = seed_in.diff(mutate_in).pop()
+                bitflip_pos = next(iter(seed_in.diff(mutate_in)))
                 if len(seed_in.diff(mutate_in)) != 1:
                     raise Exception('More than one bit flipped in mutated input state!')
                 bitchanges_pos = seed_out.diff(mutate_out)
                 obs_dep[bitflip_pos] = bitchanges_pos
                 obs_mutate_in[bitflip_pos] = mutate_in
-            obs_deps.append((obs_dep, obs_mutate_in, seed_in))
+            obs_deps.append(
+                ObservationDependency(dataflow=obs_dep, mutated_inputs=obs_mutate_in, original_output=seed_in),
+            )
+        return obs_deps
 
     def _gen_condition(
         self,
-        partition1: set[State],
-        partition2: set[State],
+        aggreeing_partition: set[State],
+        opposing_partition: set[State],
         state_format: list[Register],
         cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
     ) -> Optional[TaintCondition]:
         """
         Args:
-            partition1 (set{State}): Set of input States which belongs in the True partition.
-            partition2 (set{State}): Set of input States which belongs to the False partition.
+            aggreeing_partition (set{State}): Set of input States which belongs in the True partition.
+            opposing_partition (set{State}): Set of input States which belongs to the False partition.
         Returns:
             Condition object if there exists a condition.
             None if no condition can be inferred.
         Raises:
             None
         """
-        partition_true: set[int] = set()
-        partition_false: set[int] = set()
+        partition_true: set[StateValue] = set()
+        partition_false: set[StateValue] = set()
         # pdb.set_trace()
         state_bits = 0
 
-        for state in partition1:
+        for state in aggreeing_partition:
             cond_reg_value = extract_reg2bits(state, cond_reg, state_format).state_value
             partition_true.add(cond_reg_value)
-        for state in partition2:
+        for state in opposing_partition:
             cond_reg_value = extract_reg2bits(state, cond_reg, state_format).state_value
             partition_false.add(cond_reg_value)
         state_bits = cond_reg.bits

@@ -54,6 +54,7 @@ exclude = [
     "pyproject.toml",
     "taintinduce/output/",
     "peekaboo/",
+    "*.tmp.py",
 ]
 line-length = 120
 target-version = "py312"

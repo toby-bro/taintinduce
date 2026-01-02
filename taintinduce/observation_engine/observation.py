@@ -138,7 +138,7 @@ class ObservationEngine(object):
                 if not seed_state.diff(state_before):
                     continue
                 state_list.append((state_before, state_after))
-        return Observation((seed_state, result_state), state_list, bytestring, archstring, state_format)
+        return Observation((seed_state, result_state), frozenset(state_list), bytestring, archstring, state_format)
 
     def _gen_seeds(
         self,

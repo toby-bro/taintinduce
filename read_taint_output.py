@@ -16,6 +16,7 @@ import capstone.x86_const as x86_consts
 from taintinduce.rules import TaintRule
 from taintinduce.serialization import TaintInduceDecoder
 from taintinduce.state import Observation
+from taintinduce.types import Dataflow
 
 
 def decode_eflags(eflags):
@@ -77,7 +78,7 @@ def get_eflag_name(eflag):
     }.get(eflag, None)
 
 
-def _print_dataflow_propagations(dataflow: dict[int, set[int]]) -> None:
+def _print_dataflow_propagations(dataflow: Dataflow) -> None:
     """Print sample taint propagations for a dataflow."""
     if not dataflow:
         return

@@ -1,22 +1,30 @@
 """State representation for instruction inputs/outputs."""
 
-from typing import Optional
+from typing import Generator, Optional
 
 from taintinduce.isa.register import Register
 from taintinduce.serialization import SerializableMixin
 from taintinduce.types import BitPosition, StateValue
 
 
-def check_ones(value: int) -> set[BitPosition]:
+def bit_position_iterator(start: int = 0) -> Generator[BitPosition, None, None]:
+    """Generates an infinite sequence of BitPosition starting from 'start'."""
+    pos = start
+    while True:
+        yield BitPosition(pos)
+        pos += 1
+
+
+def check_ones(value: int) -> frozenset[BitPosition]:
     """Obtains the position of bits that are set."""
     result_set: set[BitPosition] = set()
-    pos = BitPosition(0)
+    bit_position_iterator_instance = bit_position_iterator(0)
     while value:
+        pos = next(bit_position_iterator_instance)
         if value & 1:
             result_set.add(pos)
         value >>= 1
-        pos.inc()
-    return result_set
+    return frozenset(result_set)
 
 
 class State(SerializableMixin):
@@ -65,7 +73,7 @@ class State(SerializableMixin):
         """
         return '{{:<0{}b}}'.format(self.num_bits).format(self.state_value)
 
-    def diff(self, other_state: 'State') -> set[BitPosition]:
+    def diff(self, other_state: 'State') -> frozenset[BitPosition]:
         """Obtains the difference between two States.
 
         Args:
@@ -79,6 +87,19 @@ class State(SerializableMixin):
 
         value_changed = self.state_value ^ other_state.state_value
         return check_ones(value_changed)
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, State):
+            return NotImplemented
+        return self.num_bits == value.num_bits and self.state_value == value.state_value
+
+    def __ne__(self, value: object) -> bool:
+        if not isinstance(value, State):
+            return NotImplemented
+        return not self.__eq__(value)
+
+    def __hash__(self) -> int:
+        return hash((self.num_bits, self.state_value))
 
 
 class Observation(SerializableMixin):
@@ -94,7 +115,7 @@ class Observation(SerializableMixin):
     """
 
     seed_io: tuple[State, State]
-    mutated_ios: list[tuple[State, State]]
+    mutated_ios: frozenset[tuple[State, State]]
     bytestring: str
     archstring: str
     state_format: list[Register]
@@ -102,7 +123,7 @@ class Observation(SerializableMixin):
     def __init__(
         self,
         iopair: Optional[tuple[State, State]] = None,
-        mutated_iopairs: Optional[list[tuple[State, State]]] = None,
+        mutated_iopairs: Optional[frozenset[tuple[State, State]]] = None,
         bytestring: Optional[str] = None,
         archstring: Optional[str] = None,
         state_format: Optional[list[Register]] = None,
@@ -142,3 +163,30 @@ class Observation(SerializableMixin):
             self.bytestring = bytestring
             self.archstring = archstring
             self.state_format = state_format
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Observation):
+            return NotImplemented
+        return (
+            self.seed_io == other.seed_io
+            and self.mutated_ios == other.mutated_ios
+            and self.bytestring == other.bytestring
+            and self.archstring == other.archstring
+            and self.state_format == other.state_format
+        )
+
+    def __ne__(self, other: object) -> bool:
+        if not isinstance(other, Observation):
+            return NotImplemented
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.seed_io,
+                frozenset(self.mutated_ios),
+                self.bytestring,
+                self.archstring,
+                tuple(self.state_format),
+            ),
+        )

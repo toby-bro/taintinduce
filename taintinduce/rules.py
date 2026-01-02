@@ -9,7 +9,7 @@ from taintinduce.isa.register import Register
 from taintinduce.memory import MemorySlot
 from taintinduce.serialization import SerializableMixin
 from taintinduce.state import State, check_ones
-from taintinduce.types import BitPosition
+from taintinduce.types import BitPosition, Dataflow
 
 
 class TaintCondition(SerializableMixin):
@@ -52,15 +52,15 @@ class TaintCondition(SerializableMixin):
         result &= getattr(self, self.OPS_FN_MAP[ops_name])(state, ops_args)
         return result  # type: ignore[no-any-return]
 
-    def get_cond_bits(self) -> set[BitPosition]:
+    def get_cond_bits(self) -> frozenset[BitPosition]:
         if self.condition_ops is None:
-            return set()
+            return frozenset()
         ops_name, ops_args = self.condition_ops
-        cond_bits = set()
+        cond_bits: set[BitPosition] = set()
         if ops_name == 'DNF':
             for mask, _ in ops_args:
                 cond_bits |= check_ones(mask)
-        return cond_bits
+        return frozenset(cond_bits)
 
     def _dnf_eval(self, state: State, dnf_args: list[tuple[int, int]]) -> bool:
         if state.state_value is None:
@@ -119,17 +119,17 @@ class TaintRule(SerializableMixin):
 
     format: TaintRuleFormat
     conditions: list[TaintCondition]
-    dataflows: list[dict[int, set[int]]]
+    dataflows: list[Dataflow]
 
     def __init__(
         self,
         format: TaintRuleFormat,
         conditions: list[TaintCondition],
-        dataflows: list[dict[int, set[int]]],
+        dataflows: list[Dataflow],
     ) -> None:
         self.format = format
         self.conditions = conditions
-        self.dataflows = [{} for _ in dataflows]
+        self.dataflows = [Dataflow() for _ in dataflows]
         for df_id, dataflow in enumerate(dataflows):
             for src_pos in dataflow:
                 self.dataflows[df_id][src_pos] = dataflow[src_pos].copy()
@@ -196,13 +196,13 @@ class Rule(SerializableMixin):
 
     state_format: list[Register]
     conditions: list[TaintCondition]
-    dataflows: list[dict[int, set[int]]]
+    dataflows: list[Dataflow]
 
     def __init__(
         self,
         state_format: Optional[list[Register]] = None,
         conditions: Optional[list[TaintCondition]] = None,
-        dataflows: Optional[list[dict[int, set[int]]]] = None,
+        dataflows: Optional[list[Dataflow]] = None,
         repr_str: Optional[str] = None,
     ) -> None:
         if repr_str:
