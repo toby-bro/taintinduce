@@ -4,17 +4,18 @@ from typing import Optional
 
 from taintinduce.isa.register import Register
 from taintinduce.serialization import SerializableMixin
+from taintinduce.types import BitPosition, StateValue
 
 
-def check_ones(value: int) -> set[int]:
+def check_ones(value: int) -> set[BitPosition]:
     """Obtains the position of bits that are set."""
-    result_set: set[int] = set()
-    pos = 0
+    result_set: set[BitPosition] = set()
+    pos = BitPosition(0)
     while value:
         if value & 1:
             result_set.add(pos)
         value >>= 1
-        pos += 1
+        pos.inc()
     return result_set
 
 
@@ -23,16 +24,16 @@ class State(SerializableMixin):
 
     Attributes:
         num_bits (int): Size of state in number of bits.
-        state_value (int): Bitvector to represent the state stored as an integer.
+        state_value (StateValue): Bitvector to represent the state stored as an integer.
     """
 
-    state_value: int
+    state_value: StateValue
     num_bits: int
 
     def __init__(
         self,
         num_bits: Optional[int] = None,
-        state_value: Optional[int] = None,
+        state_value: Optional[StateValue] = None,
         repr_str: Optional[str] = None,
     ) -> None:
         """Initializes the State object to length num_bits.
@@ -64,7 +65,7 @@ class State(SerializableMixin):
         """
         return '{{:<0{}b}}'.format(self.num_bits).format(self.state_value)
 
-    def diff(self, other_state: 'State') -> set[int]:
+    def diff(self, other_state: 'State') -> set[BitPosition]:
         """Obtains the difference between two States.
 
         Args:

@@ -8,19 +8,8 @@ from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.register import Register
 from taintinduce.memory import MemorySlot
 from taintinduce.serialization import SerializableMixin
-from taintinduce.state import State
-
-
-def check_ones(value: int) -> set[int]:
-    """Obtains the position of bits that are set."""
-    result_set: set[int] = set()
-    pos = 0
-    while value:
-        if value & 1:
-            result_set.add(pos)
-        value >>= 1
-        pos += 1
-    return result_set
+from taintinduce.state import State, check_ones
+from taintinduce.types import BitPosition
 
 
 class TaintCondition(SerializableMixin):
@@ -63,7 +52,7 @@ class TaintCondition(SerializableMixin):
         result &= getattr(self, self.OPS_FN_MAP[ops_name])(state, ops_args)
         return result  # type: ignore[no-any-return]
 
-    def get_cond_bits(self) -> set[int]:
+    def get_cond_bits(self) -> set[BitPosition]:
         if self.condition_ops is None:
             return set()
         ops_name, ops_args = self.condition_ops

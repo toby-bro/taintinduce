@@ -17,7 +17,14 @@ if TYPE_CHECKING:
 CpuRegisterMap: TypeAlias = dict[Register, int]
 
 # Taint dataflow types
-BitPosition: TypeAlias = int
+class BitPosition(int):
+    """Position of an input bit in the instruction's input state."""
+
+    def inc(self) -> None:
+        """Increment the BitPosition by 1."""
+        self.__add__(1)
+
+
 OutputBits: TypeAlias = set[int]
 Dataflow: TypeAlias = dict[BitPosition, OutputBits]  # Maps input bit position â†’ output bit positions
 BehaviorPattern: TypeAlias = tuple[int, ...]  # Tuple of output bit positions (sorted)
@@ -25,3 +32,7 @@ MutatedInputStates: TypeAlias = dict[BitPosition, 'State']  # Maps flipped bit â
 ObservationDependency: TypeAlias = tuple[Dataflow, MutatedInputStates, 'State']  # (dependencies, mutated_states, seed)
 ConditionKey: TypeAlias = tuple['TaintCondition', ...]  # Tuple of conditions
 DataflowSet: TypeAlias = set[tuple[BitPosition, tuple[BehaviorPattern, ...]]]  # Set of (bit_pos, behaviors)
+
+
+class StateValue(int):
+    """Integer representing a state value."""

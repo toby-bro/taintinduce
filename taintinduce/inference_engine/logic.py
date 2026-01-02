@@ -3,6 +3,8 @@ import pickle
 import subprocess
 from importlib.resources import files
 
+from taintinduce.types import StateValue
+
 command_template = """
 .i {}
 .o {}
@@ -101,7 +103,13 @@ class Espresso(object):
                     raise Exception('Illegal character found in boolean logic!')
             bool_cond.add((condition_bitmask, condition_value))
 
-    def minimize_raw(self, in_size: int, out_size: int, pla_type: str, observations: dict[int, set[int]]) -> bytes:
+    def minimize_raw(
+        self,
+        in_size: int,
+        out_size: int,
+        pla_type: str,
+        observations: dict[int, set[StateValue]],
+    ) -> bytes:
         """Obtain a minimal formula using the ESPRESSO heuristic, returning raw output.
 
         Args:
@@ -123,7 +131,7 @@ class Espresso(object):
         in_size: int,
         out_size: int,
         pla_type: str,
-        observations: dict[int, set[int]],
+        observations: dict[int, set[StateValue]],
     ) -> set[tuple[int, int]]:
         """Obtain a minimal formula using the ESPRESSO heuristic.
 
@@ -146,7 +154,7 @@ class Espresso(object):
         in_size: int,
         out_size: int,
         pla_type: str,
-        observations: dict[int, set[int]],
+        observations: dict[int, set[StateValue]],
         raw: bool = False,
     ) -> set[tuple[int, int]] | bytes:
         """Obtain a minimal formula using the ESPRESSO heuristic.

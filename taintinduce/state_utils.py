@@ -4,7 +4,7 @@ from typing import Sequence
 
 from taintinduce.isa.register import Register
 from taintinduce.state import State
-from taintinduce.types import CpuRegisterMap
+from taintinduce.types import CpuRegisterMap, StateValue
 
 
 def reg2pos(all_regs: Sequence[Register], reg: Register) -> int:
@@ -59,7 +59,7 @@ def regs2bits(cpustate: CpuRegisterMap, state_format: Sequence[Register]) -> Sta
     for reg in state_format:
         value |= cpustate[reg] << bits
         bits += reg.bits
-    return State(bits, value)
+    return State(bits, StateValue(value))
 
 
 def regs2bits2(cpustate: CpuRegisterMap, state_format: Sequence[Register]) -> State:
@@ -70,7 +70,7 @@ def regs2bits2(cpustate: CpuRegisterMap, state_format: Sequence[Register]) -> St
         print('bin:{:0128b}'.format(cpustate[reg] << bits))
         value |= cpustate[reg] << bits
         bits += reg.bits
-    return State(bits, value)
+    return State(bits, StateValue(value))
 
 
 def bits2regs(state: State, regs: Sequence[Register]) -> CpuRegisterMap:
@@ -82,12 +82,12 @@ def bits2regs(state: State, regs: Sequence[Register]) -> CpuRegisterMap:
     Returns:
         Register-value mapping
     """
-    cpu_state: CpuRegisterMap = {}
+    cpu_state = CpuRegisterMap()
     value = state.state_value
     regs_list = sorted(regs, key=lambda reg: reg.uc_const)
     for reg in regs_list:
         cpu_state[reg] = ((2**reg.bits) - 1) & value
-        value = value >> reg.bits
+        value = StateValue(value >> reg.bits)
     return cpu_state
 
 
@@ -109,7 +109,7 @@ def extract_reg2bits(state: State, reg: Register, state_format: Sequence[Registe
     isolated_reg_value = state.state_value & state_mask
     reg_value = isolated_reg_value >> reg_start_pos
 
-    return State(reg.bits, reg_value)
+    return State(reg.bits, StateValue(reg_value))
 
 
 def pos2reg(state1: State, state2: State, regs: Sequence[Register]) -> list[tuple[Register, int]]:
