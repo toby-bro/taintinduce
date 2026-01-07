@@ -131,8 +131,6 @@ class TaintInduceDecoder(json.JSONDecoder):
             # Fall back to dict if class not found
             raise ValueError(f'Warning: Could not deserialize {type_name}') from e
 
-        raise ValueError(f'Unsupported type for conversion: {type_name}')
-
     def object_hook(self, dct: dict[str, Any]) -> Any:
         # Handle list (may have _type field)
         if '_list' in dct:
