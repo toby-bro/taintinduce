@@ -1,12 +1,9 @@
 # Replaced squirrel import with our own
-import pdb
 from collections import defaultdict
-from typing import Optional
 
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
-from taintinduce.rule_utils import espresso2cond, shift_espresso
 from taintinduce.rules import Rule, TaintCondition
 from taintinduce.state import Observation, State
 from taintinduce.types import (
@@ -15,10 +12,9 @@ from taintinduce.types import (
     DataflowSet,
     MutatedInputStates,
     ObservationDependency,
-    StateValue,
 )
 
-from .logic import Espresso, EspressoException, NonOrthogonalException
+from .logic import Espresso
 
 
 class InferenceEngine(object):
@@ -118,7 +114,6 @@ class InferenceEngine(object):
 
         unique_conditions: defaultdict[frozenset[TaintCondition], DataflowSet] = defaultdict(DataflowSet)
 
-        condition_threshold = 10
         for mutated_input_bit in possible_flows:
             bit_conditions: set[TaintCondition] = set()
             bit_dataflows: set[frozenset[BitPosition]] = set()
@@ -127,56 +122,24 @@ class InferenceEngine(object):
                 raise Exception(f'No possible flows for mutated input bit {mutated_input_bit}')
             # print(num_partitions)
             # ZL: ugly hack to collect all the possibly failed cond identification
-            no_cond_dataflow_set: set[frozenset[BitPosition]] = set()
 
-            # ZL: TODO: Hack for cond_reg, do a check if state_format contains the cond_reg, if no, then skip condition inference  # noqa: E501
             if num_partitions == 1 or cond_reg not in state_format:
                 # no conditional dataflow
-                no_cond_dataflow_set_flat: set[BitPosition] = set()
-                for output_set in possible_flows[mutated_input_bit]:
-                    no_cond_dataflow_set_flat |= set(output_set)
-                bit_dataflows.add(frozenset(no_cond_dataflow_set_flat))
+                no_cond_dataflow_set_flat: frozenset[BitPosition] = frozenset()
+                no_cond_dataflow_set_flat.union(*possible_flows[mutated_input_bit])
+                bit_dataflows.add(no_cond_dataflow_set_flat)
 
-            elif num_partitions < condition_threshold:
+            elif num_partitions:
                 # generate the two sets...
                 # iterate across all observations and extract the behavior for the partitions...
                 partitions = self.link_affected_outputs_to_their_input_states(
                     observation_dependencies,
                     mutated_input_bit,
                 )
-
-                # ZL: The current heuristic is to always select the smaller partition first since
-                # it lowers the chances of the DNF exploding.
-                ordered_output_sets = sorted(partitions.keys(), key=lambda x: len(partitions[x]), reverse=True)
-
-                for output_set in ordered_output_sets[:-1]:
-                    agreeing_partition: set[State] = set()
-                    disagreeing_partition: set[State] = set()
-                    for (
-                        alternative_modified_output_set,
-                        input_states,
-                    ) in partitions.items():  # Why not use the sorted behaviors ?
-                        if output_set != alternative_modified_output_set:
-                            disagreeing_partition.update(input_states)
-                        else:
-                            agreeing_partition.update(input_states)
-
-                    mycond = self._gen_condition(agreeing_partition, disagreeing_partition, state_format, cond_reg)
-                    if mycond:
-                        # print('Condition found')
-                        bit_conditions.add(mycond)
-                        bit_dataflows.add(output_set)
-                    else:
-                        no_cond_dataflow_set.add(output_set)
-
-                remaining_behavior = ordered_output_sets[-1]
-                if len(no_cond_dataflow_set) > 0:
-                    for behavior in no_cond_dataflow_set:
-                        remaining_behavior = remaining_behavior.union(behavior)
+                remaining_behavior: frozenset[BitPosition] = frozenset()
+                remaining_behavior = remaining_behavior.union(*partitions.keys())
                 bit_dataflows.add(remaining_behavior)
 
-            else:
-                raise Exception(f'Too many partitions ({num_partitions}), cannot infer condition!')
             old_cond = unique_conditions[frozenset(bit_conditions)].get(mutated_input_bit, set())
             unique_conditions[frozenset(bit_conditions)][mutated_input_bit] = old_cond.union(bit_dataflows)
         return unique_conditions
@@ -222,54 +185,3 @@ class InferenceEngine(object):
                 ObservationDependency(dataflow=obs_dep, mutated_inputs=obs_mutate_in, original_output=seed_in),
             )
         return obs_deps
-
-    def _gen_condition(
-        self,
-        aggreeing_partition: set[State],
-        opposing_partition: set[State],
-        state_format: list[Register],
-        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
-    ) -> Optional[TaintCondition]:
-        """
-        Args:
-            aggreeing_partition (set{State}): Set of input States which belongs in the True partition.
-            opposing_partition (set{State}): Set of input States which belongs to the False partition.
-        Returns:
-            Condition object if there exists a condition.
-            None if no condition can be inferred which is nearly always the case as it only inferred on the cond_reg lol
-        Raises:
-            None
-        """
-        partition_true: set[StateValue] = set()
-        partition_false: set[StateValue] = set()
-        # pdb.set_trace()
-
-        for state in aggreeing_partition:
-            partition_true.add(state.state_value)
-        for state in opposing_partition:
-            partition_false.add(state.state_value)
-        num_state_bits = sum([reg.bits for reg in state_format])
-
-        # print('True')
-        # for val in partition_true:
-        #    print('{:064b}'.format(val))
-        # print('False')
-        # for val in partition_false:
-        #    print('{:064b}'.format(val))
-
-        partitions = {1: partition_true, 0: partition_false}
-        try:
-            dnf_condition = self.espresso.minimize(num_state_bits, 1, 'fr', partitions)
-        except NonOrthogonalException:
-            return None
-        except EspressoException as e:
-            # ZL: have to make it a specific exception
-            if 'ON-set and OFF-set are not orthogonal' in str(e):
-                return None
-            pdb.set_trace()
-            raise e
-
-        # dnf_conditions (set{(int, int)}): A set of tuples (mask, value) representing a DNF formula.
-        # Each tuple is a boolean formula in CNF (input & mask == value).
-        dnf_condition = shift_espresso(dnf_condition, cond_reg, state_format)
-        return espresso2cond(dnf_condition)
