@@ -122,6 +122,15 @@ class TaintInduceDecoder(json.JSONDecoder):
             return tuple(value)
         if type_name == 'list':
             return list(value)
+        try:
+            cls = getattr(importlib.import_module('taintinduce.types'), type_name)
+            obj = cls.__new__(cls)
+            obj.__dict__.update(value)
+            return obj
+        except (ImportError, AttributeError) as e:
+            # Fall back to dict if class not found
+            raise ValueError(f'Warning: Could not deserialize {type_name}') from e
+
         raise ValueError(f'Unsupported type for conversion: {type_name}')
 
     def object_hook(self, dct: dict[str, Any]) -> Any:
