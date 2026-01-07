@@ -9,7 +9,6 @@ from taintinduce.isa.x86_registers import X86_REG_EFLAGS
 from taintinduce.rule_utils import espresso2cond, shift_espresso
 from taintinduce.rules import Rule, TaintCondition
 from taintinduce.state import Observation, State
-from taintinduce.state_utils import extract_reg2bits
 from taintinduce.types import (
     BitPosition,
     Dataflow,
@@ -164,6 +163,7 @@ class InferenceEngine(object):
 
                     mycond = self._gen_condition(agreeing_partition, disagreeing_partition, state_format, cond_reg)
                     if mycond:
+                        # print('Condition found')
                         bit_conditions.add(mycond)
                         bit_dataflows.add(output_set)
                     else:
@@ -236,22 +236,19 @@ class InferenceEngine(object):
             opposing_partition (set{State}): Set of input States which belongs to the False partition.
         Returns:
             Condition object if there exists a condition.
-            None if no condition can be inferred.
+            None if no condition can be inferred which is nearly always the case as it only inferred on the cond_reg lol
         Raises:
             None
         """
         partition_true: set[StateValue] = set()
         partition_false: set[StateValue] = set()
         # pdb.set_trace()
-        state_bits = 0
 
         for state in aggreeing_partition:
-            cond_reg_value = extract_reg2bits(state, cond_reg, state_format).state_value
-            partition_true.add(cond_reg_value)
+            partition_true.add(state.state_value)
         for state in opposing_partition:
-            cond_reg_value = extract_reg2bits(state, cond_reg, state_format).state_value
-            partition_false.add(cond_reg_value)
-        state_bits = cond_reg.bits
+            partition_false.add(state.state_value)
+        num_state_bits = sum([reg.bits for reg in state_format])
 
         # print('True')
         # for val in partition_true:
@@ -262,7 +259,7 @@ class InferenceEngine(object):
 
         partitions = {1: partition_true, 0: partition_false}
         try:
-            dnf_condition = self.espresso.minimize(state_bits, 1, 'fr', partitions)
+            dnf_condition = self.espresso.minimize(num_state_bits, 1, 'fr', partitions)
         except NonOrthogonalException:
             return None
         except EspressoException as e:
