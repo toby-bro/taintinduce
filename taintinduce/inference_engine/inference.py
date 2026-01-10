@@ -11,7 +11,7 @@ from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
 from taintinduce.rules.rule_utils import espresso2cond, shift_espresso
 from taintinduce.rules.rules import Rule, TaintCondition
-from taintinduce.state import Observation, State
+from taintinduce.state.state import Observation, State
 from taintinduce.types import (
     BitPosition,
     Dataflow,

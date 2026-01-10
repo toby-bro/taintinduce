@@ -7,7 +7,7 @@ from typing import Any, Optional
 from taintinduce.isa.register import Register
 from taintinduce.memory import MemorySlot
 from taintinduce.serialization import SerializableMixin
-from taintinduce.state import State, check_ones
+from taintinduce.state.state import State, check_ones
 from taintinduce.types import BitPosition, Dataflow
 
 
@@ -34,7 +34,7 @@ class TaintCondition(SerializableMixin):
     def __repr__(self) -> str:
         if self.condition_ops is None:
             return 'TaintCondition()'
-        return f'TaintCondition({self.condition_type}, {self.get_cond_bits()}, {[i for _, i in self.condition_ops]})'
+        return f'TaintCondition({self.condition_type}, {self.condition_ops})'
 
     def __str__(self) -> str:
         return self.__repr__()

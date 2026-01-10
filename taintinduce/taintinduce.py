@@ -17,7 +17,7 @@ from taintinduce.rules.rules import Rule, TaintRule
 
 # Replaced squirrel imports with our own serialization
 from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder
-from taintinduce.state import Observation
+from taintinduce.state.state import Observation
 from taintinduce.unicorn_cpu.unicorn_cpu import UnicornCPU
 
 

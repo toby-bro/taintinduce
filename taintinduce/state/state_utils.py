@@ -3,7 +3,7 @@
 from typing import Sequence
 
 from taintinduce.isa.register import Register
-from taintinduce.state import State
+from taintinduce.state.state import State
 from taintinduce.types import CpuRegisterMap, StateValue
 
 

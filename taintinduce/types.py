@@ -10,7 +10,7 @@ from taintinduce.isa.register import Register
 
 # Forward declarations for circular type hints
 if TYPE_CHECKING:
-    from taintinduce.state import State
+    from taintinduce.state.state import State
 
 
 # CPU state representation as register-value mapping
