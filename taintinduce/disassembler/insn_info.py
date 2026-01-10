@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-
+from typing import Optional
 
 from capstone.arm64 import ARM64_OP_REG
 from capstone.x86 import X86_OP_REG
@@ -10,16 +9,52 @@ from taintinduce.disassembler.exceptions import (
     UnsupportedSizeException,
 )
 from taintinduce.isa import amd64, arm64, x86
+from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
+from taintinduce.isa.isa import ISA
 from taintinduce.isa.register import Register
-from taintinduce.rules import InsnInfo
+from taintinduce.isa.x86_registers import X86_REG_EFLAGS
+from taintinduce.serialization import SerializableMixin
+
+
+class InsnInfo(SerializableMixin):
+    """Instruction information including state format and conditional register."""
+
+    archstring: str
+    bytestring: str
+    state_format: list[Register]
+    cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV
+
+    def __init__(
+        self,
+        *,
+        archstring: Optional[str] = None,
+        bytestring: Optional[str] = None,
+        state_format: Optional[list[Register]] = None,
+        cond_reg: Optional[X86_REG_EFLAGS | ARM64_REG_NZCV] = None,
+        repr_str: Optional[str] = None,
+    ) -> None:
+        if repr_str:
+            self.deserialize(repr_str)
+        else:
+            if state_format is None:
+                state_format = []
+            if archstring is None or bytestring is None or cond_reg is None:
+                raise Exception('Invalid arguments to InsnInfo constructor!')
+            self.archstring = archstring
+            self.bytestring = bytestring
+            self.state_format = state_format
+            self.cond_reg = cond_reg
+
+
+ARCH_DICT = {'X86': x86.X86(), 'AMD64': amd64.AMD64(), 'ARM64': arm64.ARM64()}
 
 
 class Disassembler(object):
-    arch: x86.X86 | amd64.AMD64 | arm64.ARM64
+    arch: ISA
     cs_reg_set: list[Register]
     insn_info: InsnInfo
 
-    def __init__(self, arch_str: str, bytestring: str) -> None:
+    def __init__(self, arch_str: str, bytestring: str) -> None:  # noqa: C901
         """Initialize wrapper over Capstone CsInsn or Cs.
 
         arch_str (str)          - the architecture of the instruction (currently
@@ -28,14 +63,10 @@ class Disassembler(object):
                             bytes
         """
         self.archstring = arch_str
-        if arch_str == 'X86':
-            self.arch = x86.X86()
-        elif arch_str == 'AMD64':
-            self.arch = amd64.AMD64()
-        elif arch_str == 'ARM64':
-            self.arch = arm64.ARM64()
-        else:
+        arch = ARCH_DICT.get(arch_str)
+        if arch is None:
             raise UnsupportedArchException
+        self.arch = arch
 
         self.bytestring = bytestring
         dis = SquirrelDisassemblerZydis(arch_str)

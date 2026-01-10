@@ -4,8 +4,6 @@ import itertools
 from enum import Enum
 from typing import Any, Optional
 
-import taintinduce.isa.x86_registers as x86_registers
-from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.register import Register
 from taintinduce.memory import MemorySlot
 from taintinduce.serialization import SerializableMixin
@@ -274,33 +272,3 @@ class Rule(SerializableMixin):
             for def_bit in dataflow:
                 mystr_list.append('{} &rarr; {}'.format(def_bit, dataflow[def_bit]))
         return '<br/>'.join(mystr_list)
-
-
-class InsnInfo(SerializableMixin):
-    """Instruction information including state format and conditional register."""
-
-    archstring: str
-    bytestring: str
-    state_format: list[Register]
-    cond_reg: x86_registers.X86_REG_EFLAGS | ARM64_REG_NZCV
-
-    def __init__(
-        self,
-        *,
-        archstring: Optional[str] = None,
-        bytestring: Optional[str] = None,
-        state_format: Optional[list[Register]] = None,
-        cond_reg: Optional[x86_registers.X86_REG_EFLAGS | ARM64_REG_NZCV] = None,
-        repr_str: Optional[str] = None,
-    ) -> None:
-        if repr_str:
-            self.deserialize(repr_str)
-        else:
-            if state_format is None:
-                state_format = []
-            if archstring is None or bytestring is None or cond_reg is None:
-                raise Exception('Invalid arguments to InsnInfo constructor!')
-            self.archstring = archstring
-            self.bytestring = bytestring
-            self.state_format = state_format
-            self.cond_reg = cond_reg

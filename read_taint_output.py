@@ -13,7 +13,7 @@ from pathlib import Path
 
 import capstone.x86_const as x86_consts
 
-from taintinduce.rules import TaintRule
+from taintinduce.rules.rules import TaintRule
 from taintinduce.serialization import TaintInduceDecoder
 from taintinduce.state import Observation
 from taintinduce.types import Dataflow

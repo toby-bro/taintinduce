@@ -3,8 +3,9 @@
 from typing import Sequence
 
 from taintinduce.isa.register import Register
-from taintinduce.rules import LogicType, TaintCondition
 from taintinduce.state_utils import reg_pos
+
+from .rules import LogicType, TaintCondition
 
 
 def shift_espresso(

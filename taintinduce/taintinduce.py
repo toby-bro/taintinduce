@@ -7,13 +7,13 @@ import os
 import sys
 from typing import Optional
 
-import taintinduce.disassembler.insn_info as insn_info
 import taintinduce.inference_engine.inference as inference_engine
 import taintinduce.observation_engine.observation as observation_engine
+from taintinduce.disassembler.insn_info import Disassembler, InsnInfo
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
-from taintinduce.rules import InsnInfo, Rule, TaintRule
+from taintinduce.rules.rules import Rule, TaintRule
 
 # Replaced squirrel imports with our own serialization
 from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder
@@ -52,7 +52,7 @@ def query_yes_no(question: str, default: Optional[str] = 'yes') -> bool:
 
 
 def gen_insninfo(archstring: str, bytestring: str, emu_verify: bool = True) -> InsnInfo:
-    insninfo = insn_info.Disassembler(archstring, bytestring).insn_info
+    insninfo = Disassembler(archstring, bytestring).insn_info
     if emu_verify:
         cpu = UnicornCPU(archstring)
         bytecode = binascii.unhexlify(bytestring)

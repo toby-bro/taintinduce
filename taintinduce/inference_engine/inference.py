@@ -9,8 +9,8 @@ from typing import Optional
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
-from taintinduce.rule_utils import espresso2cond, shift_espresso
-from taintinduce.rules import Rule, TaintCondition
+from taintinduce.rules.rule_utils import espresso2cond, shift_espresso
+from taintinduce.rules.rules import Rule, TaintCondition
 from taintinduce.state import Observation, State
 from taintinduce.types import (
     BitPosition,
@@ -65,42 +65,18 @@ class InferenceEngine(object):
         dataflows: list[Dataflow] = []
         condition_array: frozenset[TaintCondition]
 
-        if len(unique_conditions) == 1:
-            condition_array, use_bit_dataflows = next(iter(unique_conditions.items()))
-
-            cond_bits_list: list[frozenset[BitPosition]] = []
-            # ZL: this cond_bits_list is probably not needed
-            # i think we just need a set of all the cond_bits...
-            # but ah well, let's keep it that way
-            # This list is used later to collect all the bits that are
-            # defined in the condition so that we can remove the indirect
-            # flows
-            for condition in condition_array:
-                cond_bits = condition.get_cond_bits()
-                cond_bits_list.append(cond_bits)
-
+        merged_dataflows = Dataflow()
+        _cond_array: set[TaintCondition] = set()
+        for conditions, use_bit_dataflows in unique_conditions.items():
+            for cond in conditions:
+                _cond_array.add(cond)
             for use_bit, use_bit_dataflow in use_bit_dataflows.items():
-                if len(cond_bits_list) != len(use_bit_dataflow) - 1:
-                    raise Exception('Mismatch in condition bits and dataflow sets!')
                 for dep_set in use_bit_dataflow:
-                    dataflows.append(Dataflow())
-                    dataflows[-1][use_bit] = dep_set
-
-        else:
-            # Multiple unique conditions detected; merging all dataflows
-            logger.info('Multiple conditions detected: merging them')
-            merged_dataflows = Dataflow()
-            _cond_array: set[TaintCondition] = set()
-            for conditions, use_bit_dataflows in unique_conditions.items():
-                for cond in conditions:
-                    _cond_array.add(cond)
-                for use_bit, use_bit_dataflow in use_bit_dataflows.items():
-                    for dep_set in use_bit_dataflow:
-                        merged_dataflows[use_bit] = merged_dataflows[use_bit].union(dep_set)
-            dataflows.append(Dataflow())
-            for use_bit, merged_dep_set in merged_dataflows.items():
-                dataflows[-1][use_bit] = merged_dep_set
-            condition_array = frozenset(_cond_array)
+                    merged_dataflows[use_bit] = merged_dataflows[use_bit].union(dep_set)
+        dataflows.append(Dataflow())
+        for use_bit, merged_dep_set in merged_dataflows.items():
+            dataflows[-1][use_bit] = merged_dep_set
+        condition_array = frozenset(_cond_array)
 
         rule = Rule(state_format, list(condition_array), dataflows)
 
@@ -161,14 +137,14 @@ class InferenceEngine(object):
         no_cond_dataflow_set: set[frozenset[BitPosition]] = set()
 
         # ZL: TODO: Hack for cond_reg, do a check if state_format contains the cond_reg, if no, then skip condition inference  # noqa: E501
-        if num_partitions == 1 or cond_reg not in state_format:
+        if num_partitions == 1:
             # no conditional dataflow
             no_cond_dataflow_set_flat: set[BitPosition] = set()
             for output_set in possible_flows[mutated_input_bit]:
                 no_cond_dataflow_set_flat |= set(output_set)
             bit_dataflows.add(frozenset(no_cond_dataflow_set_flat))
 
-        elif num_partitions < 10:
+        else:
             # generate the two sets...
             # iterate across all observations and extract the behavior for the partitions...
             partitions = self.link_affected_outputs_to_their_input_states(
@@ -208,8 +184,6 @@ class InferenceEngine(object):
                     remaining_behavior = remaining_behavior.union(behavior)
             bit_dataflows.add(remaining_behavior)
 
-        else:
-            raise Exception(f'Too many partitions ({num_partitions}), cannot infer condition!')
         return bit_conditions, bit_dataflows
 
     def link_affected_outputs_to_their_input_states(

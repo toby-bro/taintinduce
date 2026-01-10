@@ -110,7 +110,7 @@ class TaintInduceDecoder(json.JSONDecoder):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(object_hook=self.object_hook, *args, **kwargs)  # noqa: B026
 
-    def convert_to_type(self, value: Any, type_name: str | None) -> Any:
+    def convert_to_type(self, value: Any, type_name: str | None) -> Any:  # noqa: C901
         """Convert value to the specified type."""
         if type_name is None:
             return value
