@@ -5,7 +5,7 @@ from typing import Sequence
 from taintinduce.isa.register import Register
 from taintinduce.state.state_utils import reg_pos
 
-from .rules import LogicType, TaintCondition
+from .conditions import LogicType, TaintCondition
 
 
 def shift_espresso(

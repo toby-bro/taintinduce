@@ -5,7 +5,14 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Python Debugger: Module",
+      "name": "taintinduce 0402",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "taintinduce.taintinduce",
+      "args": ["--skip-gen", "0402", "AMD64"]
+    },
+    {
+      "name": "taintinduce 21D8",
       "type": "debugpy",
       "request": "launch",
       "module": "taintinduce.taintinduce",
