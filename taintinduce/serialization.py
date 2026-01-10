@@ -5,6 +5,7 @@ This module provides custom JSON encoding/decoding for TaintInduce classes.
 
 import importlib
 import json
+from enum import Enum
 from typing import Any, Iterable, Self, TypeVar
 
 T = TypeVar('T')
@@ -77,6 +78,13 @@ class TaintInduceEncoder(json.JSONEncoder):
                 result['_value_type'] = value_type
 
             return result
+        if isinstance(obj, Enum):
+            return {
+                '_class': obj.__class__.__name__,
+                '_module': obj.__class__.__module__,
+                '_value_': obj._value_,
+                '_name_': obj._name_,
+            }
 
         if hasattr(obj, '__dict__') and len(obj.__dict__) > 0:
             # Serialize objects with their class name and attributes, processing attributes recursively
@@ -174,6 +182,8 @@ class TaintInduceDecoder(json.JSONDecoder):
             cls = getattr(module, class_name)
 
             # Create instance without calling __init__
+            if issubclass(cls, Enum):
+                return cls.__new__(cls, dct.pop('_value_'))
             obj = cls.__new__(cls)
             obj.__dict__.update(dct)
             return obj

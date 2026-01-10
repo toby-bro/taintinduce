@@ -1,7 +1,8 @@
 """Taint rule structures and conditions."""
 
 import itertools
-from typing import Any, ClassVar, Optional
+from enum import Enum
+from typing import Any, Optional
 
 import taintinduce.isa.x86_registers as x86_registers
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
@@ -10,6 +11,12 @@ from taintinduce.memory import MemorySlot
 from taintinduce.serialization import SerializableMixin
 from taintinduce.state import State, check_ones
 from taintinduce.types import BitPosition, Dataflow
+
+
+class LogicType(Enum):
+    DNF = 0
+    LOGIC = 1
+    CMP = 2
 
 
 class TaintCondition(SerializableMixin):
@@ -23,17 +30,36 @@ class TaintCondition(SerializableMixin):
     For example, a DNF can be represented as [('DNF', [(1024, 0),(64,1),...]), ...]
     """
 
-    OPS_FN_MAP: ClassVar[dict[str, str]] = {'DNF': '_dnf_eval', 'LOGIC': '_logic_eval', 'CMP': '_cmp_eval'}
+    condition_type: LogicType
+    condition_ops: Optional[frozenset[tuple[int, int]]]
+
+    def __repr__(self) -> str:
+        if self.condition_ops is None:
+            return 'TaintCondition()'
+        return f'TaintCondition({self.condition_type}, {self.get_cond_bits()}, {[i for _, i in self.condition_ops]})'
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
     def __init__(
         self,
-        conditions: Optional[tuple[str, list[tuple[int, int]]]] = None,
+        condition_type: LogicType,
+        conditions: Optional[frozenset[tuple[int, int]]] = None,
         repr_str: Optional[str] = None,
     ) -> None:
         if repr_str:
             self.deserialize(repr_str)
         else:
+            self.condition_type = condition_type
             self.condition_ops = conditions
+
+    def __hash__(self) -> int:
+        return hash((self.condition_type, self.condition_ops))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TaintCondition):
+            return False
+        return self.condition_type == other.condition_type and self.condition_ops == other.condition_ops
 
     def eval(self, state: State) -> bool:
         """The eval() method takes in a State object and checks if the condition evaluates to True or False.
@@ -48,21 +74,27 @@ class TaintCondition(SerializableMixin):
         result = True
         if self.condition_ops is None:
             return result
-        ops_name, ops_args = self.condition_ops
-        result &= getattr(self, self.OPS_FN_MAP[ops_name])(state, ops_args)
-        return result  # type: ignore[no-any-return]
+
+        match self.condition_type:
+            case LogicType.DNF:
+                return self._dnf_eval(state, self.condition_ops)
+            case LogicType.CMP:
+                return self._cmp_eval(state, self.condition_ops)
+            case LogicType.LOGIC:
+                return self._logic_eval(state, self.condition_ops)
+            case _:
+                raise ValueError(f'Condition type {self.condition_type} is not defined')
 
     def get_cond_bits(self) -> frozenset[BitPosition]:
         if self.condition_ops is None:
             return frozenset()
-        ops_name, ops_args = self.condition_ops
         cond_bits: set[BitPosition] = set()
-        if ops_name == 'DNF':
-            for mask, _ in ops_args:
+        if self.condition_type == LogicType.DNF:
+            for mask, _ in self.condition_ops:
                 cond_bits |= check_ones(mask)
         return frozenset(cond_bits)
 
-    def _dnf_eval(self, state: State, dnf_args: list[tuple[int, int]]) -> bool:
+    def _dnf_eval(self, state: State, dnf_args: frozenset[tuple[int, int]]) -> bool:
         if state.state_value is None:
             raise Exception('State value not initialized!')
         return any((state.state_value & bitmask == value) for bitmask, value in dnf_args)
