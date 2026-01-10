@@ -37,7 +37,7 @@ class Espresso(object):
             path = os.environ['ESPRESSO_PATH']
         self.path = path
 
-    def parse_output(self, output_b: bytes) -> set[tuple[int, int]]:
+    def parse_output(self, output_b: bytes) -> frozenset[tuple[int, int]]:
         """Takes the output of Espresso and returns the conditions.
 
         Args:
@@ -77,11 +77,10 @@ class Espresso(object):
             raise Exception('Length of logic != number of phases')
 
         # extract boolean condition from logic
-        bool_cond: set[tuple[int, int]] = set()
-        self.extract_conditions(num_phase, logic, bool_cond)
-        return bool_cond
+        return self.extract_conditions(num_phase, logic)
 
-    def extract_conditions(self, num_phase: int, logic: list[list[str]], bool_cond: set[tuple[int, int]]) -> None:
+    def extract_conditions(self, num_phase: int, logic: list[list[str]]) -> frozenset[tuple[int, int]]:
+        bool_cond = set()
         for x in range(num_phase):
             condition_bitstring, _ = logic[x]
             # condition is a bitstring, so index 0 is the msb
@@ -102,6 +101,7 @@ class Espresso(object):
                 else:
                     raise Exception('Illegal character found in boolean logic!')
             bool_cond.add((condition_bitmask, condition_value))
+        return frozenset(bool_cond)
 
     def minimize_raw(
         self,
@@ -132,7 +132,7 @@ class Espresso(object):
         out_size: int,
         pla_type: str,
         observations: dict[int, set[StateValue]],
-    ) -> set[tuple[int, int]]:
+    ) -> frozenset[tuple[int, int]]:
         """Obtain a minimal formula using the ESPRESSO heuristic.
 
         Args:
@@ -156,7 +156,7 @@ class Espresso(object):
         pla_type: str,
         observations: dict[int, set[StateValue]],
         raw: bool = False,
-    ) -> set[tuple[int, int]] | bytes:
+    ) -> frozenset[tuple[int, int]] | bytes:
         """Obtain a minimal formula using the ESPRESSO heuristic.
 
         Args:
@@ -196,7 +196,7 @@ class Espresso(object):
         if stderr:
             raise EspressoException(stderr)
 
-        result: set[tuple[int, int]] | bytes
+        result: frozenset[tuple[int, int]] | bytes
         if raw:
             result = stdout
         else:
