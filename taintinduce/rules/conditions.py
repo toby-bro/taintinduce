@@ -29,7 +29,9 @@ class TaintCondition(SerializableMixin):
     def __repr__(self) -> str:
         if self.condition_ops is None:
             return 'TaintCondition()'
-        return f'TaintCondition({self.condition_type}, {self.condition_ops})'
+        return (
+            f'TaintCondition({self.condition_type}, {[(check_ones(a), check_ones(b)) for a, b in self.condition_ops]})'
+        )
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -90,6 +92,7 @@ class TaintCondition(SerializableMixin):
     def _dnf_eval(self, state: State, dnf_args: frozenset[tuple[int, int]]) -> bool:
         if state.state_value is None:
             raise Exception('State value not initialized!')
+        # I have a doubt that it should rather be all ?
         return any((state.state_value & bitmask == value) for bitmask, value in dnf_args)
 
     def _logic_eval(self, state: State, logic_args: Any) -> bool:  # noqa: ARG002

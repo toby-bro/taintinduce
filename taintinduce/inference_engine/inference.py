@@ -9,9 +9,11 @@ from typing import Optional
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
+from taintinduce.rules.conditions import TaintCondition
 from taintinduce.rules.rule_utils import espresso2cond, shift_espresso
-from taintinduce.rules.rules import Rule, TaintCondition
+from taintinduce.rules.rules import Rule
 from taintinduce.state.state import Observation, State
+from taintinduce.state.state_utils import reg_pos
 from taintinduce.types import (
     BitPosition,
     Dataflow,
@@ -22,6 +24,25 @@ from taintinduce.types import (
 )
 
 from .logic import Espresso, EspressoException, NonOrthogonalException
+
+"""Inference engine for data-dependent taint propagation rules.
+
+This module infers taint propagation rules with conditions from observations.
+It supports two types of conditions:
+
+1. Control-flow dependent (legacy mode, use_full_state=False):
+   - Conditions based only on FLAGS/NZCV register
+   - Example: CMOV propagates taint only if ZF=0
+
+2. Data-dependent (generalized mode, use_full_state=True):
+   - Conditions based on any input register values
+   - Example: AND eax,ebx propagates no taint if ebx=0
+   - Example: SHL eax,cl propagates no taint if cl=0
+   - Example: IMUL with small operands may not affect high bits
+
+The algorithm uses ESPRESSO logic minimizer to find boolean formulas that
+separate different taint propagation behaviors based on input state.
+"""
 
 logging.basicConfig(format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -168,11 +189,24 @@ class InferenceEngine(object):
                     else:
                         agreeing_partition.update(input_states)
 
-                mycond = self._gen_condition(agreeing_partition, disagreeing_partition, state_format, cond_reg)
+                # use_full_state=True: generates conditions on all input registers (data-dependent)
+                # This captures conditions like "if ebx=0, no taint in AND eax,ebx"
+                # For arithmetic operations, this may overfit if observations are sparse
+                mycond = self._gen_condition(
+                    agreeing_partition,
+                    disagreeing_partition,
+                    state_format,
+                    cond_reg,
+                    use_full_state=True,
+                )
+
+                # Debug: Log partition sizes to help identify overfitting
+                logger.debug(
+                    f'  Partition sizes: agreeing={len(agreeing_partition)}, '
+                    f'disagreeing={len(disagreeing_partition)}',
+                )
                 if mycond:
-                    logger.debug(
-                        f'  Found condition for output set {output_set}: {mycond}\n{mycond.get_cond_bits()}',
-                    )
+                    logger.debug(f'  Found condition for output set {output_set}: {mycond}')
                     bit_conditions.add(mycond)
                     bit_dataflows.add(output_set)
                 else:
@@ -234,47 +268,77 @@ class InferenceEngine(object):
         opposing_partition: set[State],
         state_format: list[Register],
         cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        use_full_state: bool = True,
     ) -> Optional[TaintCondition]:
-        """
+        """Generate condition that separates two state partitions.
+
         Args:
-            aggreeing_partition (set{State}): Set of input States which belongs in the True partition.
-            opposing_partition (set{State}): Set of input States which belongs to the False partition.
+            aggreeing_partition: Set of input States which belongs in the True partition.
+            opposing_partition: Set of input States which belongs to the False partition.
+            state_format: List of registers in the state.
+            cond_reg: Register to use for conditions (legacy mode).
+            use_full_state: If True, use all input registers for conditions (data-dependent).
+                           If False, only use cond_reg (control-flow dependent).
         Returns:
             Condition object if there exists a condition.
-            None if no condition can be inferred which is nearly always the case as it only inferred on the cond_reg lol
+            None if no condition can be inferred.
         Raises:
             None
         """
         partition_true: set[StateValue] = set()
         partition_false: set[StateValue] = set()
-        # pdb.set_trace()
 
-        for state in aggreeing_partition:
-            partition_true.add(state.state_value)
-        for state in opposing_partition:
-            partition_false.add(state.state_value)
-        num_state_bits = sum([reg.bits for reg in state_format])
+        if use_full_state:
+            # Use ALL input register bits to find conditions
+            # This enables data-dependent conditions like:
+            # - "if ebx=0, no taint propagates in AND eax,ebx"
+            # - "if shift amount=0, no changes in SHL"
+            num_bits = sum([reg.bits for reg in state_format])
 
-        # print('True')
+            for state in aggreeing_partition:
+                partition_true.add(state.state_value)
+            for state in opposing_partition:
+                partition_false.add(state.state_value)
+
+        else:
+            # Legacy mode: Only use cond_reg bits (e.g., EFLAGS)
+            # This is for control-flow dependent conditions like CMOV, SETcc
+            cond_reg_start = reg_pos(cond_reg, state_format)
+            cond_reg_mask = (1 << cond_reg.bits) - 1
+            num_bits = cond_reg.bits
+
+            for state in aggreeing_partition:
+                cond_bits = (state.state_value >> cond_reg_start) & cond_reg_mask
+                partition_true.add(StateValue(cond_bits))
+            for state in opposing_partition:
+                cond_bits = (state.state_value >> cond_reg_start) & cond_reg_mask
+                partition_false.add(StateValue(cond_bits))
+
+        # Debug: Uncomment to see partition values
+        # print('True partition:')
         # for val in partition_true:
-        #    print('{:064b}'.format(val))
-        # print('False')
+        #    print('{:0{}b}'.format(val, num_bits))
+        # print('False partition:')
         # for val in partition_false:
-        #    print('{:064b}'.format(val))
+        #    print('{:0{}b}'.format(val, num_bits))
 
         partitions = {1: partition_true, 0: partition_false}
         try:
-            dnf_condition = self.espresso.minimize(num_state_bits, 1, 'fr', partitions)
+            dnf_condition = self.espresso.minimize(num_bits, 1, 'fr', partitions)
         except NonOrthogonalException:
             return None
         except EspressoException as e:
-            # ZL: have to make it a specific exception
             if 'ON-set and OFF-set are not orthogonal' in str(e):
                 return None
             pdb.set_trace()
             raise e
 
-        # dnf_conditions (set{(int, int)}): A set of tuples (mask, value) representing a DNF formula.
-        # Each tuple is a boolean formula in CNF (input & mask == value).
-        dnf_condition = shift_espresso(dnf_condition, cond_reg, state_format)
+        # dnf_condition: set of (mask, value) tuples representing DNF formula
+        # Each tuple is a CNF clause: (input & mask == value)
+
+        if not use_full_state:
+            # In legacy mode, shift condition to cond_reg's position in full state
+            dnf_condition = shift_espresso(dnf_condition, cond_reg, state_format)
+        # In full state mode, condition bits already align with state_format
+
         return espresso2cond(dnf_condition)
