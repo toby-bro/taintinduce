@@ -189,3 +189,87 @@ class IEEE754Extended(Strategy):
                 float_values.append(float_value)
 
         return SeedVariation(registers=registers_list, values=float_values)
+
+
+class SystematicRange(Strategy):
+    """Generate systematic values across the full range of a register.
+
+    For small registers (<= 16 bits), generates all possible values.
+    For larger registers, generates a systematic sample with good coverage.
+    Useful for arithmetic operations where edge cases matter.
+    """
+
+    def generator(self, regs: list[Register]) -> list[SeedVariation]:
+        inputs = []
+
+        for reg in regs:
+            if reg.bits <= 8:
+                # For 8-bit or smaller, test ALL values (0-255)
+                for value in range(2**reg.bits):
+                    inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+            elif reg.bits <= 16:
+                # For 16-bit, test every 256th value + edge cases
+                for value in range(0, 2**reg.bits, 256):
+                    inputs.append(SeedVariation(registers=[reg], values=[value]))
+                # Add edge cases
+                edge_cases = [
+                    0,
+                    1,
+                    2,
+                    3,  # Near zero
+                    2**reg.bits - 4,
+                    2**reg.bits - 3,  # Near max
+                    2**reg.bits - 2,
+                    2**reg.bits - 1,
+                    2 ** (reg.bits - 1) - 1,
+                    2 ** (reg.bits - 1),  # Sign boundary
+                    2 ** (reg.bits - 1) + 1,
+                ]
+                for value in edge_cases:
+                    inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+            else:
+                # For 32/64-bit, use systematic sampling with edge cases
+                # Sample every 2^16 values for coverage
+                step = max(2**16, (2**reg.bits) // self.num_runs)
+                for value in range(0, 2**reg.bits, step):
+                    inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+                # Add critical edge cases
+                edge_cases = [
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,  # Low values
+                    127,
+                    128,
+                    129,  # Signed byte boundary
+                    254,
+                    255,
+                    256,
+                    257,  # Unsigned byte boundary
+                    32767,
+                    32768,
+                    32769,  # Signed word boundary
+                    65534,
+                    65535,
+                    65536,
+                    65537,  # Unsigned word boundary
+                    2**reg.bits - 10,
+                    2**reg.bits - 9,  # Near max
+                    2**reg.bits - 2,
+                    2**reg.bits - 1,
+                ]
+                for value in edge_cases:
+                    if value < 2**reg.bits:
+                        inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+        return inputs

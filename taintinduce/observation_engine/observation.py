@@ -8,13 +8,110 @@ from taintinduce.isa.arm64 import ARM64
 from taintinduce.isa.isa import ISA
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86 import X86
-from taintinduce.observation_engine.strategy import BitFill, Bitwalk, IEEE754Extended, RandomNumber, ZeroWalk
+from taintinduce.observation_engine.strategy import (
+    BitFill,
+    Bitwalk,
+    IEEE754Extended,
+    RandomNumber,
+    SystematicRange,
+    ZeroWalk,
+)
 from taintinduce.state.state import Observation, State
 from taintinduce.state.state_utils import regs2bits
 from taintinduce.types import CpuRegisterMap
 from taintinduce.unicorn_cpu.unicorn_cpu import OutOfRangeException, UnicornCPU
 
 from .strategy import SeedVariation, Strategy
+
+
+class ConditionTargetedStrategy(Strategy):
+    """Strategy that generates systematic values to validate condition bits.
+
+    Instead of random values, this generates ALL possible values for small
+    registers (<=8 bits) or systematic sampling for larger registers that
+    contain condition bits. This exposes the true pattern rather than adding noise.
+    """
+
+    def __init__(self, condition_bits: set[int], state_format: list[Register]):
+        self.condition_bits = condition_bits
+        self.state_format = state_format
+
+    def generator(self, regs: list[Register]) -> list[SeedVariation]:
+        inputs = []
+
+        # Map condition bits to their registers
+        bit_offset = 0
+        reg_bit_map: dict[Register, list[int]] = {}
+        for reg in self.state_format:
+            reg_bits = []
+            for bit_pos in range(bit_offset, bit_offset + reg.bits):
+                if bit_pos in self.condition_bits:
+                    reg_bits.append(bit_pos - bit_offset)  # Local bit position
+            if reg_bits:
+                reg_bit_map[reg] = reg_bits
+            bit_offset += reg.bits
+
+        # For each register involved in conditions
+        for reg, local_bits in reg_bit_map.items():
+            if reg not in regs:
+                continue
+
+            # Calculate the span of condition bits within THIS REGISTER
+            min_bit = min(local_bits)
+            max_bit = max(local_bits)
+            bit_span = max_bit - min_bit + 1
+
+            # SYSTEMATIC COVERAGE: Test ALL values for small bit ranges
+            # Key insight: If condition bits span ≤8 bits within THIS register,
+            # treat it as an 8-bit problem and test all 2^N combinations
+            # This works even for sub-registers like AL (bits 0-7 of EAX)
+            if bit_span <= 8:
+                # Test all combinations in the bit range [min_bit, max_bit]
+                # For each value in 0..2^bit_span, shift it to the correct position
+                for i in range(2**bit_span):
+                    value = i << min_bit
+                    inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+            elif reg.bits <= 16:
+                # For 16-bit, test every Nth value plus edge cases
+                step = max(1, (2**reg.bits) // 256)  # Sample 256 values
+                for value in range(0, 2**reg.bits, step):
+                    inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+                # Add edge cases near boundaries
+                for bit_idx in local_bits:
+                    # Values around bit transitions
+                    for offset in [-1, 0, 1]:
+                        val = (1 << bit_idx) + offset
+                        if 0 <= val < 2**reg.bits:
+                            inputs.append(SeedVariation(registers=[reg], values=[val]))
+
+            else:
+                # For 32/64-bit registers, focus on condition bit patterns
+                # Generate all combinations of condition bits
+                num_cond_bits = len(local_bits)
+                if num_cond_bits <= 10:  # Manageable number of combinations
+                    # Test all 2^N combinations of condition bits
+                    # Don't add alternating patterns - they introduce noise
+                    for combo in range(2**num_cond_bits):
+                        value = 0
+                        for i, bit_idx in enumerate(sorted(local_bits)):
+                            if combo & (1 << i):
+                                value |= 1 << bit_idx
+                        inputs.append(SeedVariation(registers=[reg], values=[value]))
+                else:
+                    # Too many bits (>10), sample systematically
+                    # Test all combinations of the most significant condition bits
+                    # to avoid random noise
+                    top_bits = sorted(local_bits, reverse=True)[:8]  # Top 8 bits
+                    for combo in range(2 ** len(top_bits)):
+                        value = 0
+                        for i, bit_idx in enumerate(top_bits):
+                            if combo & (1 << i):
+                                value |= 1 << bit_idx
+                        inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+        return inputs
 
 
 class ObservationEngine(object):
@@ -160,7 +257,14 @@ class ObservationEngine(object):
             None
         """
         if not strategies:
-            strategies = [RandomNumber(100), Bitwalk(), ZeroWalk(), BitFill(), IEEE754Extended(10)]
+            strategies = [
+                SystematicRange(),
+                RandomNumber(100),
+                Bitwalk(),
+                ZeroWalk(),
+                BitFill(),
+                IEEE754Extended(10),
+            ]
 
         seed_states: list[tuple[CpuRegisterMap, CpuRegisterMap]] = []
 
@@ -258,3 +362,50 @@ class ObservationEngine(object):
                     return None
                 continue
         return sb, sa
+
+    def refine_with_targeted_observations(
+        self,
+        condition_bits: set[int],
+        num_refinement_samples: int = 100,
+    ) -> list[Observation]:
+        """Generate targeted observations to validate/refute discovered conditions.
+
+        After initial condition discovery, this method generates adversarial test cases
+        that specifically target the condition bits to verify if they truly determine
+        the taint propagation behavior.
+
+        Args:
+            condition_bits: Set of bit positions that appear in discovered conditions
+            num_refinement_samples: Number of additional targeted samples to generate
+
+        Returns:
+            List of new observations targeting condition bits
+        """
+        # Generate targeted observations using the condition-aware strategy
+        targeted_strategy = ConditionTargetedStrategy(condition_bits, self.state_format)
+
+        # Filter state_format to exclude memory-related registers
+        temp_state_format = [x for x in self.state_format if 'WRITE' not in x.name and 'ADDR' not in x.name]
+
+        seed_ios = []
+        for seed_variation in tqdm(
+            targeted_strategy.generator(temp_state_format),
+            desc='Generating refinement seeds',
+        ):
+            seed_io = self._gen_random_seed_io(
+                self.bytestring,
+                self.archstring,
+                seed_variation,
+            )
+            if seed_io:
+                seed_ios.append(seed_io)
+                if len(seed_ios) >= num_refinement_samples:
+                    break
+
+        # Generate observations from these targeted seeds
+        refinement_observations = []
+        for seed_io in tqdm(seed_ios[:num_refinement_samples], desc='Generating refinement observations'):
+            obs = self._gen_observation(self.bytestring, self.archstring, self.state_format, seed_io)
+            refinement_observations.append(obs)
+
+        return refinement_observations

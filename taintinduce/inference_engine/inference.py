@@ -4,12 +4,15 @@ import logging
 # Replaced squirrel import with our own
 import pdb
 from collections import defaultdict
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from taintinduce.observation_engine.observation import ObservationEngine
 
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EFLAGS
-from taintinduce.rules.conditions import TaintCondition
+from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rule_utils import espresso2cond, shift_espresso
 from taintinduce.rules.rules import Rule
 from taintinduce.state.state import Observation, State
@@ -49,18 +52,70 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
+class ConditionDataflowPair:
+    """Represents a condition paired with its corresponding output bits.
+
+    Attributes:
+        condition: The TaintCondition for this dataflow, or None for unconditional (default) case
+        output_bits: The set of output bit positions affected under this condition
+    """
+
+    def __init__(self, condition: Optional[TaintCondition], output_bits: frozenset[BitPosition]):
+        self.condition = condition
+        self.output_bits = output_bits
+
+    def __repr__(self) -> str:
+        return f'ConditionDataflowPair(condition={self.condition}, output_bits={self.output_bits})'
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ConditionDataflowPair):
+            return NotImplemented
+        return self.condition == other.condition and self.output_bits == other.output_bits
+
+    def __hash__(self) -> int:
+        return hash((self.condition, self.output_bits))
+
+
 class InferenceEngine(object):
     def __init__(self) -> None:
         self.espresso = Espresso()
 
-    def infer(self, observations: list[Observation], cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV) -> Rule:
+    @staticmethod
+    def extract_condition_bits(conditions: set[TaintCondition]) -> set[int]:
+        """Extract all bit positions referenced in discovered conditions.
+
+        Args:
+            conditions: Set of TaintCondition objects
+
+        Returns:
+            Set of bit positions (0-based) that appear in condition masks
+        """
+        condition_bits: set[int] = set()
+        for cond in conditions:
+            if cond.condition_ops:
+                for mask, value in cond.condition_ops:  # noqa: B007
+                    # Extract which bits are checked by this clause
+                    for bit_pos in range(64):  # Assume max 64-bit state
+                        if mask & (1 << bit_pos):
+                            condition_bits.add(bit_pos)
+        return condition_bits
+
+    def infer(
+        self,
+        observations: list[Observation],
+        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        observation_engine: Optional['ObservationEngine'] = None,
+        enable_refinement: bool = False,
+    ) -> Rule:
         """Infers the dataflow of the instruction using the obesrvations.
 
         Args:
             observations ([Observation]): List of observations to infer on.
-            insn_info (InsnInfo): Optional argument to provide additional information about the insn.
+            cond_reg: Condition register (EFLAGS or NZCV)
+            observation_engine: Optional ObservationEngine for refinement pass
+            enable_refinement: Whether to perform refinement pass with targeted observations
         Returns:
-            A list of Observations
+            A Rule object with inferred dataflows and conditions
         Raises:
             None
         """
@@ -74,47 +129,78 @@ class InferenceEngine(object):
             raise Exception('State format is None!')
         assert all(obs.state_format == state_format for obs in observations)
 
-        unique_conditions = self.infer_flow_conditions(observations, cond_reg, state_format)
+        unique_conditions = self.infer_flow_conditions(
+            observations,
+            cond_reg,
+            state_format,
+            enable_refinement=enable_refinement,
+            observation_engine=observation_engine,
+        )
 
-        # at this point, we have all the conditions for all the bits
-        # merge the condition and create the rule...
-        # TODO: ZL: Have to take a look at how correct this is.
-        # Don't think this is correct in general
-        # The assumption here is that there will always be 2 sets, empty and the actual
-        # condition list.
+        # Build parallel arrays of conditions and dataflows
+        # Each condition[i] corresponds to dataflows[i]
+        conditions_list: list[TaintCondition] = []
+        dataflows_list: list[Dataflow] = []
 
-        dataflows: list[Dataflow] = []
-        condition_array: frozenset[TaintCondition]
+        # We need to merge input bits that have the same condition sequence
+        # For now, we take the first unique_conditions entry (there should typically be only one)
+        if len(unique_conditions) == 0:
+            raise Exception('No conditions inferred!')
 
-        merged_dataflows = Dataflow()
-        _cond_array: set[TaintCondition] = set()
-        for conditions, use_bit_dataflows in unique_conditions.items():
-            for cond in conditions:
-                _cond_array.add(cond)
-            for use_bit, use_bit_dataflow in use_bit_dataflows.items():
-                for dep_set in use_bit_dataflow:
-                    merged_dataflows[use_bit] = merged_dataflows[use_bit].union(dep_set)
-        dataflows.append(Dataflow())
-        for use_bit, merged_dep_set in merged_dataflows.items():
-            dataflows[-1][use_bit] = merged_dep_set
-        condition_array = frozenset(_cond_array)
+        # Take the first (and typically only) condition pattern
+        condition_set, use_bit_dataflows = next(iter(unique_conditions.items()))
 
-        rule = Rule(state_format, list(condition_array), dataflows)
+        # Build one Dataflow object per condition
+        # We need to reconstruct the pairs by calling infer_conditions_for_dataflows on first bit
+        # This gives us the ordered sequence of conditions
+        possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
+        for observation in self.extract_observation_dependencies(observations):
+            for mutated_input_bit, modified_output_bits in observation.dataflow.items():
+                possible_flows[mutated_input_bit].add(modified_output_bits)
 
-        # for conditions in unique_conditions:
-        #    dataflow = defaultdict(set)
-        #    for use_bit, dataflows in unique_conditions[conditions]:
-        #        print(use_bit)
-        #        print tuple(izip_longest(conditions, dataflows, fillvalue=None))
+        first_bit = next(iter(use_bit_dataflows.keys()))
+        first_bit_pairs = self.infer_conditions_for_dataflows(
+            cond_reg,
+            state_format,
+            self.extract_observation_dependencies(observations),
+            possible_flows,
+            first_bit,
+            enable_refinement=enable_refinement,
+            observation_engine=observation_engine,
+            all_observations=observations,
+        )
 
-        return rule  # noqa: RET504
+        # Build parallel arrays using the order from first_bit_pairs
+        for pair in first_bit_pairs:
+            dataflow = Dataflow()
+            # For each input bit, collect outputs
+            for use_bit, output_sets in use_bit_dataflows.items():
+                if output_sets:
+                    all_outputs: set[BitPosition] = set()
+                    for output_set in output_sets:
+                        all_outputs.update(output_set)
+                    dataflow[use_bit] = frozenset(all_outputs)
+
+            dataflows_list.append(dataflow)
+            if pair.condition is not None:
+                conditions_list.append(pair.condition)
+
+        # If all conditions were None, we still need at least one empty condition for the Rule
+        if len(conditions_list) == 0:
+            # Create a condition with no requirements (always true)
+            conditions_list.append(TaintCondition(LogicType.DNF, frozenset()))
+
+        rule = Rule(state_format, conditions_list, dataflows_list)
+        return rule
 
     def infer_flow_conditions(
         self,
         observations: list[Observation],
         cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
         state_format: list[Register],
-    ) -> defaultdict[frozenset[TaintCondition], DataflowSet]:
+        enable_refinement: bool = False,
+        observation_engine: Optional['ObservationEngine'] = None,
+    ) -> dict[frozenset[Optional[TaintCondition]], DataflowSet]:
 
         observation_dependencies: list[ObservationDependency] = self.extract_observation_dependencies(observations)
 
@@ -124,18 +210,32 @@ class InferenceEngine(object):
             for mutated_input_bit, modified_output_bits in observation.dataflow.items():
                 possible_flows[mutated_input_bit].add(modified_output_bits)
 
-        unique_conditions: defaultdict[frozenset[TaintCondition], DataflowSet] = defaultdict(DataflowSet)
+        # Map from condition set -> dict of input_bit -> list of output sets
+        # We group input bits that have the same sequence of conditions
+        unique_conditions: dict[frozenset[Optional[TaintCondition]], DataflowSet] = {}
 
         for mutated_input_bit in possible_flows:
-            bit_conditions, bit_dataflows = self.infer_conditions_for_dataflows(
+            condition_dataflow_pairs = self.infer_conditions_for_dataflows(
                 cond_reg,
                 state_format,
                 observation_dependencies,
                 possible_flows,
                 mutated_input_bit,
+                enable_refinement=enable_refinement,
+                observation_engine=observation_engine,
+                all_observations=observations,
             )
-            old_cond = unique_conditions[frozenset(bit_conditions)].get(mutated_input_bit, set())
-            unique_conditions[frozenset(bit_conditions)][mutated_input_bit] = old_cond.union(bit_dataflows)
+
+            # Extract conditions as a frozenset key
+            condition_set = frozenset(pair.condition for pair in condition_dataflow_pairs)
+
+            # Store all output sets for this input bit
+            if condition_set not in unique_conditions:
+                unique_conditions[condition_set] = DataflowSet()
+            output_sets = {pair.output_bits for pair in condition_dataflow_pairs}
+            old_sets = unique_conditions[condition_set].get(mutated_input_bit, set())
+            unique_conditions[condition_set][mutated_input_bit] = old_sets.union(output_sets)
+
         return unique_conditions
 
     def infer_conditions_for_dataflows(
@@ -145,11 +245,20 @@ class InferenceEngine(object):
         observation_dependencies: list[ObservationDependency],
         possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
         mutated_input_bit: BitPosition,
-    ) -> tuple[set[TaintCondition], set[frozenset[BitPosition]]]:
+        enable_refinement: bool = False,
+        observation_engine: Optional['ObservationEngine'] = None,
+        all_observations: Optional[list[Observation]] = None,
+    ) -> list[ConditionDataflowPair]:
+        """Infer conditions and their associated dataflows for a mutated input bit.
+
+        Returns:
+            List of ConditionDataflowPair objects, each pairing a condition with its output bits.
+            condition=None represents the default/fallthrough case.
+        """
         logger.debug(f'Searching flow conditions for input bit {mutated_input_bit}')
 
-        bit_conditions: set[TaintCondition] = set()
-        bit_dataflows: set[frozenset[BitPosition]] = set()
+        # List of condition-dataflow pairs - order matters!
+        condition_dataflow_pairs: list[ConditionDataflowPair] = []
         num_partitions = len(possible_flows[mutated_input_bit])
         if num_partitions == 0:
             raise Exception(f'No possible flows for mutated input bit {mutated_input_bit}')
@@ -159,11 +268,13 @@ class InferenceEngine(object):
 
         # ZL: TODO: Hack for cond_reg, do a check if state_format contains the cond_reg, if no, then skip condition inference  # noqa: E501
         if num_partitions == 1:
-            # no conditional dataflow
+            # no conditional dataflow - single behavior for all inputs
             no_cond_dataflow_set_flat: set[BitPosition] = set()
             for output_set in possible_flows[mutated_input_bit]:
                 no_cond_dataflow_set_flat |= set(output_set)
-            bit_dataflows.add(frozenset(no_cond_dataflow_set_flat))
+            condition_dataflow_pairs.append(
+                ConditionDataflowPair(condition=None, output_bits=frozenset(no_cond_dataflow_set_flat)),
+            )
 
         else:
             # generate the two sets...
@@ -207,18 +318,40 @@ class InferenceEngine(object):
                 )
                 if mycond:
                     logger.debug(f'  Found condition for output set {output_set}: {mycond}')
-                    bit_conditions.add(mycond)
-                    bit_dataflows.add(output_set)
+
+                    # Refinement pass: validate this specific condition
+                    if enable_refinement and observation_engine is not None and all_observations is not None:
+                        refined_cond = self._refine_condition(
+                            mycond,
+                            mutated_input_bit,
+                            output_set,
+                            observation_engine,
+                            all_observations,
+                            state_format,
+                            cond_reg,
+                        )
+                        if refined_cond != mycond:
+                            logger.info(f'  REFINED: {mycond} -> {refined_cond}')
+                            mycond = refined_cond
+                        else:
+                            logger.info(f'  UNCHANGED: {mycond}')
+
+                    condition_dataflow_pairs.append(
+                        ConditionDataflowPair(condition=mycond, output_bits=output_set),
+                    )
                 else:
                     no_cond_dataflow_set.add(output_set)
 
+            # Default/fallthrough case: remaining behavior with no condition
             remaining_behavior = ordered_output_sets[-1]
             if len(no_cond_dataflow_set) > 0:
                 for behavior in no_cond_dataflow_set:
                     remaining_behavior = remaining_behavior.union(behavior)
-            bit_dataflows.add(remaining_behavior)
+            condition_dataflow_pairs.append(
+                ConditionDataflowPair(condition=None, output_bits=remaining_behavior),
+            )
 
-        return bit_conditions, bit_dataflows
+        return condition_dataflow_pairs
 
     def link_affected_outputs_to_their_input_states(
         self,
@@ -238,6 +371,103 @@ class InferenceEngine(object):
                 )
 
         return partitions
+
+    def _refine_condition(
+        self,
+        original_cond: TaintCondition,
+        mutated_input_bit: BitPosition,
+        output_set: frozenset[BitPosition],
+        observation_engine: 'ObservationEngine',
+        all_observations: list[Observation],
+        state_format: list[Register],
+        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+    ) -> TaintCondition:
+        """Refine a specific condition by generating targeted observations.
+
+        Args:
+            original_cond: The condition to refine
+            mutated_input_bit: Input bit this condition applies to
+            output_set: Output bits affected by this condition
+            agreeing_partition: States where condition is true
+            disagreeing_partition: States where condition is false
+            observation_engine: Engine to generate refinement observations
+            all_observations: Original observations
+            state_format: Register format
+            cond_reg: Condition register
+
+        Returns:
+            Refined condition (may be same as original if refinement doesn't change it)
+        """
+        # Extract condition bits from this specific condition
+        condition_bits = self.extract_condition_bits({original_cond})
+
+        if not condition_bits:
+            return original_cond
+
+        logger.debug(f'    Refining condition for input bit {mutated_input_bit}, cond bits: {sorted(condition_bits)}')
+
+        try:
+            # Generate targeted observations for this condition
+            # Use 64 samples - enough to cover 8-bit ranges without being too slow
+            refinement_obs = observation_engine.refine_with_targeted_observations(
+                condition_bits,
+                num_refinement_samples=64,
+            )
+
+            if not refinement_obs:
+                return original_cond
+
+            # Combine with original observations
+            combined_observations = all_observations + refinement_obs
+
+            # Extract dependencies from combined observations
+            combined_deps = self.extract_observation_dependencies(combined_observations)
+
+            # Rebuild partitions with new observations
+            combined_possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
+            for obs_dep in combined_deps:
+                for input_bit, output_bits in obs_dep.dataflow.items():
+                    combined_possible_flows[input_bit].add(output_bits)
+
+            # Check if this input bit still has the same output set
+            if output_set not in combined_possible_flows[mutated_input_bit]:
+                # Output set changed with refinement - condition may be spurious
+                logger.debug('    Output set changed with refinement!')
+                return original_cond
+
+            # Rebuild partitions for this specific input bit
+            refined_partitions = self.link_affected_outputs_to_their_input_states(
+                combined_deps,
+                mutated_input_bit,
+            )
+
+            # Find agreeing/disagreeing partitions for the same output set
+            refined_agreeing: set[State] = set()
+            refined_disagreeing: set[State] = set()
+
+            for alt_output_set, input_states in refined_partitions.items():
+                if alt_output_set == output_set:
+                    refined_agreeing.update(input_states)
+                else:
+                    refined_disagreeing.update(input_states)
+
+            # Generate new condition with refined partitions
+            refined_cond = self._gen_condition(
+                refined_agreeing,
+                refined_disagreeing,
+                state_format,
+                cond_reg,
+                use_full_state=True,
+            )
+
+            if refined_cond:
+                return refined_cond
+
+            return original_cond
+
+        except Exception as e:
+            logger.debug(f'    Refinement failed: {e}')
+            return original_cond
 
     def extract_observation_dependencies(
         self,
