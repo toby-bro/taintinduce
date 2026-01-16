@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>TaintInduce Visualizer</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1 style="text-align: center">🔍 TaintInduce Visualizer</h1>
+        <p style="text-align: center">
+          Interactive tool for visualizing and testing taint propagation rules
+        </p>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('overview')">
+          📊 Overview
+        </button>
+        <button class="tab" onclick="switchTab('pairs')">
+          📋 Condition-Dataflow Pairs
+        </button>
+        <button class="tab" onclick="switchTab('simulator')">
+          🎮 Interactive Simulator
+        </button>
+        <button class="tab" onclick="switchTab('tests')">✅ Test Cases</button>
+        <button class="tab" onclick="switchTab('graph')">🕸️ Graph View</button>
+      </div>
+
+      <div id="overview-tab" class="tab-content active">
+        <h2>Rule Overview</h2>
+        <div class="rule-info">
+          <h3>Loaded Rule: <span id="rule-file"></span></h3>
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="info-label">Architecture</div>
+              <div class="info-value" id="arch"></div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Registers</div>
+              <div class="info-value" id="num-regs"></div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Memory Slots</div>
+              <div class="info-value" id="num-mem"></div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Condition-Dataflow Pairs</div>
+              <div class="info-value" id="num-pairs"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="registers-list"></div>
+      </div>
+
+      <div id="pairs-tab" class="tab-content">
+        <h2>Condition-Dataflow Pairs</h2>
+        <div class="pair-list" id="pair-list"></div>
+      </div>
+
+      <div id="simulator-tab" class="tab-content">
+        <h2>Interactive Simulator</h2>
+        <p style="margin-bottom: 20px; color: #6c757d">
+          Enter an input state value (hex or decimal) to see which conditions
+          match and what taint propagates.
+        </p>
+
+        <div class="simulator">
+          <div class="input-group">
+            <label for="input-state">Input State Value:</label>
+            <input
+              type="text"
+              id="input-state"
+              placeholder="0x1234 or 4660"
+              value="0x0"
+            />
+          </div>
+
+          <button class="btn" onclick="runSimulation()">
+            🚀 Simulate Taint Propagation
+          </button>
+
+          <div class="results" id="simulation-results">
+            <h3>Simulation Results</h3>
+            <div id="matching-pairs"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tests-tab" class="tab-content">
+        <h2>Generated Test Cases</h2>
+        <p style="margin-bottom: 20px; color: #6c757d">
+          Concrete test cases that exercise each condition-dataflow pair.
+        </p>
+        <div class="test-cases" id="test-cases"></div>
+      </div>
+
+      <div id="graph-tab" class="tab-content">
+        <div class="graph-container">
+          <h2>Taint Flow Visualization</h2>
+
+          <div class="pair-selector">
+            <label for="pairSelect">Select Condition-Dataflow Pair:</label>
+            <select id="pairSelect" onchange="renderGraph()">
+              <!-- Populated by JavaScript -->
+            </select>
+          </div>
+
+          <div class="register-display" id="registerDisplay">
+            <!-- Populated by JavaScript -->
+          </div>
+
+          <div class="graph-scroll-wrapper">
+            <svg id="flowGraph" class="graph-svg">
+              <!-- Populated by JavaScript -->
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/visualizer.js"></script>
+  </body>
+</html>
