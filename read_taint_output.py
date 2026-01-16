@@ -10,12 +10,14 @@ Usage:
 import json
 import sys
 from pathlib import Path
+from typing import Optional
 
 import capstone.x86_const as x86_consts
 
+from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import TaintRule
 from taintinduce.serialization import TaintInduceDecoder
-from taintinduce.state.state import Observation
+from taintinduce.state.state import Observation, check_ones
 from taintinduce.types import Dataflow
 
 
@@ -78,12 +80,52 @@ def get_eflag_name(eflag):
     }.get(eflag, None)
 
 
+def _format_condition_description(condition: Optional[TaintCondition]) -> str:
+    """Format a condition into a human-readable description."""
+    if condition is None:
+        return 'UNCONDITIONAL (always applies)'
+
+    if condition.condition_ops is None or len(condition.condition_ops) == 0:
+        return 'UNCONDITIONAL (no conditions)'
+
+    if condition.condition_type == LogicType.DNF:
+        # DNF: Disjunctive Normal Form - OR of ANDs
+        # Each tuple is (bitmask, value) - true if (state & bitmask) == value
+        clauses = []
+        for bitmask, value in condition.condition_ops:
+            bit_positions = sorted(check_ones(bitmask))
+            value_bits = check_ones(value)
+
+            # Format: show which bits must be set/unset
+            bit_desc = []
+            for bit_pos in bit_positions:
+                if bit_pos in value_bits:
+                    bit_desc.append(f'bit[{bit_pos}]=1')
+                else:
+                    bit_desc.append(f'bit[{bit_pos}]=0')
+
+            if len(bit_desc) <= 3:
+                clauses.append('(' + ' AND '.join(bit_desc) + ')')
+            else:
+                # Show first few and summarize
+                shown = ' AND '.join(bit_desc[:3])
+                clauses.append(f'({shown} ... [{len(bit_desc)} conditions total])')
+
+        if len(clauses) == 1:
+            return f'DNF: {clauses[0]}'
+        if len(clauses) <= 3:
+            return f'DNF: {" OR ".join(clauses)}'
+        return f'DNF: {clauses[0]} OR {clauses[1]} OR ... [{len(clauses)} clauses total]'
+
+    return f'{condition.condition_type.name}: {len(condition.condition_ops)} conditions'
+
+
 def _print_dataflow_propagations(dataflow: Dataflow) -> None:
     """Print sample taint propagations for a dataflow."""
     if not dataflow:
         return
 
-    print('\n   Sample taint propagations (input bit → output bits):')
+    print('\n      Sample taint propagations (input bit → output bits):')
     for _, (src_bit, dest_bits) in enumerate(list(dataflow.items())[:5]):
         # Handle sets that were serialized
         dest_list = sorted(dest_bits)
@@ -93,13 +135,13 @@ def _print_dataflow_propagations(dataflow: Dataflow) -> None:
 
         if len(dest_list) > 10:
             print(
-                f"     Bit {src_bit_val:3d} → [{', '.join(map(str, dest_list[:5]))}... +{len(dest_list)-5} more]",
+                f"        Bit {src_bit_val:3d} → [{', '.join(map(str, dest_list[:5]))}... +{len(dest_list)-5} more]",
             )
         else:
-            print(f'     Bit {src_bit_val:3d} → {dest_list}')
+            print(f'        Bit {src_bit_val:3d} → {dest_list}')
 
     if len(dataflow) > 5:
-        print(f'     ... and {len(dataflow) - 5} more input bits')
+        print(f'        ... and {len(dataflow) - 5} more input bits')
 
 
 def read_rule(rule_file: str) -> None:
@@ -129,17 +171,30 @@ def read_rule(rule_file: str) -> None:
         size = mem.size if hasattr(mem, 'size') else '?'
         print(f'     {i}. {access} {mem_type} (size: {size})')
 
-    print(f'\n[+] Dataflows ({len(rule.dataflows)} dataflow sets):')
-    for df_id, dataflow in enumerate(rule.dataflows):
-        print(f'   Dataflow {df_id}: {len(dataflow)} input bits tracked')
-        _print_dataflow_propagations(dataflow)
+    print(f'\n[+] Condition-Dataflow Pairs ({len(rule.pairs)} total):')
+    print('    Each pair shows when a condition applies and what taint flows occur under that condition.\n')
 
-    print(f'\n[+] Conditions: {len(rule.conditions)}')
-    if rule.conditions:
-        for i, cond in enumerate(rule.conditions):
-            print(f'   Condition {i}: {cond}')
-    else:
-        print('   No conditions (unconditional dataflow)')
+    for pair_id, pair in enumerate(rule.pairs, 1):
+        print(f'   ┌─ Pair {pair_id}/{len(rule.pairs)} ─────────────────────────────────────')
+
+        # Display condition
+        condition_desc = _format_condition_description(pair.condition)
+        print(f'   │ CONDITION: {condition_desc}')
+
+        # Display dataflow statistics
+        dataflow = pair.output_bits
+        if isinstance(dataflow, dict):
+            num_input_bits = len(dataflow)
+            total_propagations = sum(len(outputs) for outputs in dataflow.values())
+            print('   │')
+            print(f'   │ DATAFLOW: {num_input_bits} input bits → {total_propagations} total propagations')
+
+            # Show the actual taint propagations
+            _print_dataflow_propagations(dataflow)
+        else:
+            print(f'   │ DATAFLOW: {dataflow}')
+
+        print('   └─────────────────────────────────────────────────────────\n')
 
     print()
 

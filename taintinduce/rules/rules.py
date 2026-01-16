@@ -1,14 +1,44 @@
 """Taint rule structures and conditions."""
 
-import itertools
 from typing import Optional
 
 from taintinduce.isa.register import Register
 from taintinduce.memory import MemorySlot
 from taintinduce.serialization import SerializableMixin
-from taintinduce.types import Dataflow
+from taintinduce.types import BitPosition, Dataflow
 
-from .conditions import TaintCondition
+from .conditions import LogicType, TaintCondition
+
+
+class ConditionDataflowPair:
+    """Represents a condition paired with its corresponding dataflow.
+
+    Attributes:
+        condition: The TaintCondition for this dataflow, or None for unconditional (default) case
+        output_bits: For per-bit conditions, the set of output bit positions affected under this condition.
+                     For full dataflows, a Dataflow mapping input bits to output bit sets.
+    """
+
+    def __init__(self, condition: Optional[TaintCondition], output_bits: frozenset[BitPosition] | Dataflow):
+        self.condition = condition
+        self.output_bits = output_bits
+
+    def __repr__(self) -> str:
+        return f'ConditionDataflowPair(condition={self.condition}, output_bits={self.output_bits})'
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ConditionDataflowPair):
+            return NotImplemented
+        return self.condition == other.condition and self.output_bits == other.output_bits
+
+    def __hash__(self) -> int:
+        # Convert output_bits to a hashable form
+        if isinstance(self.output_bits, dict):
+            # For Dataflow, convert to frozen items
+            output_hash = hash(frozenset(self.output_bits.items()))
+        else:
+            output_hash = hash(self.output_bits)
+        return hash((self.condition, output_hash))
 
 
 class TaintRuleFormat:
@@ -55,25 +85,34 @@ class TaintRule(SerializableMixin):
     """
 
     format: TaintRuleFormat
-    conditions: list[TaintCondition]
-    dataflows: list[Dataflow]
+    pairs: list[ConditionDataflowPair]
 
     def __init__(
         self,
         format: TaintRuleFormat,
-        conditions: list[TaintCondition],
-        dataflows: list[Dataflow],
+        pairs: list[ConditionDataflowPair],
     ) -> None:
         self.format = format
-        self.conditions = conditions
-        self.dataflows = [Dataflow() for _ in dataflows]
-        for df_id, dataflow in enumerate(dataflows):
-            for src_pos in dataflow:
-                self.dataflows[df_id][src_pos] = dataflow[src_pos].copy()
+        # Deep copy dataflows - output_bits should always be a Dataflow for TaintRule
+        self.pairs = []
+        for pair in pairs:
+            dataflow_copy = Dataflow()
+            if isinstance(pair.output_bits, dict):
+                dataflow = pair.output_bits
+                for src_pos in dataflow:
+                    dataflow_copy[src_pos] = dataflow[src_pos].copy()
+            else:
+                raise TypeError(f'TaintRule expects Dataflow in output_bits, got {type(pair.output_bits)}')
+            self.pairs.append(
+                ConditionDataflowPair(
+                    condition=pair.condition,
+                    output_bits=dataflow_copy,
+                ),
+            )
 
     def __str__(self) -> str:
         num_regs = len(self.format.registers) + len(self.format.mem_slots)
-        return f'TaintRule(format={num_regs} regs, conditions={len(self.conditions)}, dataflows={len(self.dataflows)})'
+        return f'TaintRule(format={num_regs} regs, pairs={len(self.pairs)})'
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -81,23 +120,33 @@ class TaintRule(SerializableMixin):
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, TaintRule):
             return False
-        return (
-            self.format == value.format
-            and self.conditions == value.conditions
-            and all(
-                all(self.dataflows[i][k] == value.dataflows[i][k] for k in self.dataflows[i] if k in value.dataflows[i])
-                for i in range(len(self.dataflows))
-            )
-        )
+        if self.format != value.format or len(self.pairs) != len(value.pairs):
+            return False
+        for i in range(len(self.pairs)):
+            if self.pairs[i].condition != value.pairs[i].condition:
+                return False
+            my_df = self.pairs[i].output_bits
+            other_df = value.pairs[i].output_bits
+            if isinstance(my_df, dict) and isinstance(other_df, dict):
+                if not all(my_df.get(k) == other_df.get(k) for k in set(my_df.keys()) | set(other_df.keys())):
+                    return False
+            elif my_df != other_df:
+                return False
+        return True
 
     def __hash__(self) -> int:
-        return hash(
+        pairs_hash = tuple(
             (
-                self.format,
-                tuple(self.conditions),
-                tuple(frozenset((k, frozenset(v)) for k, v in df.items()) for df in self.dataflows),
-            ),
+                pair.condition,
+                (
+                    frozenset((k, frozenset(v)) for k, v in pair.output_bits.items())
+                    if isinstance(pair.output_bits, dict)
+                    else pair.output_bits
+                ),
+            )
+            for pair in self.pairs
         )
+        return hash((self.format, pairs_hash))
 
 
 def reg2memslot(reg: Register) -> MemorySlot:
@@ -127,31 +176,27 @@ class Rule(SerializableMixin):
 
     Attributes:
         state_format (list of Register): a list of registers that defines the format of the state.
-        conditions (list of TaintCondition): conditional taint propagation rules
-        dataflows (list of dict): dataflow mappings for each condition
+        pairs (list of ConditionDataflowPair): condition-dataflow associations
     """
 
     state_format: list[Register]
-    conditions: list[TaintCondition]
-    dataflows: list[Dataflow]
+    pairs: list[ConditionDataflowPair]
 
     def __init__(
         self,
         state_format: Optional[list[Register]] = None,
-        conditions: Optional[list[TaintCondition]] = None,
-        dataflows: Optional[list[Dataflow]] = None,
+        pairs: Optional[list[ConditionDataflowPair]] = None,
         repr_str: Optional[str] = None,
     ) -> None:
         if repr_str:
             self.deserialize(repr_str)
-            if self.state_format is None or self.conditions is None or self.dataflows is None:
+            if self.state_format is None:
                 raise Exception('Invalid serialized Rule!')
         else:
-            if state_format is None or conditions is None or dataflows is None:
+            if state_format is None or pairs is None:
                 raise Exception('Invalid arguments to Rule constructor!')
             self.state_format = state_format
-            self.conditions = conditions
-            self.dataflows = dataflows
+            self.pairs = pairs
 
     def convert2squirrel(self, archstring: str) -> TaintRule:
         """Convert internal representation to TaintRule format."""
@@ -164,18 +209,31 @@ class Rule(SerializableMixin):
                 reg_list.append(reg)
 
         taint_rule_format = TaintRuleFormat(archstring, reg_list, mem_list)
-        return TaintRule(taint_rule_format, self.conditions, self.dataflows)
+        # Create pairs from internal ConditionDataflowPair objects
+        pairs_list = []
+        for pair in self.pairs:
+            condition = pair.condition if pair.condition is not None else TaintCondition(LogicType.DNF, frozenset())
+            pairs_list.append(
+                ConditionDataflowPair(
+                    condition=condition,
+                    output_bits=pair.output_bits,
+                ),
+            )
+        return TaintRule(taint_rule_format, pairs_list)
 
     def web_string(self) -> str:
         mystr_list = []
         mystr_list.append(str(self.state_format))
         mystr_list.append('')
-        dep_list = list(itertools.zip_longest(self.conditions, self.dataflows))
-        for condition, dataflow in dep_list:
+        # Iterate directly over pairs
+        for pair in self.pairs:
             mystr_list.append('Condition:')
-            mystr_list.append('{}'.format(condition))
+            mystr_list.append('{}'.format(pair.condition))
             mystr_list.append('')
             mystr_list.append('Dataflows: &lt;in bit&gt; &rarr; &lt;out bit&gt;')
-            for def_bit in dataflow:
-                mystr_list.append('{} &rarr; {}'.format(def_bit, dataflow[def_bit]))
+            dataflow = pair.output_bits
+            # dataflow should be a Dataflow (dict-like) at this point
+            if isinstance(dataflow, dict):
+                for def_bit in dataflow:
+                    mystr_list.append('{} &rarr; {}'.format(def_bit, dataflow[def_bit]))
         return '<br/>'.join(mystr_list)
