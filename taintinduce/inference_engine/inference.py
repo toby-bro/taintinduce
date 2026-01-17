@@ -107,7 +107,7 @@ class InferenceEngine(object):
             raise Exception('State format is None!')
         assert all(obs.state_format == state_format for obs in observations)
 
-        unique_conditions = self.infer_flow_conditions(
+        condition_groups = self.infer_flow_conditions(
             observations,
             cond_reg,
             state_format,
@@ -115,14 +115,14 @@ class InferenceEngine(object):
             observation_engine=observation_engine,
         )
 
-        if len(unique_conditions) == 0:
+        if len(condition_groups) == 0:
             raise Exception('No conditions inferred!')
 
         # Build list of ConditionDataflowPair objects with full dataflows
         # Process ALL condition groups using the stored pairs
         condition_dataflow_pairs_full: list[ConditionDataflowPair] = []
 
-        for _condition_set, (ordered_pairs, use_bit_dataflows) in unique_conditions.items():
+        for ordered_pairs, use_bit_dataflows in condition_groups:
             # Use the ordered pairs that were already inferred (from a representative input bit)
             # Build full dataflows for each condition in this group
             for pair in ordered_pairs:
@@ -138,6 +138,19 @@ class InferenceEngine(object):
                 # Create a new pair with the full dataflow
                 # Use empty condition if condition is None
                 condition = pair.condition if pair.condition is not None else TaintCondition(LogicType.DNF, frozenset())
+
+                # Log 1-to-many flows with no condition or empty condition
+                is_empty_condition = pair.condition is None or (
+                    pair.condition.condition_ops is not None and len(pair.condition.condition_ops) == 0
+                )
+                if is_empty_condition:
+                    for input_bit, output_bits in dataflow.items():
+                        if len(output_bits) > 1:
+                            logger.warning(
+                                f'No condition for input bit {input_bit} -> '
+                                f'{len(output_bits)} output bits (full dataflow)',
+                            )
+
                 condition_dataflow_pairs_full.append(
                     ConditionDataflowPair(condition=condition, output_bits=dataflow),
                 )
@@ -151,12 +164,13 @@ class InferenceEngine(object):
         state_format: list[Register],
         enable_refinement: bool = False,
         observation_engine: Optional['ObservationEngine'] = None,
-    ) -> dict[frozenset[Optional[TaintCondition]], tuple[list[ConditionDataflowPair], DataflowSet]]:
+    ) -> list[tuple[list[ConditionDataflowPair], DataflowSet]]:
         """Infer conditions for dataflows and group by condition pattern.
 
         Returns:
-            Dict mapping condition frozenset to (ordered_pairs, input_bit_dataflows).
-            The ordered_pairs are from a representative input bit.
+            List of tuples (ordered_pairs, input_bit_dataflows).
+            Each tuple represents a group of input bits with the same condition pattern.
+            The ordered_pairs are from a representative input bit in that group.
             The input_bit_dataflows maps each input bit to its output sets.
         """
 
@@ -171,7 +185,8 @@ class InferenceEngine(object):
         # Map from condition frozenset -> (representative pairs, dict of input_bit -> output sets)
         # We group input bits that have the same set of conditions
         # Store the pairs from first encountered input bit
-        unique_conditions: dict[
+        # The dict is used for grouping, then we return just the values
+        condition_groups_dict: dict[
             frozenset[Optional[TaintCondition]],
             tuple[list[ConditionDataflowPair], DataflowSet],
         ] = {}
@@ -207,12 +222,12 @@ class InferenceEngine(object):
                     condition_set = frozenset(pair.condition for pair in condition_dataflow_pairs)
 
                     # Store ordered pairs and accumulate output sets for this input bit
-                    if condition_set not in unique_conditions:
+                    if condition_set not in condition_groups_dict:
                         # First time seeing this condition pattern - store the pairs
-                        unique_conditions[condition_set] = (condition_dataflow_pairs, DataflowSet())
+                        condition_groups_dict[condition_set] = (condition_dataflow_pairs, DataflowSet())
 
                     # Get the dataflow set for this condition group
-                    _, dataflow_set = unique_conditions[condition_set]
+                    _, dataflow_set = condition_groups_dict[condition_set]
 
                     # Store all output sets for this input bit
                     # Note: Here output_bits is frozenset[BitPosition] (from infer_conditions_for_dataflows)
@@ -223,7 +238,8 @@ class InferenceEngine(object):
                     logger.error(f'Failed to infer conditions for bit {mutated_input_bit}: {e}')
                     raise
 
-        return unique_conditions
+        # Return just the values (ordered_pairs, dataflow_set) without the condition_set keys
+        return list(condition_groups_dict.values())
 
     def infer_conditions_for_dataflows(
         self,
@@ -259,8 +275,13 @@ class InferenceEngine(object):
             no_cond_dataflow_set_flat: set[BitPosition] = set()
             for output_set in possible_flows[mutated_input_bit]:
                 no_cond_dataflow_set_flat |= set(output_set)
+            output_bits = frozenset(no_cond_dataflow_set_flat)
+            if len(output_bits) > 1:
+                logger.info(
+                    f'No condition for input bit {mutated_input_bit} -> {len(output_bits)} output bits',
+                )
             condition_dataflow_pairs.append(
-                ConditionDataflowPair(condition=None, output_bits=frozenset(no_cond_dataflow_set_flat)),
+                ConditionDataflowPair(condition=None, output_bits=output_bits),
             )
 
         else:
@@ -275,7 +296,7 @@ class InferenceEngine(object):
             # it lowers the chances of the DNF exploding.
             ordered_output_sets = sorted(partitions.keys(), key=lambda x: len(partitions[x]), reverse=True)
 
-            for output_set in ordered_output_sets[:-1]:
+            for output_set in ordered_output_sets:
                 agreeing_partition: set[State] = set()
                 disagreeing_partition: set[State] = set()
                 for (
@@ -327,16 +348,25 @@ class InferenceEngine(object):
                         ConditionDataflowPair(condition=mycond, output_bits=output_set),
                     )
                 else:
+                    if len(output_set) > 1:
+                        logger.info(
+                            f'No condition for input bit {mutated_input_bit} -> '
+                            f'{len(output_set)} output bits (partition)',
+                        )
                     no_cond_dataflow_set.add(output_set)
 
             # Default/fallthrough case: remaining behavior with no condition
-            remaining_behavior = ordered_output_sets[-1]
+            remaining_behavior: frozenset[BitPosition] = frozenset()
             if len(no_cond_dataflow_set) > 0:
                 for behavior in no_cond_dataflow_set:
                     remaining_behavior = remaining_behavior.union(behavior)
-            condition_dataflow_pairs.append(
-                ConditionDataflowPair(condition=None, output_bits=remaining_behavior),
-            )
+                logger.info(
+                    f'No condition for input bit {mutated_input_bit} -> '
+                    f'{len(remaining_behavior)} output bits (fallthrough)',
+                )
+                condition_dataflow_pairs.append(
+                    ConditionDataflowPair(condition=None, output_bits=remaining_behavior),
+                )
 
         return condition_dataflow_pairs
 
