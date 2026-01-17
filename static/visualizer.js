@@ -193,6 +193,12 @@ async function populatePairSelector() {
   const select = document.getElementById("pairSelect");
   select.innerHTML = "";
 
+  // Add "ALL" option
+  const allOption = document.createElement("option");
+  allOption.value = "ALL";
+  allOption.textContent = `ALL (${currentRuleData.pairs.length} pairs)`;
+  select.appendChild(allOption);
+
   currentRuleData.pairs.forEach((pair, idx) => {
     const option = document.createElement("option");
     option.value = idx;
@@ -247,6 +253,39 @@ function decodeFlags(regName, bits, value = null) {
       { bit: 20, name: "VIP", desc: "Virtual IP" },
       { bit: 21, name: "ID", desc: "ID" },
     ],
+    CPSR: [
+      // ARM/AArch32 flags
+      { bit: 31, name: "N", desc: "Negative" },
+      { bit: 30, name: "Z", desc: "Zero" },
+      { bit: 29, name: "C", desc: "Carry" },
+      { bit: 28, name: "V", desc: "Overflow" },
+      { bit: 27, name: "Q", desc: "Saturation" },
+      { bit: 24, name: "J", desc: "Jazelle" },
+      { bit: 9, name: "E", desc: "Endianness" },
+      { bit: 8, name: "A", desc: "Imprecise Abort" },
+      { bit: 7, name: "I", desc: "IRQ disable" },
+      { bit: 6, name: "F", desc: "FIQ disable" },
+      { bit: 5, name: "T", desc: "Thumb" },
+    ],
+    APSR: [
+      // ARM Application Program Status Register
+      { bit: 31, name: "N", desc: "Negative" },
+      { bit: 30, name: "Z", desc: "Zero" },
+      { bit: 29, name: "C", desc: "Carry" },
+      { bit: 28, name: "V", desc: "Overflow" },
+      { bit: 27, name: "Q", desc: "Saturation" },
+      { bit: 19, name: "GE0", desc: "Greater/Equal [0]" },
+      { bit: 18, name: "GE1", desc: "Greater/Equal [1]" },
+      { bit: 17, name: "GE2", desc: "Greater/Equal [2]" },
+      { bit: 16, name: "GE3", desc: "Greater/Equal [3]" },
+    ],
+    NZCV: [
+      // AArch64 condition flags
+      { bit: 31, name: "N", desc: "Negative" },
+      { bit: 30, name: "Z", desc: "Zero" },
+      { bit: 29, name: "C", desc: "Carry" },
+      { bit: 28, name: "V", desc: "Overflow" },
+    ],
   };
 
   const flags = flagDefs[regName] || [];
@@ -268,15 +307,54 @@ function decodeFlags(regName, bits, value = null) {
 function renderGraph() {
   if (!currentRuleData) return;
 
-  const pairIdx = parseInt(document.getElementById("pairSelect").value);
-  const pair = currentRuleData.pairs[pairIdx];
+  const pairValue = document.getElementById("pairSelect").value;
   const format = currentRuleData.format;
 
-  // Render register display
-  renderRegisters(format, pair);
+  if (pairValue === "ALL") {
+    // Combine all pairs' dataflows
+    const combinedPair = {
+      dataflow: [],
+      condition_readable: "All pairs combined",
+    };
 
-  // Render flow graph
-  renderFlowGraph(pair, format);
+    currentRuleData.pairs.forEach((pair) => {
+      if (pair.dataflow && Array.isArray(pair.dataflow)) {
+        combinedPair.dataflow.push(...pair.dataflow);
+      }
+    });
+
+    // Count unique conditions
+    const conditionCounts = {};
+    combinedPair.dataflow.forEach((flow) => {
+      const cond = flow.condition || "UNCONDITIONAL";
+      conditionCounts[cond] = (conditionCounts[cond] || 0) + 1;
+    });
+
+    console.log(
+      "Rendering ALL pairs:",
+      currentRuleData.pairs.length,
+      "pairs with",
+      combinedPair.dataflow.length,
+      "total dataflows"
+    );
+    console.log("Condition distribution:", conditionCounts);
+    console.log("Sample dataflow entries:", combinedPair.dataflow.slice(0, 5));
+
+    // Render register display (use first pair for display)
+    renderRegisters(format, currentRuleData.pairs[0]);
+
+    // Render combined flow graph
+    renderFlowGraph(combinedPair, format);
+  } else {
+    const pairIdx = parseInt(pairValue);
+    const pair = currentRuleData.pairs[pairIdx];
+
+    // Render register display
+    renderRegisters(format, pair);
+
+    // Render flow graph
+    renderFlowGraph(pair, format);
+  }
 }
 
 function renderRegisters(format, pair) {
@@ -331,8 +409,107 @@ function sortBitsByRegister(bitArray, format) {
   });
 }
 
+function highlightConnectedEdges(nodeId, type) {
+  console.log("Highlighting node:", nodeId, "type:", type);
+
+  const svg = document.getElementById("flowGraph");
+  const scrollWrapper = svg.closest(".graph-scroll-wrapper");
+
+  // Build maps for faster lookup
+  const nodeMap = new Map();
+  document.querySelectorAll("[data-node-id]").forEach((node) => {
+    nodeMap.set(node.getAttribute("data-node-id"), node);
+  });
+
+  const edgesByFrom = new Map();
+  const edgesByTo = new Map();
+  document.querySelectorAll(".flow-line").forEach((edge) => {
+    const from = edge.getAttribute("data-from");
+    const to = edge.getAttribute("data-to");
+    if (!edgesByFrom.has(from)) edgesByFrom.set(from, []);
+    if (!edgesByTo.has(to)) edgesByTo.set(to, []);
+    edgesByFrom.get(from).push(edge);
+    edgesByTo.get(to).push(edge);
+  });
+
+  const clickedNode = nodeMap.get(nodeId);
+
+  // Check if clicking the same node again (to unselect)
+  const wasAlreadyHighlighted = clickedNode?.classList.contains("highlighted");
+
+  // Clear previous highlights
+  document.querySelectorAll(".flow-line.highlighted").forEach((el) => {
+    el.classList.remove("highlighted");
+  });
+  document.querySelectorAll(".bit-node.highlighted").forEach((el) => {
+    el.classList.remove("highlighted");
+  });
+
+  // If was already highlighted, unselect (remove dimming) and return
+  if (wasAlreadyHighlighted) {
+    scrollWrapper.classList.remove("has-selection");
+    console.log("Unselected node");
+    return;
+  }
+
+  // Add selection state to dim non-highlighted elements
+  scrollWrapper.classList.add("has-selection");
+
+  console.log("Clicked node found:", clickedNode);
+  if (clickedNode) {
+    clickedNode.classList.add("highlighted");
+
+    // Center the clicked node
+    const transform = clickedNode.getAttribute("transform");
+    const match = transform.match(/translate\((\d+),\s*(\d+)\)/);
+    if (match) {
+      const x = parseInt(match[1]);
+      const y = parseInt(match[2]);
+
+      // Calculate scroll position to center the node
+      const scrollLeft = x - scrollWrapper.clientWidth / 2;
+      const scrollTop = y - scrollWrapper.clientHeight / 2;
+
+      scrollWrapper.scrollTo({
+        left: Math.max(0, scrollLeft),
+        top: Math.max(0, scrollTop),
+        behavior: "smooth",
+      });
+    }
+  }
+
+  // Find and highlight connected edges and nodes using maps
+  if (type === "input") {
+    const edges = edgesByFrom.get(nodeId) || [];
+    console.log("Found", edges.length, "edges from this input node");
+    edges.forEach((edge) => {
+      edge.classList.add("highlighted");
+      const toId = edge.getAttribute("data-to");
+      const toNode = nodeMap.get(toId);
+      if (toNode) {
+        toNode.classList.add("highlighted");
+      }
+    });
+  } else if (type === "output") {
+    const edges = edgesByTo.get(nodeId) || [];
+    console.log("Found", edges.length, "edges to this output node");
+    edges.forEach((edge) => {
+      edge.classList.add("highlighted");
+      const fromId = edge.getAttribute("data-from");
+      const fromNode = nodeMap.get(fromId);
+      if (fromNode) {
+        fromNode.classList.add("highlighted");
+      }
+    });
+  }
+}
+
 function renderFlowGraph(pair, format) {
   const svg = document.getElementById("flowGraph");
+
+  console.log("=== renderFlowGraph called ===");
+  console.log("Pair:", pair);
+  console.log("Dataflow length:", pair.dataflow ? pair.dataflow.length : 0);
 
   // Clear previous content
   svg.innerHTML = "";
@@ -340,8 +517,16 @@ function renderFlowGraph(pair, format) {
   if (!pair.dataflow || !Array.isArray(pair.dataflow)) {
     svg.innerHTML =
       '<text x="50%" y="50%" text-anchor="middle" fill="#333">No dataflow to display</text>';
+    console.log("No dataflow to display for pair");
     return;
   }
+
+  console.log(
+    "Rendering flow graph with",
+    pair.dataflow.length,
+    "dataflow entries"
+  );
+  console.log("First dataflow entry:", pair.dataflow[0]);
 
   // Collect all input and output bits first to calculate size
   const inputBits = new Set();
@@ -351,6 +536,7 @@ function renderFlowGraph(pair, format) {
   pair.dataflow.forEach((flow) => {
     const outBit = flow.output_bit;
     const inBits = flow.input_bits || [];
+    const condition = flow.condition || "UNCONDITIONAL";
 
     outputBits.add(JSON.stringify(outBit));
     inBits.forEach((inBit) => {
@@ -358,9 +544,16 @@ function renderFlowGraph(pair, format) {
       edges.push({
         from: JSON.stringify(inBit),
         to: JSON.stringify(outBit),
+        condition: condition,
       });
     });
   });
+
+  console.log("Created", edges.length, "edges");
+  if (edges.length > 0) {
+    console.log("First edge:", edges[0]);
+    console.log("First edge condition:", edges[0].condition);
+  }
 
   let inputArray = Array.from(inputBits).map((s) => JSON.parse(s));
   let outputArray = Array.from(outputBits).map((s) => JSON.parse(s));
@@ -448,10 +641,49 @@ function renderFlowGraph(pair, format) {
       const d = `M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`;
       path.setAttribute("d", d);
       path.setAttribute("class", "flow-line");
-      path.innerHTML = `<title>${edge.from} → ${edge.to}</title>`;
+      path.setAttribute("data-from", edge.from);
+      path.setAttribute("data-to", edge.to);
+      path.innerHTML = `<title>${edge.from} → ${edge.to}\nCondition: ${
+        edge.condition || "UNCONDITIONAL"
+      }</title>`;
+
+      // Add hover handler to show condition
+      path.addEventListener("mouseover", function (e) {
+        const tooltip =
+          document.getElementById("edge-tooltip") || createTooltip();
+        tooltip.textContent = edge.condition || "UNCONDITIONAL";
+        tooltip.style.display = "block";
+        tooltip.style.left = e.pageX + 10 + "px";
+        tooltip.style.top = e.pageY + 10 + "px";
+      });
+
+      path.addEventListener("mouseout", function () {
+        const tooltip = document.getElementById("edge-tooltip");
+        if (tooltip) tooltip.style.display = "none";
+      });
+
       svg.appendChild(path);
     }
   });
+
+  // Helper function to create tooltip
+  function createTooltip() {
+    const tooltip = document.createElement("div");
+    tooltip.id = "edge-tooltip";
+    tooltip.style.position = "fixed";
+    tooltip.style.background = "rgba(0, 0, 0, 0.8)";
+    tooltip.style.color = "white";
+    tooltip.style.padding = "8px 12px";
+    tooltip.style.borderRadius = "4px";
+    tooltip.style.fontSize = "12px";
+    tooltip.style.zIndex = "10000";
+    tooltip.style.pointerEvents = "none";
+    tooltip.style.maxWidth = "400px";
+    tooltip.style.wordWrap = "break-word";
+    tooltip.style.display = "none";
+    document.body.appendChild(tooltip);
+    return tooltip;
+  }
 
   // Draw input nodes
   inputArray.forEach((bit, idx) => {
@@ -460,6 +692,7 @@ function renderFlowGraph(pair, format) {
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     g.setAttribute("class", "bit-node input");
     g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+    g.setAttribute("data-node-id", key);
 
     const circle = document.createElementNS(
       "http://www.w3.org/2000/svg",
@@ -469,8 +702,16 @@ function renderFlowGraph(pair, format) {
     g.appendChild(circle);
 
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("class", "circle-label");
     text.textContent = "IN";
     g.appendChild(text);
+
+    // Add click handler for highlighting
+    g.addEventListener("click", function (e) {
+      e.stopPropagation();
+      console.log("Input node clicked:", key);
+      highlightConnectedEdges(key, "input");
+    });
 
     const title = document.createElementNS(
       "http://www.w3.org/2000/svg",
@@ -488,7 +729,6 @@ function renderFlowGraph(pair, format) {
     label.setAttribute("y", 5);
     label.setAttribute("text-anchor", "start");
     label.setAttribute("font-size", "11");
-    label.setAttribute("fill", "#000"); // Black, not white
     label.textContent = formatBitPosition(bit);
     g.appendChild(label);
 
@@ -502,6 +742,7 @@ function renderFlowGraph(pair, format) {
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     g.setAttribute("class", "bit-node output");
     g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+    g.setAttribute("data-node-id", key);
 
     const circle = document.createElementNS(
       "http://www.w3.org/2000/svg",
@@ -511,8 +752,16 @@ function renderFlowGraph(pair, format) {
     g.appendChild(circle);
 
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("class", "circle-label");
     text.textContent = "OUT";
     g.appendChild(text);
+
+    // Add click handler for highlighting
+    g.addEventListener("click", function (e) {
+      e.stopPropagation();
+      console.log("Output node clicked:", key);
+      highlightConnectedEdges(key, "output");
+    });
 
     const title = document.createElementNS(
       "http://www.w3.org/2000/svg",
@@ -530,7 +779,7 @@ function renderFlowGraph(pair, format) {
     label.setAttribute("y", 5);
     label.setAttribute("text-anchor", "start");
     label.setAttribute("font-size", "11");
-    label.setAttribute("fill", "#000"); // Black, not white
+
     label.textContent = formatBitPosition(bit);
     g.appendChild(label);
 
@@ -586,6 +835,24 @@ function renderFlowGraph(pair, format) {
   legend.appendChild(outputText);
 
   svg.appendChild(legend);
+
+  // Add click handler to SVG background to unselect
+  svg.addEventListener("click", function (e) {
+    // Only unselect if clicking directly on SVG (not on child elements)
+    if (e.target === svg) {
+      const scrollWrapper = svg.closest(".graph-scroll-wrapper");
+      if (scrollWrapper && scrollWrapper.classList.contains("has-selection")) {
+        document.querySelectorAll(".flow-line.highlighted").forEach((el) => {
+          el.classList.remove("highlighted");
+        });
+        document.querySelectorAll(".bit-node.highlighted").forEach((el) => {
+          el.classList.remove("highlighted");
+        });
+        scrollWrapper.classList.remove("has-selection");
+        console.log("Unselected via background click");
+      }
+    }
+  });
 }
 
 function getFlagName(regName, bitNum) {

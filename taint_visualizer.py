@@ -190,6 +190,8 @@ def get_rule_data():
                         {
                             'output_bit': out_info,
                             'input_bits': [in_info],
+                            'condition': format_condition_human_readable(pair.condition),
+                            'is_unconditional': pair.condition is None,
                         },
                     )
 

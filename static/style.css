@@ -271,6 +271,16 @@ body {
   border: 1px solid #dee2e6;
   border-radius: 6px;
   background: #fafbfc;
+  scroll-behavior: smooth;
+}
+
+/* Dim elements when selection is active */
+.graph-scroll-wrapper.has-selection .flow-line:not(.highlighted) {
+  opacity: 0.1;
+}
+
+.graph-scroll-wrapper.has-selection .bit-node:not(.highlighted) {
+  opacity: 0.2;
 }
 
 .register-display {
@@ -380,11 +390,27 @@ body {
 }
 
 .bit-node text {
-  fill: white;
+  fill: black;
   font-size: 10px;
   font-weight: bold;
   text-anchor: middle;
   dominant-baseline: middle;
+}
+
+/* Only the IN/OUT labels inside circles should be white */
+.bit-node text.circle-label {
+  fill: white;
+}
+
+.flow-line.highlighted {
+  stroke: #ff0000;
+  stroke-width: 4;
+  opacity: 1;
+}
+
+.bit-node.highlighted circle {
+  stroke: #ff0000;
+  stroke-width: 4;
 }
 
 .pair-selector {
