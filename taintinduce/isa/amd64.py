@@ -209,7 +209,7 @@ class AMD64(ISA):
         self.ks_arch = (KS_ARCH_X86, KS_MODE_64)
         self.cs_arch = (CS_ARCH_X86, CS_MODE_64)
         self.code_mem = 4096
-        self.code_addr = 0x6D1C00000000000
+        self.code_addr = 0x6D1C000000000  # 48-bit address (not 56-bit)
 
         self.addr_space = 64
 
