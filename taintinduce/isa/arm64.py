@@ -444,7 +444,7 @@ class ARM64(ISA):
         self.cs_arch = (CS_ARCH_ARM64, CS_MODE_ARM)
         # self.code_mem = 2 * 1024 * 1024
         self.code_mem = 4096
-        self.code_addr = 0x6D1C00000000000
+        self.code_addr = 0x6D1C000000000
 
         self.addr_space = 64
 
