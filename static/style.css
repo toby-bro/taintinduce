@@ -277,10 +277,12 @@ body {
 /* Dim elements when selection is active */
 .graph-scroll-wrapper.has-selection .flow-line:not(.highlighted) {
   opacity: 0.1;
+  pointer-events: none;
 }
 
 .graph-scroll-wrapper.has-selection .bit-node:not(.highlighted) {
   opacity: 0.2;
+  pointer-events: none;
 }
 
 .register-display {
@@ -358,7 +360,6 @@ body {
   stroke-width: 2;
   fill: none;
   opacity: 0.6;
-  transition: all 0.3s;
 }
 
 .flow-line:hover {

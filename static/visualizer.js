@@ -185,6 +185,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Graph visualization functions
 let currentRuleData = null;
+let graphNodeMap = null;
+let graphEdgesByFrom = null;
+let graphEdgesByTo = null;
+let graphHighlightedElements = [];
 
 async function populatePairSelector() {
   const response = await fetch("/api/rule");
@@ -411,97 +415,104 @@ function sortBitsByRegister(bitArray, format) {
 
 function highlightConnectedEdges(nodeId, type) {
   console.log("Highlighting node:", nodeId, "type:", type);
+  const startTime = performance.now();
 
   const svg = document.getElementById("flowGraph");
   const scrollWrapper = svg.closest(".graph-scroll-wrapper");
 
-  // Build maps for faster lookup
-  const nodeMap = new Map();
-  document.querySelectorAll("[data-node-id]").forEach((node) => {
-    nodeMap.set(node.getAttribute("data-node-id"), node);
-  });
+  // Use pre-built maps for O(1) lookup
+  if (!graphNodeMap || !graphEdgesByFrom || !graphEdgesByTo) {
+    console.error("Graph maps not initialized!");
+    return;
+  }
 
-  const edgesByFrom = new Map();
-  const edgesByTo = new Map();
-  document.querySelectorAll(".flow-line").forEach((edge) => {
-    const from = edge.getAttribute("data-from");
-    const to = edge.getAttribute("data-to");
-    if (!edgesByFrom.has(from)) edgesByFrom.set(from, []);
-    if (!edgesByTo.has(to)) edgesByTo.set(to, []);
-    edgesByFrom.get(from).push(edge);
-    edgesByTo.get(to).push(edge);
-  });
-
-  const clickedNode = nodeMap.get(nodeId);
+  const clickedNode = graphNodeMap.get(nodeId);
 
   // Check if clicking the same node again (to unselect)
   const wasAlreadyHighlighted = clickedNode?.classList.contains("highlighted");
 
-  // Clear previous highlights
-  document.querySelectorAll(".flow-line.highlighted").forEach((el) => {
-    el.classList.remove("highlighted");
-  });
-  document.querySelectorAll(".bit-node.highlighted").forEach((el) => {
-    el.classList.remove("highlighted");
-  });
+  // Batch all DOM modifications in a single frame
+  requestAnimationFrame(() => {
+    // Clear previous highlights using tracked array
+    graphHighlightedElements.forEach((el) => {
+      el.classList.remove("highlighted");
+    });
+    graphHighlightedElements = [];
 
-  // If was already highlighted, unselect (remove dimming) and return
-  if (wasAlreadyHighlighted) {
-    scrollWrapper.classList.remove("has-selection");
-    console.log("Unselected node");
-    return;
-  }
+    // If was already highlighted, unselect (remove dimming) and return
+    if (wasAlreadyHighlighted) {
+      scrollWrapper.classList.remove("has-selection");
+      console.log("Unselected node in", performance.now() - startTime, "ms");
+      return;
+    }
 
-  // Add selection state to dim non-highlighted elements
-  scrollWrapper.classList.add("has-selection");
+    // Add selection state to dim non-highlighted elements
+    scrollWrapper.classList.add("has-selection");
 
-  console.log("Clicked node found:", clickedNode);
-  if (clickedNode) {
-    clickedNode.classList.add("highlighted");
+    const toHighlight = [];
 
-    // Center the clicked node
-    const transform = clickedNode.getAttribute("transform");
-    const match = transform.match(/translate\((\d+),\s*(\d+)\)/);
-    if (match) {
-      const x = parseInt(match[1]);
-      const y = parseInt(match[2]);
+    if (clickedNode) {
+      toHighlight.push(clickedNode);
+    }
 
-      // Calculate scroll position to center the node
-      const scrollLeft = x - scrollWrapper.clientWidth / 2;
-      const scrollTop = y - scrollWrapper.clientHeight / 2;
-
-      scrollWrapper.scrollTo({
-        left: Math.max(0, scrollLeft),
-        top: Math.max(0, scrollTop),
-        behavior: "smooth",
+    // Find and collect all elements to highlight
+    if (type === "input") {
+      const edges = graphEdgesByFrom.get(nodeId) || [];
+      console.log("Found", edges.length, "edges from this input node");
+      edges.forEach((edge) => {
+        toHighlight.push(edge);
+        const toId = edge.getAttribute("data-to");
+        const toNode = graphNodeMap.get(toId);
+        if (toNode && !toHighlight.includes(toNode)) {
+          toHighlight.push(toNode);
+        }
+      });
+    } else if (type === "output") {
+      const edges = graphEdgesByTo.get(nodeId) || [];
+      console.log("Found", edges.length, "edges to this output node");
+      edges.forEach((edge) => {
+        toHighlight.push(edge);
+        const fromId = edge.getAttribute("data-from");
+        const fromNode = graphNodeMap.get(fromId);
+        if (fromNode && !toHighlight.includes(fromNode)) {
+          toHighlight.push(fromNode);
+        }
       });
     }
-  }
 
-  // Find and highlight connected edges and nodes using maps
-  if (type === "input") {
-    const edges = edgesByFrom.get(nodeId) || [];
-    console.log("Found", edges.length, "edges from this input node");
-    edges.forEach((edge) => {
-      edge.classList.add("highlighted");
-      const toId = edge.getAttribute("data-to");
-      const toNode = nodeMap.get(toId);
-      if (toNode) {
-        toNode.classList.add("highlighted");
-      }
+    // Apply all highlights at once
+    toHighlight.forEach((el) => {
+      el.classList.add("highlighted");
     });
-  } else if (type === "output") {
-    const edges = edgesByTo.get(nodeId) || [];
-    console.log("Found", edges.length, "edges to this output node");
-    edges.forEach((edge) => {
-      edge.classList.add("highlighted");
-      const fromId = edge.getAttribute("data-from");
-      const fromNode = nodeMap.get(fromId);
-      if (fromNode) {
-        fromNode.classList.add("highlighted");
+    graphHighlightedElements = toHighlight;
+
+    console.log(
+      "Highlighted",
+      toHighlight.length,
+      "elements in",
+      performance.now() - startTime,
+      "ms"
+    );
+
+    // Center the clicked node
+    if (clickedNode) {
+      const transform = clickedNode.getAttribute("transform");
+      const match = transform.match(/translate\((\d+),\s*(\d+)\)/);
+      if (match) {
+        const x = parseInt(match[1]);
+        const y = parseInt(match[2]);
+
+        const scrollLeft = x - scrollWrapper.clientWidth / 2;
+        const scrollTop = y - scrollWrapper.clientHeight / 2;
+
+        scrollWrapper.scrollTo({
+          left: Math.max(0, scrollLeft),
+          top: Math.max(0, scrollTop),
+          behavior: "smooth",
+        });
       }
-    });
-  }
+    }
+  });
 }
 
 function renderFlowGraph(pair, format) {
@@ -513,6 +524,62 @@ function renderFlowGraph(pair, format) {
 
   // Clear previous content
   svg.innerHTML = "";
+
+  // Add zoom controls
+  const scrollWrapper = svg.closest(".graph-scroll-wrapper");
+  if (!document.getElementById("zoom-controls")) {
+    const zoomControls = document.createElement("div");
+    zoomControls.id = "zoom-controls";
+    zoomControls.style.cssText = `
+      position: sticky;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      display: flex;
+      gap: 5px;
+      float: right;
+      margin: 10px;
+    `;
+
+    const zoomInBtn = document.createElement("button");
+    zoomInBtn.textContent = "+";
+    zoomInBtn.style.cssText =
+      "width: 30px; height: 30px; font-size: 18px; cursor: pointer; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);";
+    zoomInBtn.onclick = () => {
+      const currentScale = parseFloat(
+        svg.style.transform?.match(/scale\(([\d.]+)\)/)?.[1] || 1
+      );
+      const newScale = Math.min(currentScale + 0.2, 3);
+      svg.style.transform = `scale(${newScale})`;
+      svg.style.transformOrigin = "top left";
+    };
+
+    const zoomOutBtn = document.createElement("button");
+    zoomOutBtn.textContent = "-";
+    zoomOutBtn.style.cssText =
+      "width: 30px; height: 30px; font-size: 18px; cursor: pointer; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);";
+    zoomOutBtn.onclick = () => {
+      const currentScale = parseFloat(
+        svg.style.transform?.match(/scale\(([\d.]+)\)/)?.[1] || 1
+      );
+      const newScale = Math.max(currentScale - 0.2, 0.2);
+      svg.style.transform = `scale(${newScale})`;
+      svg.style.transformOrigin = "top left";
+    };
+
+    const zoomResetBtn = document.createElement("button");
+    zoomResetBtn.textContent = "100%";
+    zoomResetBtn.style.cssText =
+      "width: 50px; height: 30px; font-size: 12px; cursor: pointer; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);";
+    zoomResetBtn.onclick = () => {
+      svg.style.transform = "scale(1)";
+    };
+
+    zoomControls.appendChild(zoomInBtn);
+    zoomControls.appendChild(zoomResetBtn);
+    zoomControls.appendChild(zoomOutBtn);
+    scrollWrapper.insertBefore(zoomControls, scrollWrapper.firstChild);
+  }
 
   if (!pair.dataflow || !Array.isArray(pair.dataflow)) {
     svg.innerHTML =
@@ -643,6 +710,7 @@ function renderFlowGraph(pair, format) {
       path.setAttribute("class", "flow-line");
       path.setAttribute("data-from", edge.from);
       path.setAttribute("data-to", edge.to);
+      path.setAttribute("data-condition", edge.condition || "UNCONDITIONAL");
       path.innerHTML = `<title>${edge.from} → ${edge.to}\nCondition: ${
         edge.condition || "UNCONDITIONAL"
       }</title>`;
@@ -651,7 +719,8 @@ function renderFlowGraph(pair, format) {
       path.addEventListener("mouseover", function (e) {
         const tooltip =
           document.getElementById("edge-tooltip") || createTooltip();
-        tooltip.textContent = edge.condition || "UNCONDITIONAL";
+        const condition = this.getAttribute("data-condition");
+        tooltip.textContent = condition;
         tooltip.style.display = "block";
         tooltip.style.left = e.pageX + 10 + "px";
         tooltip.style.top = e.pageY + 10 + "px";
@@ -836,18 +905,41 @@ function renderFlowGraph(pair, format) {
 
   svg.appendChild(legend);
 
+  // Build lookup maps once for O(1) click performance
+  console.log("Building lookup maps for fast interaction...");
+  graphNodeMap = new Map();
+  document.querySelectorAll("[data-node-id]").forEach((node) => {
+    graphNodeMap.set(node.getAttribute("data-node-id"), node);
+  });
+
+  graphEdgesByFrom = new Map();
+  graphEdgesByTo = new Map();
+  document.querySelectorAll(".flow-line").forEach((edge) => {
+    const from = edge.getAttribute("data-from");
+    const to = edge.getAttribute("data-to");
+    if (!graphEdgesByFrom.has(from)) graphEdgesByFrom.set(from, []);
+    if (!graphEdgesByTo.has(to)) graphEdgesByTo.set(to, []);
+    graphEdgesByFrom.get(from).push(edge);
+    graphEdgesByTo.get(to).push(edge);
+  });
+  console.log(
+    "Maps built:",
+    graphNodeMap.size,
+    "nodes,",
+    graphEdgesByFrom.size,
+    "edge sources"
+  );
+
   // Add click handler to SVG background to unselect
   svg.addEventListener("click", function (e) {
     // Only unselect if clicking directly on SVG (not on child elements)
     if (e.target === svg) {
       const scrollWrapper = svg.closest(".graph-scroll-wrapper");
       if (scrollWrapper && scrollWrapper.classList.contains("has-selection")) {
-        document.querySelectorAll(".flow-line.highlighted").forEach((el) => {
+        graphHighlightedElements.forEach((el) => {
           el.classList.remove("highlighted");
         });
-        document.querySelectorAll(".bit-node.highlighted").forEach((el) => {
-          el.classList.remove("highlighted");
-        });
+        graphHighlightedElements = [];
         scrollWrapper.classList.remove("has-selection");
         console.log("Unselected via background click");
       }
