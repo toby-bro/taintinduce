@@ -321,8 +321,14 @@ function renderGraph() {
       condition_readable: "All pairs combined",
     };
 
-    currentRuleData.pairs.forEach((pair) => {
+    currentRuleData.pairs.forEach((pair, pairIdx) => {
       if (pair.dataflow && Array.isArray(pair.dataflow)) {
+        if (pairIdx < 3) {
+          console.log(
+            `Pair ${pairIdx + 1} has ${pair.dataflow.length} flows, sample:`,
+            pair.dataflow[0]
+          );
+        }
         combinedPair.dataflow.push(...pair.dataflow);
       }
     });
@@ -426,7 +432,8 @@ function highlightConnectedEdges(nodeId, type) {
     return;
   }
 
-  const clickedNode = graphNodeMap.get(nodeId);
+  const mapKey = type + ":" + nodeId;
+  const clickedNode = graphNodeMap.get(mapKey);
 
   // Check if clicking the same node again (to unselect)
   const wasAlreadyHighlighted = clickedNode?.classList.contains("highlighted");
@@ -453,16 +460,23 @@ function highlightConnectedEdges(nodeId, type) {
 
     if (clickedNode) {
       toHighlight.push(clickedNode);
+      console.log("Adding clicked node to highlight list (key:", mapKey, ")");
+    } else {
+      console.error("Clicked node not found in graphNodeMap for key:", mapKey);
     }
 
     // Find and collect all elements to highlight
     if (type === "input") {
       const edges = graphEdgesByFrom.get(nodeId) || [];
       console.log("Found", edges.length, "edges from this input node");
+      console.log(
+        "Sample edge data-condition:",
+        edges[0]?.getAttribute("data-condition")
+      );
       edges.forEach((edge) => {
         toHighlight.push(edge);
         const toId = edge.getAttribute("data-to");
-        const toNode = graphNodeMap.get(toId);
+        const toNode = graphNodeMap.get("output:" + toId);
         if (toNode && !toHighlight.includes(toNode)) {
           toHighlight.push(toNode);
         }
@@ -473,7 +487,7 @@ function highlightConnectedEdges(nodeId, type) {
       edges.forEach((edge) => {
         toHighlight.push(edge);
         const fromId = edge.getAttribute("data-from");
-        const fromNode = graphNodeMap.get(fromId);
+        const fromNode = graphNodeMap.get("input:" + fromId);
         if (fromNode && !toHighlight.includes(fromNode)) {
           toHighlight.push(fromNode);
         }
@@ -598,7 +612,7 @@ function renderFlowGraph(pair, format) {
   // Collect all input and output bits first to calculate size
   const inputBits = new Set();
   const outputBits = new Set();
-  const edges = [];
+  const edgeMap = new Map(); // Use Map to merge edges with same from->to
 
   pair.dataflow.forEach((flow) => {
     const outBit = flow.output_bit;
@@ -608,18 +622,53 @@ function renderFlowGraph(pair, format) {
     outputBits.add(JSON.stringify(outBit));
     inBits.forEach((inBit) => {
       inputBits.add(JSON.stringify(inBit));
-      edges.push({
-        from: JSON.stringify(inBit),
-        to: JSON.stringify(outBit),
-        condition: condition,
-      });
+
+      const from = JSON.stringify(inBit);
+      const to = JSON.stringify(outBit);
+      const key = from + "→" + to;
+
+      if (edgeMap.has(key)) {
+        // Merge conditions for same input->output pair
+        const existing = edgeMap.get(key);
+        if (existing.condition !== condition) {
+          // Different conditions - combine them
+          if (!existing.conditions) {
+            existing.conditions = [existing.condition];
+          }
+          existing.conditions.push(condition);
+          existing.condition = `${existing.conditions.length} different conditions`;
+        }
+      } else {
+        edgeMap.set(key, {
+          from: from,
+          to: to,
+          condition: condition,
+        });
+      }
     });
   });
 
-  console.log("Created", edges.length, "edges");
+  const edges = Array.from(edgeMap.values());
+  const mergedEdges = edges.filter((e) => e.conditions).length;
+
+  console.log(
+    "Created",
+    edges.length,
+    "edges (merged",
+    mergedEdges,
+    "edges with multiple conditions)"
+  );
   if (edges.length > 0) {
     console.log("First edge:", edges[0]);
     console.log("First edge condition:", edges[0].condition);
+    // Log 10 random edges to see condition distribution
+    const sampleIndices = [
+      0, 50, 100, 150, 200, 250, 300, 350, 400, 450,
+    ].filter((i) => i < edges.length);
+    console.log("Sample edges:");
+    sampleIndices.forEach((i) => {
+      console.log(`  Edge ${i}: condition ="${edges[i].condition}"`);
+    });
   }
 
   let inputArray = Array.from(inputBits).map((s) => JSON.parse(s));
@@ -711,24 +760,111 @@ function renderFlowGraph(pair, format) {
       path.setAttribute("data-from", edge.from);
       path.setAttribute("data-to", edge.to);
       path.setAttribute("data-condition", edge.condition || "UNCONDITIONAL");
+
+      // Store multiple conditions if they exist
+      if (edge.conditions) {
+        path.setAttribute("data-conditions", JSON.stringify(edge.conditions));
+      }
+
+      // Debug: log first 5 edges to verify data-condition is set
+      if (svg.querySelectorAll(".flow-line").length < 5) {
+        console.log(
+          `Setting edge ${
+            svg.querySelectorAll(".flow-line").length
+          }: data-condition="${edge.condition || "UNCONDITIONAL"}"${
+            edge.conditions ? ` (${edge.conditions.length} total)` : ""
+          }`
+        );
+        if (edge.conditions) {
+          console.log("  conditions array:", edge.conditions);
+        }
+      }
+
       path.innerHTML = `<title>${edge.from} → ${edge.to}\nCondition: ${
         edge.condition || "UNCONDITIONAL"
       }</title>`;
 
       // Add hover handler to show condition
-      path.addEventListener("mouseover", function (e) {
+      path.addEventListener("mouseenter", function (e) {
         const tooltip =
           document.getElementById("edge-tooltip") || createTooltip();
-        const condition = this.getAttribute("data-condition");
-        tooltip.textContent = condition;
+        const multiConditions = this.getAttribute("data-conditions");
+
+        console.log("Hover on edge:", {
+          "data-condition": this.getAttribute("data-condition"),
+          "data-conditions exists": !!multiConditions,
+          "data-conditions length": multiConditions?.length,
+        });
+
+        if (multiConditions) {
+          // Show all conditions
+          const conditions = JSON.parse(multiConditions);
+          console.log("Parsed conditions:", conditions.length, "items");
+          const header = `<div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 4px;">${conditions.length} Conditions for this edge:</div>`;
+          const conditionList = conditions
+            .map(
+              (c, i) =>
+                `<div style="margin: 6px 0; padding-left: 8px; border-left: 2px solid rgba(255,255,255,0.4);"><strong style="color: #4fc3f7;">${
+                  i + 1
+                }.</strong> ${c}</div>`
+            )
+            .join("");
+          tooltip.innerHTML = header + conditionList;
+          console.log(
+            "Tooltip HTML length:",
+            tooltip.innerHTML.length,
+            "first 200 chars:",
+            tooltip.innerHTML.substring(0, 200)
+          );
+        } else {
+          const condition =
+            this.getAttribute("data-condition") || "UNCONDITIONAL";
+          tooltip.textContent = condition;
+        }
+
         tooltip.style.display = "block";
         tooltip.style.left = e.pageX + 10 + "px";
         tooltip.style.top = e.pageY + 10 + "px";
       });
 
-      path.addEventListener("mouseout", function () {
+      path.addEventListener("mouseleave", function () {
         const tooltip = document.getElementById("edge-tooltip");
         if (tooltip) tooltip.style.display = "none";
+      });
+
+      // Add click handler to show full conditions in side panel
+      path.addEventListener("click", function (e) {
+        e.stopPropagation();
+        const panel = document.getElementById("edgeDetailsPanel");
+        const content = document.getElementById("edgeDetailsContent");
+        const multiConditions = this.getAttribute("data-conditions");
+        const fromBit = JSON.parse(this.getAttribute("data-from"));
+        const toBit = JSON.parse(this.getAttribute("data-to"));
+        
+        let html = `<div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 4px;">
+          <strong style="color: #667eea;">From:</strong> ${formatBitPosition(fromBit)}<br>
+          <strong style="color: #764ba2;">To:</strong> ${formatBitPosition(toBit)}
+        </div>`;
+        
+        if (multiConditions) {
+          const conditions = JSON.parse(multiConditions);
+          html += `<div style="font-weight: bold; margin-bottom: 10px; color: #333;">${conditions.length} Conditions:</div>`;
+          conditions.forEach((condition, i) => {
+            html += `<div style="margin-bottom: 12px; padding: 10px; background: white; border-radius: 4px; border-left: 3px solid #667eea;">
+              <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">Condition ${i + 1}:</div>
+              <div style="word-break: break-word;">${condition}</div>
+            </div>`;
+          });
+        } else {
+          const condition = this.getAttribute("data-condition") || "UNCONDITIONAL";
+          html += `<div style="padding: 10px; background: white; border-radius: 4px;">
+            <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">Condition:</div>
+            <div style="word-break: break-word;">${condition}</div>
+          </div>`;
+        }
+        
+        content.innerHTML = html;
+        panel.style.display = "block";
       });
 
       svg.appendChild(path);
@@ -747,7 +883,9 @@ function renderFlowGraph(pair, format) {
     tooltip.style.fontSize = "12px";
     tooltip.style.zIndex = "10000";
     tooltip.style.pointerEvents = "none";
-    tooltip.style.maxWidth = "400px";
+    tooltip.style.maxWidth = "600px";
+    tooltip.style.maxHeight = "400px";
+    tooltip.style.overflow = "auto";
     tooltip.style.wordWrap = "break-word";
     tooltip.style.display = "none";
     document.body.appendChild(tooltip);
@@ -908,8 +1046,13 @@ function renderFlowGraph(pair, format) {
   // Build lookup maps once for O(1) click performance
   console.log("Building lookup maps for fast interaction...");
   graphNodeMap = new Map();
-  document.querySelectorAll("[data-node-id]").forEach((node) => {
-    graphNodeMap.set(node.getAttribute("data-node-id"), node);
+  document.querySelectorAll(".bit-node.input").forEach((node) => {
+    const nodeId = node.getAttribute("data-node-id");
+    graphNodeMap.set("input:" + nodeId, node);
+  });
+  document.querySelectorAll(".bit-node.output").forEach((node) => {
+    const nodeId = node.getAttribute("data-node-id");
+    graphNodeMap.set("output:" + nodeId, node);
   });
 
   graphEdgesByFrom = new Map();

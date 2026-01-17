@@ -360,6 +360,7 @@ body {
   stroke-width: 2;
   fill: none;
   opacity: 0.6;
+  cursor: pointer;
 }
 
 .flow-line:hover {
