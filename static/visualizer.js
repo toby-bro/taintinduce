@@ -716,6 +716,7 @@ function renderFlowGraph(pair, format) {
     const outBit = flow.output_bit;
     const inBits = flow.input_bits || [];
     const condition = flow.condition || "UNCONDITIONAL";
+    const pairIndex = flow.pair_index;
 
     outputBits.add(JSON.stringify(outBit));
     inBits.forEach((inBit) => {
@@ -732,8 +733,10 @@ function renderFlowGraph(pair, format) {
           // Different conditions - combine them
           if (!existing.conditions) {
             existing.conditions = [existing.condition];
+            existing.pairIndices = [existing.pairIndex];
           }
           existing.conditions.push(condition);
+          existing.pairIndices.push(pairIndex);
           existing.condition = `${existing.conditions.length} different conditions`;
         }
       } else {
@@ -741,6 +744,7 @@ function renderFlowGraph(pair, format) {
           from: from,
           to: to,
           condition: condition,
+          pairIndex: pairIndex,
         });
       }
     });
@@ -862,6 +866,12 @@ function renderFlowGraph(pair, format) {
       // Store multiple conditions if they exist
       if (edge.conditions) {
         path.setAttribute("data-conditions", JSON.stringify(edge.conditions));
+        path.setAttribute(
+          "data-pair-indices",
+          JSON.stringify(edge.pairIndices),
+        );
+      } else if (edge.pairIndex !== undefined) {
+        path.setAttribute("data-pair-index", edge.pairIndex);
       }
 
       // Debug: log first 5 edges to verify data-condition is set
@@ -949,26 +959,32 @@ function renderFlowGraph(pair, format) {
 
         if (multiConditions) {
           const conditions = JSON.parse(multiConditions);
+          const pairIndices = this.getAttribute("data-pair-indices");
+          const indices = pairIndices ? JSON.parse(pairIndices) : [];
           html += `<div style="font-weight: bold; margin-bottom: 10px; color: #333;">${conditions.length} Conditions:</div>`;
           conditions.forEach((condition, i) => {
             const formatted = formatConditionText(
               condition,
               currentRuleData.format,
             );
+            const pairIdx = indices[i] !== undefined ? indices[i] + 1 : i + 1;
             html += `<div style="margin-bottom: 12px; padding: 10px; background: white; border-radius: 4px; border-left: 3px solid #667eea;">
-              <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">Condition ${i + 1}:</div>
+              <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">Condition ${pairIdx}:</div>
               <div style="word-break: break-word;">${formatted}</div>
             </div>`;
           });
         } else {
           const condition =
             this.getAttribute("data-condition") || "UNCONDITIONAL";
+          const pairIndex = this.getAttribute("data-pair-index");
           const formatted = formatConditionText(
             condition,
             currentRuleData.format,
           );
+          const label =
+            pairIndex !== null ? `Condition ${parseInt(pairIndex) + 1}:` : "Condition:";
           html += `<div style="padding: 10px; background: white; border-radius: 4px;">
-            <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">Condition:</div>
+            <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">${label}</div>
             <div style="word-break: break-word;">${formatted}</div>
           </div>`;
         }
