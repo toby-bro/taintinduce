@@ -64,7 +64,7 @@ function renderRegisterInputs() {
           <div class="bit-input-cell" 
                data-register="${reg.name}" 
                data-bit="${bitIdx}"
-               onclick="toggleBit('${reg.name}', ${bitIdx})"
+               onclick="toggleBit('${reg.name}', ${bitIdx}, event)"
                style="
                  width: 32px;
                  height: 32px;
@@ -149,7 +149,13 @@ function renderRegisterInputs() {
   container.innerHTML = html;
 }
 
-function toggleBit(registerName, bitIdx) {
+function toggleBit(registerName, bitIdx, event) {
+  // Check for shift+click to toggle taint regardless of mode
+  if (event && event.shiftKey) {
+    toggleBitTaint(registerName, bitIdx);
+    return;
+  }
+
   if (isEditMode) {
     // Edit mode: clicking focuses cell for keyboard input
     focusCell(registerName, bitIdx);
