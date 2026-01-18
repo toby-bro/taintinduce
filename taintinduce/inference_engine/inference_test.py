@@ -499,8 +499,6 @@ class TestInferConditionsForDataflows:
             )
 
             assert len(pairs) >= 1  # Should have at least one pair
-            # At least one should have a condition
-            has_condition = any(pair.condition is not None for pair in pairs)
 
     def test_raises_on_zero_partitions(self, inference_engine, state_format, mock_eflags):
         """Test that method raises exception when no possible flows exist."""

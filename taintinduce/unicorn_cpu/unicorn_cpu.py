@@ -281,6 +281,84 @@ class UnicornCPU(cpu.CPU):
             mem_access[address] = (access, size, value)
         return True
 
+    def _detect_jump(self, code: bytes) -> Optional[Register]:
+        """Detect if instruction is a jump by checking PC change."""
+        try:
+            sa, sb = self.execute(code)
+        except (unc.UcError, OutOfRangeException):
+            return None
+
+        start_pc = sa[self.pc_reg]
+        end_pc = sb[self.pc_reg]
+        if start_pc is None or end_pc is None:
+            raise Exception('PC is None')
+        if start_pc != end_pc - len(code) and start_pc != end_pc:
+            return self.pc_reg
+        return None
+
+    def _consolidate_memory_accesses(
+        self,
+        mem_access: dict[int, tuple[int, int, Optional[int]]],
+    ) -> None:
+        """Consolidate consecutive memory accesses."""
+        # [0] - addr, [1] - size, [2] - value (not in use)
+        temp_mem_addr_set = set()
+        for addr in mem_access:
+            temp_mem_addr_set.add((addr, addr + mem_access[addr][1]))
+
+        # ensure that none of the range overlap
+        # while doing that, merge consecutive filtered address...
+        temp_mem_addr = list(temp_mem_addr_set)
+        temp_mem_addr.sort(key=lambda x: x[0])
+
+        for x_idx in range(len(temp_mem_addr[:-1])):
+            if temp_mem_addr[x_idx][1] > temp_mem_addr[x_idx + 1][0]:
+                pdb.set_trace()
+                raise Exception
+            if temp_mem_addr[x_idx][1] == temp_mem_addr[x_idx + 1][0]:
+                chunk1_addr = temp_mem_addr[x_idx][0]
+                chunk1_access = mem_access[chunk1_addr][0]
+                chunk1_size = temp_mem_addr[x_idx][1] - chunk1_addr
+                chunk2_addr = temp_mem_addr[x_idx + 1][0]
+                chunk2_access = mem_access[chunk2_addr][0]
+                chunk2_size = temp_mem_addr[x_idx + 1][1] - chunk2_addr
+
+                if chunk1_access != chunk2_access:
+                    break
+
+                # consective, merge it
+                mem_access[chunk1_addr] = (chunk1_access, chunk1_size + chunk2_size, None)
+                assert chunk2_addr in mem_access
+                mem_access.pop(chunk2_addr)
+
+    def _create_memory_operands(
+        self,
+        mem_access: dict[int, tuple[int, int, Optional[int]]],
+    ) -> set[Register]:
+        """Create memory operands from memory accesses."""
+        mem_set = set()
+        wc = 0
+        rc = 0
+        for _, (access, size, _) in mem_access.items():
+            mem_reg = None
+            if access == uc_const.UC_MEM_WRITE:
+                wc += 1
+                mem_reg, addr_reg = self.arch.name2mem('MEM_WRITE{}'.format(wc))
+            elif access == uc_const.UC_MEM_READ:
+                rc += 1
+                mem_reg, addr_reg = self.arch.name2mem('MEM_READ{}'.format(rc))
+            else:
+                raise Exception
+
+            assert mem_reg
+            assert addr_reg
+            mem_reg.bits = size * 8
+            mem_reg.structure.append(mem_reg.bits)
+            mem_set.add(mem_reg)
+            mem_set.add(addr_reg)
+
+        return mem_set
+
     def identify_memops_jump(self, code: bytes) -> tuple[set[Register], Optional[Register]]:
         print('Identifying memops')
         jump_reg: Optional[Register] = None
@@ -294,93 +372,37 @@ class UnicornCPU(cpu.CPU):
         count = 0
         fail = 0
         while count < 100:
-            mem_set = set()
             mem_access.clear()
             state[0] = None
             state[1] = None
             state[2] = None
             self.randomize_regs()
+
             try:
                 sa, sb = self.execute(code)
             except unc.UcError as e:
-                # print(e)
-                # print(e.errno)
                 fail += 1
                 if fail < 10000:
                     continue
                 raise Exception('Failed a total of 10000 times in identify memops') from e
             except OutOfRangeException:
                 continue
+
+            # Check for jump
             start_pc = sa[self.pc_reg]
             end_pc = sb[self.pc_reg]
             if start_pc is None or end_pc is None:
                 raise Exception('PC is None')
             if start_pc != end_pc - len(code) and start_pc != end_pc:
-                # print('{:064b} - {}'.format(start_pc,start_pc))
-                # print('{:064b} - {}'.format(end_pc,end_pc))
-                # print('len:{}'.format(len(code)))
                 jump_reg = self.pc_reg
 
             count += 1
 
-            # process mem_access to obtain number of memory access
-            # we'll try to consolidate the memory accesses
-            # each memory access is represented as a range
+            # Process mem_access to obtain number of memory access
+            self._consolidate_memory_accesses(mem_access)
 
-            # we'll check memory using filter_address instead of is_increase
-            # the two methods should agree...
-
-            # [0] - addr, [1] - size, [2] - value (not in use)
-            temp_mem_addr_set = set()
-            for addr in mem_access:
-                temp_mem_addr_set.add((addr, addr + mem_access[addr][1]))
-
-            # ensure that none of the range overlap
-            # while doing that, merge consecutive filtered address...
-            temp_mem_addr = list(temp_mem_addr_set)
-            temp_mem_addr.sort(key=lambda x: x[0])
-
-            for x_idx in range(len(temp_mem_addr[:-1])):
-                if temp_mem_addr[x_idx][1] > temp_mem_addr[x_idx + 1][0]:
-                    pdb.set_trace()
-                    raise Exception
-                if temp_mem_addr[x_idx][1] == temp_mem_addr[x_idx + 1][0]:
-                    chunk1_addr = temp_mem_addr[x_idx][0]
-                    chunk1_access = mem_access[chunk1_addr][0]
-                    chunk1_size = temp_mem_addr[x_idx][1] - chunk1_addr
-                    chunk2_addr = temp_mem_addr[x_idx + 1][0]
-                    chunk2_access = mem_access[chunk2_addr][0]
-                    chunk2_size = temp_mem_addr[x_idx + 1][1] - chunk2_addr
-
-                    if chunk1_access != chunk2_access:
-                        break
-
-                    # consective, merge it
-                    mem_access[chunk1_addr] = (chunk1_access, chunk1_size + chunk2_size, None)
-                    assert chunk2_addr in mem_access
-                    mem_access.pop(chunk2_addr)
-
-            # at this point, we can create the memory operands.
-            wc = 0
-            rc = 0
-            for _, (access, size, _) in mem_access.items():
-                mem_reg = None
-                if access == uc_const.UC_MEM_WRITE:
-                    wc += 1
-                    mem_reg, addr_reg = self.arch.name2mem('MEM_WRITE{}'.format(wc))
-                elif access == uc_const.UC_MEM_READ:
-                    rc += 1
-                    mem_reg, addr_reg = self.arch.name2mem('MEM_READ{}'.format(rc))
-                else:
-                    raise Exception
-
-                assert mem_reg
-                assert addr_reg
-                mem_reg.bits = size * 8
-                mem_reg.structure.append(mem_reg.bits)
-                mem_set.add(mem_reg)
-                mem_set.add(addr_reg)
-
+            # Create the memory operands
+            mem_set = self._create_memory_operands(mem_access)
             mem_set_set.add(tuple(sorted(mem_set, key=lambda x: x.uc_const)))
 
         assert len(mem_set_set) == 1

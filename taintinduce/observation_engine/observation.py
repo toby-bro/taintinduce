@@ -36,6 +36,65 @@ class ConditionTargetedStrategy(Strategy):
         self.condition_bits = condition_bits
         self.state_format = state_format
 
+    def _generate_small_bit_range_inputs(self, reg: Register, local_bits: list[int]) -> list[SeedVariation]:
+        """Generate inputs for registers with small bit ranges (≤8 bits)."""
+        inputs = []
+        min_bit = min(local_bits)
+        max_bit = max(local_bits)
+        bit_span = max_bit - min_bit + 1
+
+        # Test all combinations in the bit range [min_bit, max_bit]
+        for i in range(2**bit_span):
+            value = i << min_bit
+            inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+        return inputs
+
+    def _generate_medium_bit_range_inputs(self, reg: Register, local_bits: list[int]) -> list[SeedVariation]:
+        """Generate inputs for 16-bit registers."""
+        inputs = []
+
+        # Test every Nth value plus edge cases
+        step = max(1, (2**reg.bits) // 256)  # Sample 256 values
+        for value in range(0, 2**reg.bits, step):
+            inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+        # Add edge cases near boundaries
+        for bit_idx in local_bits:
+            # Values around bit transitions
+            for offset in [-1, 0, 1]:
+                val = (1 << bit_idx) + offset
+                if 0 <= val < 2**reg.bits:
+                    inputs.append(SeedVariation(registers=[reg], values=[val]))
+
+        return inputs
+
+    def _generate_large_bit_range_inputs(self, reg: Register, local_bits: list[int]) -> list[SeedVariation]:
+        """Generate inputs for 32/64-bit registers."""
+        inputs = []
+        num_cond_bits = len(local_bits)
+
+        if num_cond_bits <= 10:  # Manageable number of combinations
+            # Test all 2^N combinations of condition bits
+            for combo in range(2**num_cond_bits):
+                value = 0
+                for i, bit_idx in enumerate(sorted(local_bits)):
+                    if combo & (1 << i):
+                        value |= 1 << bit_idx
+                inputs.append(SeedVariation(registers=[reg], values=[value]))
+        else:
+            # Too many bits (>10), sample systematically
+            # Test all combinations of the most significant condition bits
+            top_bits = sorted(local_bits, reverse=True)[:8]  # Top 8 bits
+            for combo in range(2 ** len(top_bits)):
+                value = 0
+                for i, bit_idx in enumerate(top_bits):
+                    if combo & (1 << i):
+                        value |= 1 << bit_idx
+                inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+        return inputs
+
     def generator(self, regs: list[Register]) -> list[SeedVariation]:
         inputs = []
 
@@ -66,50 +125,12 @@ class ConditionTargetedStrategy(Strategy):
             # treat it as an 8-bit problem and test all 2^N combinations
             # This works even for sub-registers like AL (bits 0-7 of EAX)
             if bit_span <= 8:
-                # Test all combinations in the bit range [min_bit, max_bit]
-                # For each value in 0..2^bit_span, shift it to the correct position
-                for i in range(2**bit_span):
-                    value = i << min_bit
-                    inputs.append(SeedVariation(registers=[reg], values=[value]))
-
+                inputs.extend(self._generate_small_bit_range_inputs(reg, local_bits))
             elif reg.bits <= 16:
-                # For 16-bit, test every Nth value plus edge cases
-                step = max(1, (2**reg.bits) // 256)  # Sample 256 values
-                for value in range(0, 2**reg.bits, step):
-                    inputs.append(SeedVariation(registers=[reg], values=[value]))
-
-                # Add edge cases near boundaries
-                for bit_idx in local_bits:
-                    # Values around bit transitions
-                    for offset in [-1, 0, 1]:
-                        val = (1 << bit_idx) + offset
-                        if 0 <= val < 2**reg.bits:
-                            inputs.append(SeedVariation(registers=[reg], values=[val]))
-
+                inputs.extend(self._generate_medium_bit_range_inputs(reg, local_bits))
             else:
                 # For 32/64-bit registers, focus on condition bit patterns
-                # Generate all combinations of condition bits
-                num_cond_bits = len(local_bits)
-                if num_cond_bits <= 10:  # Manageable number of combinations
-                    # Test all 2^N combinations of condition bits
-                    # Don't add alternating patterns - they introduce noise
-                    for combo in range(2**num_cond_bits):
-                        value = 0
-                        for i, bit_idx in enumerate(sorted(local_bits)):
-                            if combo & (1 << i):
-                                value |= 1 << bit_idx
-                        inputs.append(SeedVariation(registers=[reg], values=[value]))
-                else:
-                    # Too many bits (>10), sample systematically
-                    # Test all combinations of the most significant condition bits
-                    # to avoid random noise
-                    top_bits = sorted(local_bits, reverse=True)[:8]  # Top 8 bits
-                    for combo in range(2 ** len(top_bits)):
-                        value = 0
-                        for i, bit_idx in enumerate(top_bits):
-                            if combo & (1 << i):
-                                value |= 1 << bit_idx
-                        inputs.append(SeedVariation(registers=[reg], values=[value]))
+                inputs.extend(self._generate_large_bit_range_inputs(reg, local_bits))
 
         return inputs
 

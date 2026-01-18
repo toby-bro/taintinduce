@@ -78,6 +78,48 @@ class InferenceEngine(object):
                             condition_bits.add(bit_pos)
         return condition_bits
 
+    def _build_full_dataflows(
+        self,
+        condition_groups: list[tuple[list[ConditionDataflowPair], DataflowSet]],
+    ) -> list[ConditionDataflowPair]:
+        """Build list of ConditionDataflowPair objects with full dataflows."""
+        condition_dataflow_pairs_full: list[ConditionDataflowPair] = []
+
+        for ordered_pairs, use_bit_dataflows in condition_groups:
+            # Use the ordered pairs that were already inferred (from a representative input bit)
+            # Build full dataflows for each condition in this group
+            for pair in ordered_pairs:
+                dataflow = Dataflow()
+                # For each input bit in this condition group, collect outputs
+                for use_bit, output_sets in use_bit_dataflows.items():
+                    if output_sets:
+                        all_outputs: set[BitPosition] = set()
+                        for output_set in output_sets:
+                            all_outputs.update(output_set)
+                        dataflow[use_bit] = frozenset(all_outputs)
+
+                # Create a new pair with the full dataflow
+                # Use empty condition if condition is None
+                condition = pair.condition if pair.condition is not None else TaintCondition(LogicType.DNF, frozenset())
+
+                # Log 1-to-many flows with no condition or empty condition
+                is_empty_condition = pair.condition is None or (
+                    pair.condition.condition_ops is not None and len(pair.condition.condition_ops) == 0
+                )
+                if is_empty_condition:
+                    for input_bit, output_bits in dataflow.items():
+                        if len(output_bits) > 1:
+                            logger.warning(
+                                f'No condition for input bit {input_bit} -> '
+                                f'{len(output_bits)} output bits (full dataflow)',
+                            )
+
+                condition_dataflow_pairs_full.append(
+                    ConditionDataflowPair(condition=condition, output_bits=dataflow),
+                )
+
+        return condition_dataflow_pairs_full
+
     def infer(
         self,
         observations: list[Observation],
@@ -120,40 +162,7 @@ class InferenceEngine(object):
 
         # Build list of ConditionDataflowPair objects with full dataflows
         # Process ALL condition groups using the stored pairs
-        condition_dataflow_pairs_full: list[ConditionDataflowPair] = []
-
-        for ordered_pairs, use_bit_dataflows in condition_groups:
-            # Use the ordered pairs that were already inferred (from a representative input bit)
-            # Build full dataflows for each condition in this group
-            for pair in ordered_pairs:
-                dataflow = Dataflow()
-                # For each input bit in this condition group, collect outputs
-                for use_bit, output_sets in use_bit_dataflows.items():
-                    if output_sets:
-                        all_outputs: set[BitPosition] = set()
-                        for output_set in output_sets:
-                            all_outputs.update(output_set)
-                        dataflow[use_bit] = frozenset(all_outputs)
-
-                # Create a new pair with the full dataflow
-                # Use empty condition if condition is None
-                condition = pair.condition if pair.condition is not None else TaintCondition(LogicType.DNF, frozenset())
-
-                # Log 1-to-many flows with no condition or empty condition
-                is_empty_condition = pair.condition is None or (
-                    pair.condition.condition_ops is not None and len(pair.condition.condition_ops) == 0
-                )
-                if is_empty_condition:
-                    for input_bit, output_bits in dataflow.items():
-                        if len(output_bits) > 1:
-                            logger.warning(
-                                f'No condition for input bit {input_bit} -> '
-                                f'{len(output_bits)} output bits (full dataflow)',
-                            )
-
-                condition_dataflow_pairs_full.append(
-                    ConditionDataflowPair(condition=condition, output_bits=dataflow),
-                )
+        condition_dataflow_pairs_full = self._build_full_dataflows(condition_groups)
 
         return Rule(state_format, pairs=condition_dataflow_pairs_full)
 
@@ -238,6 +247,143 @@ class InferenceEngine(object):
 
         return condition_groups
 
+    def _handle_single_partition(
+        self,
+        mutated_input_bit: BitPosition,
+        possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
+    ) -> list[ConditionDataflowPair]:
+        """Handle case with single partition (no conditional dataflow)."""
+        no_cond_dataflow_set_flat: set[BitPosition] = set()
+        for output_set in possible_flows[mutated_input_bit]:
+            no_cond_dataflow_set_flat |= set(output_set)
+        output_bits = frozenset(no_cond_dataflow_set_flat)
+        if len(output_bits) > 1:
+            logger.info(
+                f'No condition for input bit {mutated_input_bit} -> {len(output_bits)} output bits',
+            )
+        return [ConditionDataflowPair(condition=None, output_bits=output_bits)]
+
+    def _process_output_partition(
+        self,
+        output_set: frozenset[BitPosition],
+        partitions: dict[frozenset[BitPosition], set[State]],
+        state_format: list[Register],
+        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        mutated_input_bit: BitPosition,
+        enable_refinement: bool,
+        observation_engine: Optional['ObservationEngine'],
+        all_observations: Optional[list[Observation]],
+    ) -> tuple[Optional[TaintCondition], frozenset[BitPosition]]:
+        """Process a single output partition and infer its condition."""
+        agreeing_partition: set[State] = set()
+        disagreeing_partition: set[State] = set()
+        for alternative_modified_output_set, input_states in partitions.items():
+            if output_set != alternative_modified_output_set:
+                disagreeing_partition.update(input_states)
+            else:
+                agreeing_partition.update(input_states)
+
+        # use_full_state=True: generates conditions on all input registers (data-dependent)
+        # This captures conditions like "if ebx=0, no taint in AND eax,ebx"
+        # For arithmetic operations, this may overfit if observations are sparse
+        mycond = self._gen_condition(
+            agreeing_partition,
+            disagreeing_partition,
+            state_format,
+            cond_reg,
+            use_full_state=True,
+        )
+
+        # Debug: Log partition sizes to help identify overfitting
+        logger.debug(
+            f'  Partition sizes: agreeing={len(agreeing_partition)}, disagreeing={len(disagreeing_partition)}',
+        )
+        if mycond:
+            logger.debug(f'  Found condition for output set {output_set}: {mycond}')
+
+            # Refinement pass: validate this specific condition
+            if enable_refinement and observation_engine is not None and all_observations is not None:
+                refined_cond = self._refine_condition(
+                    mycond,
+                    mutated_input_bit,
+                    output_set,
+                    observation_engine,
+                    all_observations,
+                    state_format,
+                    cond_reg,
+                )
+                if refined_cond != mycond:
+                    logger.info(f'  REFINED: {mycond} -> {refined_cond}')
+                    mycond = refined_cond
+                else:
+                    logger.info(f'  UNCHANGED: {mycond}')
+
+        return mycond, output_set
+
+    def _handle_multiple_partitions(
+        self,
+        mutated_input_bit: BitPosition,
+        observation_dependencies: list[ObservationDependency],
+        state_format: list[Register],
+        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        enable_refinement: bool,
+        observation_engine: Optional['ObservationEngine'],
+        all_observations: Optional[list[Observation]],
+    ) -> list[ConditionDataflowPair]:
+        """Handle case with multiple partitions (conditional dataflow)."""
+        condition_dataflow_pairs: list[ConditionDataflowPair] = []
+        no_cond_dataflow_set: set[frozenset[BitPosition]] = set()
+
+        # Generate the two sets...
+        # Iterate across all observations and extract the behavior for the partitions...
+        partitions = self.link_affected_outputs_to_their_input_states(
+            observation_dependencies,
+            mutated_input_bit,
+        )
+
+        # ZL: The current heuristic is to always select the smaller partition first since
+        # it lowers the chances of the DNF exploding.
+        ordered_output_sets = sorted(partitions.keys(), key=lambda x: len(partitions[x]), reverse=True)
+
+        for output_set in ordered_output_sets:
+            mycond, output_bits = self._process_output_partition(
+                output_set,
+                partitions,
+                state_format,
+                cond_reg,
+                mutated_input_bit,
+                enable_refinement,
+                observation_engine,
+                all_observations,
+            )
+
+            if mycond:
+                condition_dataflow_pairs.append(
+                    ConditionDataflowPair(condition=mycond, output_bits=output_bits),
+                )
+            else:
+                if len(output_set) > 1:
+                    logger.info(
+                        f'No condition for input bit {mutated_input_bit} -> '
+                        f'{len(output_set)} output bits (partition)',
+                    )
+                no_cond_dataflow_set.add(output_set)
+
+        # Default/fallthrough case: remaining behavior with no condition
+        remaining_behavior: frozenset[BitPosition] = frozenset()
+        if len(no_cond_dataflow_set) > 0:
+            for behavior in no_cond_dataflow_set:
+                remaining_behavior = remaining_behavior.union(behavior)
+            logger.info(
+                f'No condition for input bit {mutated_input_bit} -> '
+                f'{len(remaining_behavior)} output bits (fallthrough)',
+            )
+            condition_dataflow_pairs.append(
+                ConditionDataflowPair(condition=None, output_bits=remaining_behavior),
+            )
+
+        return condition_dataflow_pairs
+
     def infer_conditions_for_dataflows(
         self,
         cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
@@ -257,115 +403,24 @@ class InferenceEngine(object):
         """
         logger.info(f'Searching flow conditions for input bit {mutated_input_bit}')
 
-        # List of condition-dataflow pairs - order matters!
-        condition_dataflow_pairs: list[ConditionDataflowPair] = []
         num_partitions = len(possible_flows[mutated_input_bit])
         if num_partitions == 0:
             raise Exception(f'No possible flows for mutated input bit {mutated_input_bit}')
-            # print(num_partitions)
-            # ZL: ugly hack to collect all the possibly failed cond identification
-        no_cond_dataflow_set: set[frozenset[BitPosition]] = set()
 
         # ZL: TODO: Hack for cond_reg, do a check if state_format contains the cond_reg, if no, then skip condition inference  # noqa: E501
         if num_partitions == 1:
             # no conditional dataflow - single behavior for all inputs
-            no_cond_dataflow_set_flat: set[BitPosition] = set()
-            for output_set in possible_flows[mutated_input_bit]:
-                no_cond_dataflow_set_flat |= set(output_set)
-            output_bits = frozenset(no_cond_dataflow_set_flat)
-            if len(output_bits) > 1:
-                logger.info(
-                    f'No condition for input bit {mutated_input_bit} -> {len(output_bits)} output bits',
-                )
-            condition_dataflow_pairs.append(
-                ConditionDataflowPair(condition=None, output_bits=output_bits),
-            )
+            return self._handle_single_partition(mutated_input_bit, possible_flows)
 
-        else:
-            # generate the two sets...
-            # iterate across all observations and extract the behavior for the partitions...
-            partitions = self.link_affected_outputs_to_their_input_states(
-                observation_dependencies,
-                mutated_input_bit,
-            )
-
-            # ZL: The current heuristic is to always select the smaller partition first since
-            # it lowers the chances of the DNF exploding.
-            ordered_output_sets = sorted(partitions.keys(), key=lambda x: len(partitions[x]), reverse=True)
-
-            for output_set in ordered_output_sets:
-                agreeing_partition: set[State] = set()
-                disagreeing_partition: set[State] = set()
-                for (
-                    alternative_modified_output_set,
-                    input_states,
-                ) in partitions.items():  # Why not use the sorted behaviors ?
-                    if output_set != alternative_modified_output_set:
-                        disagreeing_partition.update(input_states)
-                    else:
-                        agreeing_partition.update(input_states)
-
-                # use_full_state=True: generates conditions on all input registers (data-dependent)
-                # This captures conditions like "if ebx=0, no taint in AND eax,ebx"
-                # For arithmetic operations, this may overfit if observations are sparse
-                mycond = self._gen_condition(
-                    agreeing_partition,
-                    disagreeing_partition,
-                    state_format,
-                    cond_reg,
-                    use_full_state=True,
-                )
-
-                # Debug: Log partition sizes to help identify overfitting
-                logger.debug(
-                    f'  Partition sizes: agreeing={len(agreeing_partition)}, '
-                    f'disagreeing={len(disagreeing_partition)}',
-                )
-                if mycond:
-                    logger.debug(f'  Found condition for output set {output_set}: {mycond}')
-
-                    # Refinement pass: validate this specific condition
-                    if enable_refinement and observation_engine is not None and all_observations is not None:
-                        refined_cond = self._refine_condition(
-                            mycond,
-                            mutated_input_bit,
-                            output_set,
-                            observation_engine,
-                            all_observations,
-                            state_format,
-                            cond_reg,
-                        )
-                        if refined_cond != mycond:
-                            logger.info(f'  REFINED: {mycond} -> {refined_cond}')
-                            mycond = refined_cond
-                        else:
-                            logger.info(f'  UNCHANGED: {mycond}')
-
-                    condition_dataflow_pairs.append(
-                        ConditionDataflowPair(condition=mycond, output_bits=output_set),
-                    )
-                else:
-                    if len(output_set) > 1:
-                        logger.info(
-                            f'No condition for input bit {mutated_input_bit} -> '
-                            f'{len(output_set)} output bits (partition)',
-                        )
-                    no_cond_dataflow_set.add(output_set)
-
-            # Default/fallthrough case: remaining behavior with no condition
-            remaining_behavior: frozenset[BitPosition] = frozenset()
-            if len(no_cond_dataflow_set) > 0:
-                for behavior in no_cond_dataflow_set:
-                    remaining_behavior = remaining_behavior.union(behavior)
-                logger.info(
-                    f'No condition for input bit {mutated_input_bit} -> '
-                    f'{len(remaining_behavior)} output bits (fallthrough)',
-                )
-                condition_dataflow_pairs.append(
-                    ConditionDataflowPair(condition=None, output_bits=remaining_behavior),
-                )
-
-        return condition_dataflow_pairs
+        return self._handle_multiple_partitions(
+            mutated_input_bit,
+            observation_dependencies,
+            state_format,
+            cond_reg,
+            enable_refinement,
+            observation_engine,
+            all_observations,
+        )
 
     def link_affected_outputs_to_their_input_states(
         self,

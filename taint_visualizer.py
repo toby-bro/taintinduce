@@ -335,7 +335,7 @@ def get_test_cases():
 @app.route('/api/upload-rule', methods=['POST'])
 def upload_rule():
     """API endpoint to upload and deserialize a rule JSON file."""
-    global current_rule, rule_file_path
+    global current_rule, rule_file_path  # noqa: PLW0603
 
     try:
         # Get the JSON data from the request
@@ -370,6 +370,117 @@ def upload_rule():
         return jsonify({'error': f'Failed to deserialize rule: {e!s}'}), 400
 
 
+def _parse_input_state(data: dict[str, Any], rule: TaintRule) -> tuple[int, dict[str, dict[int, int]]]:
+    """Parse input state from request data.
+
+    Returns:
+        Tuple of (input_state, register_values)
+    """
+    if data.get('hex_value'):
+        # Parse hex value
+        hex_val = data['hex_value']
+        if isinstance(hex_val, str):
+            if hex_val.startswith(('0x', '0X')):
+                input_state = int(hex_val, 16)
+            else:
+                input_state = int(hex_val)
+        else:
+            input_state = int(hex_val)
+
+        # Extract register values from state
+        register_values = extract_bits_from_state(input_state, rule.format)
+    else:
+        # Build from register_values
+        register_values = data.get('register_values', {})
+        # Convert string keys to ints where needed
+        cleaned_reg_vals = {}
+        for reg_name, bit_dict in register_values.items():
+            cleaned_reg_vals[reg_name] = {int(k) if isinstance(k, str) else k: int(v) for k, v in bit_dict.items()}
+        register_values = cleaned_reg_vals
+        input_state = build_state_from_bits(register_values, rule.format)
+
+    return input_state, register_values
+
+
+def _build_cpu_state(register_values: dict[str, dict[int, int]], rule: TaintRule) -> CpuRegisterMap:
+    """Build CPU state from register values."""
+    input_cpu_state = CpuRegisterMap()
+    for reg in rule.format.registers:
+        reg_value = 0
+        reg_bits = register_values.get(reg.name, {})
+        for bit_idx in range(reg.bits):
+            if reg_bits.get(bit_idx, 0) == 1:
+                reg_value |= 1 << bit_idx
+        input_cpu_state[reg] = reg_value
+    return input_cpu_state
+
+
+def _extract_output_register_values(output_cpu_state: CpuRegisterMap, rule: TaintRule) -> dict[str, dict[int, int]]:
+    """Extract output register values as bit dict."""
+    output_register_values: dict[str, dict[int, int]] = {}
+    for reg in rule.format.registers:
+        reg_value = output_cpu_state[reg]
+        output_register_values[reg.name] = {}
+        for bit_idx in range(reg.bits):
+            output_register_values[reg.name][bit_idx] = (reg_value >> bit_idx) & 1
+    return output_register_values
+
+
+def _execute_instruction(
+    register_values: dict[str, dict[int, int]],
+    bytecode: bytes,
+    rule: TaintRule,
+) -> dict[str, dict[int, int]]:
+    """Execute instruction and return output register values."""
+    input_cpu_state = _build_cpu_state(register_values, rule)
+    cpu = UnicornCPU(rule.format.arch)
+    cpu.set_cpu_state(input_cpu_state)
+    _, output_cpu_state = cpu.execute(bytecode)
+    return _extract_output_register_values(output_cpu_state, rule)
+
+
+def _get_output_register_values(
+    register_values: dict[str, dict[int, int]],
+    rule: TaintRule,
+    rule_path: str,
+) -> dict[str, dict[int, int]]:
+    """Get output register values by executing instruction."""
+    output_register_values = register_values  # Default: output = input
+
+    if rule.bytestring:
+        try:
+            bytecode = bytes.fromhex(rule.bytestring)
+            output_register_values = _execute_instruction(register_values, bytecode, rule)
+        except Exception:
+            # If execution fails, try extracting from filename as fallback
+            if rule_path and rule_path != '<uploaded>':
+                try:
+                    filename = Path(rule_path).stem
+                    bytestring = filename.split('_')[0]
+                    bytecode = bytes.fromhex(bytestring)
+                    output_register_values = _execute_instruction(register_values, bytecode, rule)
+                except Exception as e:
+                    print(f'Warning: Failed to extract register values: {e}')
+
+    return output_register_values
+
+
+def _add_flag_information(result: dict[str, Any]) -> None:
+    """Add flag information to tainted output bits in the result."""
+    tainted_with_flags = []
+    for reg_name, bit_idx in result['tainted_outputs']:
+        flag_info = get_flag_info(reg_name, bit_idx)
+        entry = {
+            'register': reg_name,
+            'bit': bit_idx,
+            'flag_name': flag_info['name'] if flag_info else None,
+            'flag_desc': flag_info['desc'] if flag_info else None,
+        }
+        tainted_with_flags.append(entry)
+
+    result['tainted_outputs_detailed'] = tainted_with_flags
+
+
 @app.route('/api/simulate-detailed', methods=['POST'])
 def simulate_detailed():
     """API endpoint for detailed bit-level taint simulation.
@@ -389,93 +500,15 @@ def simulate_detailed():
     try:
         data = request.json
 
-        # Build input state
-        if data.get('hex_value'):
-            # Parse hex value
-            hex_val = data['hex_value']
-            if isinstance(hex_val, str):
-                if hex_val.startswith(('0x', '0X')):
-                    input_state = int(hex_val, 16)
-                else:
-                    input_state = int(hex_val)
-            else:
-                input_state = int(hex_val)
-
-            # Extract register values from state
-            register_values = extract_bits_from_state(input_state, current_rule.format)
-        else:
-            # Build from register_values
-            register_values = data.get('register_values', {})
-            # Convert string keys to ints where needed
-            cleaned_reg_vals = {}
-            for reg_name, bit_dict in register_values.items():
-                cleaned_reg_vals[reg_name] = {int(k) if isinstance(k, str) else k: int(v) for k, v in bit_dict.items()}
-            register_values = cleaned_reg_vals
-            input_state = build_state_from_bits(register_values, current_rule.format)
+        # Parse input state and register values
+        input_state, register_values = _parse_input_state(data, current_rule)
 
         # Parse tainted bits
         tainted_bits_list = data.get('tainted_bits', [])
         tainted_bits = {(reg, int(bit)) for reg, bit in tainted_bits_list}
 
         # Execute the instruction to get output state
-        output_register_values = register_values  # Default: output = input
-
-        # Try to execute instruction if bytestring is available
-        if current_rule.bytestring:
-            try:
-                bytecode = bytes.fromhex(current_rule.bytestring)
-
-                # Build proper input_cpu_state from register_values
-                input_cpu_state = CpuRegisterMap()
-                for reg in current_rule.format.registers:
-                    reg_value = 0
-                    reg_bits = register_values.get(reg.name, {})
-                    for bit_idx in range(reg.bits):
-                        if reg_bits.get(bit_idx, 0) == 1:
-                            reg_value |= 1 << bit_idx
-                    input_cpu_state[reg] = reg_value
-
-                # Set CPU state and execute instruction
-                cpu = UnicornCPU(current_rule.format.arch)
-                cpu.set_cpu_state(input_cpu_state)
-                _, output_cpu_state = cpu.execute(bytecode)
-
-                # Extract output register values as bit dict
-                output_register_values = {}
-                for reg in current_rule.format.registers:
-                    reg_value = output_cpu_state[reg]
-                    output_register_values[reg.name] = {}
-                    for bit_idx in range(reg.bits):
-                        output_register_values[reg.name][bit_idx] = (reg_value >> bit_idx) & 1
-            except Exception:
-                # If execution fails, try extracting from filename as fallback
-                if rule_file_path and rule_file_path != '<uploaded>':
-                    try:
-                        filename = Path(rule_file_path).stem
-                        bytestring = filename.split('_')[0]
-                        bytecode = bytes.fromhex(bytestring)
-
-                        input_cpu_state = CpuRegisterMap()
-                        for reg in current_rule.format.registers:
-                            reg_value = 0
-                            reg_bits = register_values.get(reg.name, {})
-                            for bit_idx in range(reg.bits):
-                                if reg_bits.get(bit_idx, 0) == 1:
-                                    reg_value |= 1 << bit_idx
-                            input_cpu_state[reg] = reg_value
-
-                        cpu = UnicornCPU(current_rule.format.arch)
-                        cpu.set_cpu_state(input_cpu_state)
-                        _, output_cpu_state = cpu.execute(bytecode)
-
-                        output_register_values = {}
-                        for reg in current_rule.format.registers:
-                            reg_value = output_cpu_state[reg]
-                            output_register_values[reg.name] = {}
-                            for bit_idx in range(reg.bits):
-                                output_register_values[reg.name][bit_idx] = (reg_value >> bit_idx) & 1
-                    except Exception:
-                        pass
+        output_register_values = _get_output_register_values(register_values, current_rule, rule_file_path)
 
         # Run taint simulation
         result = simulate_taint_propagation(current_rule, input_state, tainted_bits)
@@ -487,18 +520,7 @@ def simulate_detailed():
         result['input_state_bin'] = bin(input_state)
 
         # Add flag information for tainted bits
-        tainted_with_flags = []
-        for reg_name, bit_idx in result['tainted_outputs']:
-            flag_info = get_flag_info(reg_name, bit_idx)
-            entry = {
-                'register': reg_name,
-                'bit': bit_idx,
-                'flag_name': flag_info['name'] if flag_info else None,
-                'flag_desc': flag_info['desc'] if flag_info else None,
-            }
-            tainted_with_flags.append(entry)
-
-        result['tainted_outputs_detailed'] = tainted_with_flags
+        _add_flag_information(result)
 
         return jsonify(result)
 
@@ -509,7 +531,7 @@ def simulate_detailed():
 
 
 def main():
-    global current_rule, rule_file_path
+    global current_rule, rule_file_path  # noqa: PLW0603
 
     if len(sys.argv) < 2:
         print('Usage: python taint_visualizer.py <rule_file.json>')

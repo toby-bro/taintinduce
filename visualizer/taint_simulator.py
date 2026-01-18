@@ -7,7 +7,7 @@ Reuses core TaintInduce logic for condition evaluation and dataflow application.
 from typing import Any
 
 from taintinduce.rules.conditions import LogicType, TaintCondition
-from taintinduce.rules.rules import TaintRule, TaintRuleFormat
+from taintinduce.rules.rules import ConditionDataflowPair, TaintRule, TaintRuleFormat
 
 
 def evaluate_condition(condition: TaintCondition | None, state_value: int) -> bool:
@@ -109,6 +109,64 @@ def extract_bits_from_state(
     return result
 
 
+def _convert_tainted_bits_to_positions(
+    tainted_bits: set[tuple[str, int]],
+    rule_format: TaintRuleFormat,
+) -> set[int]:
+    """Convert (register_name, bit_index) tuples to global bit positions."""
+    tainted_positions = set()
+    bit_offset = 0
+
+    for reg in rule_format.registers:
+        for bit_idx in range(reg.bits):
+            if (reg.name, bit_idx) in tainted_bits:
+                tainted_positions.add(bit_offset + bit_idx)
+        bit_offset += reg.bits
+
+    # Handle memory slots
+    for mem_idx, mem_slot in enumerate(rule_format.mem_slots):
+        for bit_idx in range(mem_slot.size):
+            if (f'MEM{mem_idx}', bit_idx) in tainted_bits:
+                tainted_positions.add(bit_offset + bit_idx)
+        bit_offset += mem_slot.size
+
+    return tainted_positions
+
+
+def _process_dataflow_for_pair(
+    pair: ConditionDataflowPair,
+    pair_idx: int,
+    tainted_positions: set[int],
+    rule_format: TaintRuleFormat,
+    tainted_outputs: set[tuple[str, int]],
+    all_dataflows: list[dict[str, Any]],
+) -> None:
+    """Process dataflow for a single condition-dataflow pair."""
+    if not isinstance(pair.output_bits, dict):
+        return
+
+    for input_bit_pos, output_bit_positions in pair.output_bits.items():
+        # Check if this input bit is tainted
+        if input_bit_pos not in tainted_positions:
+            continue
+
+        # Taint propagates to all output bits
+        for output_bit_pos in output_bit_positions:
+            # Convert output bit position to (register, bit) tuple
+            reg_name, bit_idx = _global_bit_to_reg_bit(output_bit_pos, rule_format)
+            tainted_outputs.add((reg_name, bit_idx))
+
+            # Record dataflow
+            input_reg, input_bit = _global_bit_to_reg_bit(input_bit_pos, rule_format)
+            all_dataflows.append({
+                'input_register': input_reg,
+                'input_bit': input_bit,
+                'output_register': reg_name,
+                'output_bit': bit_idx,
+                'pair_index': pair_idx,
+            })
+
+
 def simulate_taint_propagation(
     rule: TaintRule,
     input_state: int,
@@ -129,24 +187,11 @@ def simulate_taint_propagation(
     """
     # Find matching pairs
     matching_pairs = []
-    all_dataflows = []
-    tainted_outputs = set()
+    all_dataflows: list[dict[str, Any]] = []
+    tainted_outputs: set[tuple[str, int]] = set()
 
     # Convert tainted_bits to global bit positions
-    tainted_positions = set()
-    bit_offset = 0
-    for reg in rule.format.registers:
-        for bit_idx in range(reg.bits):
-            if (reg.name, bit_idx) in tainted_bits:
-                tainted_positions.add(bit_offset + bit_idx)
-        bit_offset += reg.bits
-
-    # Handle memory slots
-    for mem_idx, mem_slot in enumerate(rule.format.mem_slots):
-        for bit_idx in range(mem_slot.size):
-            if (f'MEM{mem_idx}', bit_idx) in tainted_bits:
-                tainted_positions.add(bit_offset + bit_idx)
-        bit_offset += mem_slot.size
+    tainted_positions = _convert_tainted_bits_to_positions(tainted_bits, rule.format)
 
     # Evaluate each pair
     for pair_idx, pair in enumerate(rule.pairs):
@@ -154,33 +199,14 @@ def simulate_taint_propagation(
             matching_pairs.append(pair_idx)
 
             # Apply dataflow for this pair
-            if isinstance(pair.output_bits, dict):
-                for input_bit_pos, output_bit_positions in pair.output_bits.items():
-                    # Check if this input bit is tainted
-                    if input_bit_pos in tainted_positions:
-                        # Taint propagates to all output bits
-                        for output_bit_pos in output_bit_positions:
-                            # Convert output bit position to (register, bit) tuple
-                            reg_name, bit_idx = _global_bit_to_reg_bit(
-                                output_bit_pos,
-                                rule.format,
-                            )
-                            tainted_outputs.add((reg_name, bit_idx))
-
-                            # Record dataflow
-                            input_reg, input_bit = _global_bit_to_reg_bit(
-                                input_bit_pos,
-                                rule.format,
-                            )
-                            all_dataflows.append(
-                                {
-                                    'input_register': input_reg,
-                                    'input_bit': input_bit,
-                                    'output_register': reg_name,
-                                    'output_bit': bit_idx,
-                                    'pair_index': pair_idx,
-                                },
-                            )
+            _process_dataflow_for_pair(
+                pair,
+                pair_idx,
+                tainted_positions,
+                rule.format,
+                tainted_outputs,
+                all_dataflows,
+            )
 
     return {
         'matching_pairs': matching_pairs,
