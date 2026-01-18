@@ -76,7 +76,7 @@ function loadPairs(pairs) {
                     ${pair.sample_flows
                       .map(
                         (f) =>
-                          `<div class="flow-item">Bit ${f.input} → [${f.outputs}]</div>`
+                          `<div class="flow-item">Bit ${f.input} → [${f.outputs}]</div>`,
                       )
                       .join("")}
                 </div>
@@ -118,10 +118,10 @@ async function runSimulation() {
     html += `
             <div class="result-card">
                 <h4>✅ Pair ${pair.pair_index + 1} Matched ${
-      pair.is_unconditional
-        ? '<span class="badge badge-success">UNCONDITIONAL</span>'
-        : ""
-    }</h4>
+                  pair.is_unconditional
+                    ? '<span class="badge badge-success">UNCONDITIONAL</span>'
+                    : ""
+                }</h4>
                 <div class="condition-box">${pair.condition_text}</div>
                 <p><strong>Taint Propagation:</strong> ${
                   pair.num_flows
@@ -130,7 +130,7 @@ async function runSimulation() {
                     ${pair.sample_flows
                       .map(
                         (f) =>
-                          `<div class="flow-item">Bit ${f.input} → [${f.outputs}]</div>`
+                          `<div class="flow-item">Bit ${f.input} → [${f.outputs}]</div>`,
                       )
                       .join("")}
                 </div>
@@ -221,41 +221,45 @@ function decodeFlags(regName, bits, value = null) {
   // EFLAGS/RFLAGS flag decoding for x86/AMD64
   const flagDefs = {
     EFLAGS: [
-      { bit: 0, name: "CF", desc: "Carry" },
-      { bit: 2, name: "PF", desc: "Parity" },
-      { bit: 4, name: "AF", desc: "Auxiliary" },
-      { bit: 6, name: "ZF", desc: "Zero" },
-      { bit: 7, name: "SF", desc: "Sign" },
-      { bit: 8, name: "TF", desc: "Trap" },
-      { bit: 9, name: "IF", desc: "Interrupt" },
-      { bit: 10, name: "DF", desc: "Direction" },
-      { bit: 11, name: "OF", desc: "Overflow" },
-      { bit: 14, name: "NT", desc: "Nested Task" },
-      { bit: 16, name: "RF", desc: "Resume" },
-      { bit: 17, name: "VM", desc: "Virtual 8086" },
-      { bit: 18, name: "AC", desc: "Alignment" },
-      { bit: 19, name: "VIF", desc: "Virtual IF" },
-      { bit: 20, name: "VIP", desc: "Virtual IP" },
-      { bit: 21, name: "ID", desc: "ID" },
+      { bit: 0, name: "CF", desc: "Carry flag" },
+      { bit: 2, name: "PF", desc: "Parity flag" },
+      { bit: 4, name: "AF", desc: "Auxiliary Carry flag" },
+      { bit: 6, name: "ZF", desc: "Zero flag" },
+      { bit: 7, name: "SF", desc: "Sign flag" },
+      { bit: 8, name: "TF", desc: "Trap flag (single step)" },
+      { bit: 9, name: "IF", desc: "Interrupt enable flag" },
+      { bit: 10, name: "DF", desc: "Direction flag" },
+      { bit: 11, name: "OF", desc: "Overflow flag" },
+      { bit: 12, name: "IOPL", desc: "I/O privilege level (bit 0)" },
+      { bit: 13, name: "IOPL", desc: "I/O privilege level (bit 1)" },
+      { bit: 14, name: "NT", desc: "Nested task flag" },
+      { bit: 16, name: "RF", desc: "Resume flag" },
+      { bit: 17, name: "VM", desc: "Virtual 8086 mode flag" },
+      { bit: 18, name: "AC", desc: "Alignment Check / SMAP Access Check" },
+      { bit: 19, name: "VIF", desc: "Virtual interrupt flag" },
+      { bit: 20, name: "VIP", desc: "Virtual interrupt pending" },
+      { bit: 21, name: "ID", desc: "Able to use CPUID instruction" },
     ],
     RFLAGS: [
-      // Same as EFLAGS for 64-bit
-      { bit: 0, name: "CF", desc: "Carry" },
-      { bit: 2, name: "PF", desc: "Parity" },
-      { bit: 4, name: "AF", desc: "Auxiliary" },
-      { bit: 6, name: "ZF", desc: "Zero" },
-      { bit: 7, name: "SF", desc: "Sign" },
-      { bit: 8, name: "TF", desc: "Trap" },
-      { bit: 9, name: "IF", desc: "Interrupt" },
-      { bit: 10, name: "DF", desc: "Direction" },
-      { bit: 11, name: "OF", desc: "Overflow" },
-      { bit: 14, name: "NT", desc: "Nested Task" },
-      { bit: 16, name: "RF", desc: "Resume" },
-      { bit: 17, name: "VM", desc: "Virtual 8086" },
-      { bit: 18, name: "AC", desc: "Alignment" },
-      { bit: 19, name: "VIF", desc: "Virtual IF" },
-      { bit: 20, name: "VIP", desc: "Virtual IP" },
-      { bit: 21, name: "ID", desc: "ID" },
+      // 64-bit extension of EFLAGS
+      { bit: 0, name: "CF", desc: "Carry flag" },
+      { bit: 2, name: "PF", desc: "Parity flag" },
+      { bit: 4, name: "AF", desc: "Auxiliary Carry flag" },
+      { bit: 6, name: "ZF", desc: "Zero flag" },
+      { bit: 7, name: "SF", desc: "Sign flag" },
+      { bit: 8, name: "TF", desc: "Trap flag (single step)" },
+      { bit: 9, name: "IF", desc: "Interrupt enable flag" },
+      { bit: 10, name: "DF", desc: "Direction flag" },
+      { bit: 11, name: "OF", desc: "Overflow flag" },
+      { bit: 12, name: "IOPL", desc: "I/O privilege level (bit 0)" },
+      { bit: 13, name: "IOPL", desc: "I/O privilege level (bit 1)" },
+      { bit: 14, name: "NT", desc: "Nested task flag" },
+      { bit: 16, name: "RF", desc: "Resume flag" },
+      { bit: 17, name: "VM", desc: "Virtual 8086 mode flag" },
+      { bit: 18, name: "AC", desc: "Alignment Check / SMAP Access Check" },
+      { bit: 19, name: "VIF", desc: "Virtual interrupt flag" },
+      { bit: 20, name: "VIP", desc: "Virtual interrupt pending" },
+      { bit: 21, name: "ID", desc: "Able to use CPUID instruction" },
     ],
     CPSR: [
       // ARM/AArch32 flags
@@ -326,7 +330,7 @@ function renderGraph() {
         if (pairIdx < 3) {
           console.log(
             `Pair ${pairIdx + 1} has ${pair.dataflow.length} flows, sample:`,
-            pair.dataflow[0]
+            pair.dataflow[0],
           );
         }
         combinedPair.dataflow.push(...pair.dataflow);
@@ -345,7 +349,7 @@ function renderGraph() {
       currentRuleData.pairs.length,
       "pairs with",
       combinedPair.dataflow.length,
-      "total dataflows"
+      "total dataflows",
     );
     console.log("Condition distribution:", conditionCounts);
     console.log("Sample dataflow entries:", combinedPair.dataflow.slice(0, 5));
@@ -471,7 +475,7 @@ function highlightConnectedEdges(nodeId, type) {
       console.log("Found", edges.length, "edges from this input node");
       console.log(
         "Sample edge data-condition:",
-        edges[0]?.getAttribute("data-condition")
+        edges[0]?.getAttribute("data-condition"),
       );
       edges.forEach((edge) => {
         toHighlight.push(edge);
@@ -505,7 +509,7 @@ function highlightConnectedEdges(nodeId, type) {
       toHighlight.length,
       "elements in",
       performance.now() - startTime,
-      "ms"
+      "ms",
     );
 
     // Center the clicked node
@@ -561,7 +565,7 @@ function renderFlowGraph(pair, format) {
       "width: 30px; height: 30px; font-size: 18px; cursor: pointer; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);";
     zoomInBtn.onclick = () => {
       const currentScale = parseFloat(
-        svg.style.transform?.match(/scale\(([\d.]+)\)/)?.[1] || 1
+        svg.style.transform?.match(/scale\(([\d.]+)\)/)?.[1] || 1,
       );
       const newScale = Math.min(currentScale + 0.2, 3);
       svg.style.transform = `scale(${newScale})`;
@@ -574,7 +578,7 @@ function renderFlowGraph(pair, format) {
       "width: 30px; height: 30px; font-size: 18px; cursor: pointer; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);";
     zoomOutBtn.onclick = () => {
       const currentScale = parseFloat(
-        svg.style.transform?.match(/scale\(([\d.]+)\)/)?.[1] || 1
+        svg.style.transform?.match(/scale\(([\d.]+)\)/)?.[1] || 1,
       );
       const newScale = Math.max(currentScale - 0.2, 0.2);
       svg.style.transform = `scale(${newScale})`;
@@ -605,7 +609,7 @@ function renderFlowGraph(pair, format) {
   console.log(
     "Rendering flow graph with",
     pair.dataflow.length,
-    "dataflow entries"
+    "dataflow entries",
   );
   console.log("First dataflow entry:", pair.dataflow[0]);
 
@@ -656,7 +660,7 @@ function renderFlowGraph(pair, format) {
     edges.length,
     "edges (merged",
     mergedEdges,
-    "edges with multiple conditions)"
+    "edges with multiple conditions)",
   );
   if (edges.length > 0) {
     console.log("First edge:", edges[0]);
@@ -751,7 +755,7 @@ function renderFlowGraph(pair, format) {
     if (from && to) {
       const path = document.createElementNS(
         "http://www.w3.org/2000/svg",
-        "path"
+        "path",
       );
       const midX = (from.x + to.x) / 2;
       const d = `M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`;
@@ -773,7 +777,7 @@ function renderFlowGraph(pair, format) {
             svg.querySelectorAll(".flow-line").length
           }: data-condition="${edge.condition || "UNCONDITIONAL"}"${
             edge.conditions ? ` (${edge.conditions.length} total)` : ""
-          }`
+          }`,
         );
         if (edge.conditions) {
           console.log("  conditions array:", edge.conditions);
@@ -806,7 +810,7 @@ function renderFlowGraph(pair, format) {
               (c, i) =>
                 `<div style="margin: 6px 0; padding-left: 8px; border-left: 2px solid rgba(255,255,255,0.4);"><strong style="color: #4fc3f7;">${
                   i + 1
-                }.</strong> ${c}</div>`
+                }.</strong> ${formatConditionText(c, currentRuleData.format)}</div>`,
             )
             .join("");
           tooltip.innerHTML = header + conditionList;
@@ -814,12 +818,15 @@ function renderFlowGraph(pair, format) {
             "Tooltip HTML length:",
             tooltip.innerHTML.length,
             "first 200 chars:",
-            tooltip.innerHTML.substring(0, 200)
+            tooltip.innerHTML.substring(0, 200),
           );
         } else {
           const condition =
             this.getAttribute("data-condition") || "UNCONDITIONAL";
-          tooltip.textContent = condition;
+          tooltip.textContent = formatConditionText(
+            condition,
+            currentRuleData.format,
+          );
         }
 
         tooltip.style.display = "block";
@@ -840,29 +847,38 @@ function renderFlowGraph(pair, format) {
         const multiConditions = this.getAttribute("data-conditions");
         const fromBit = JSON.parse(this.getAttribute("data-from"));
         const toBit = JSON.parse(this.getAttribute("data-to"));
-        
+
         let html = `<div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 4px;">
           <strong style="color: #667eea;">From:</strong> ${formatBitPosition(fromBit)}<br>
           <strong style="color: #764ba2;">To:</strong> ${formatBitPosition(toBit)}
         </div>`;
-        
+
         if (multiConditions) {
           const conditions = JSON.parse(multiConditions);
           html += `<div style="font-weight: bold; margin-bottom: 10px; color: #333;">${conditions.length} Conditions:</div>`;
           conditions.forEach((condition, i) => {
+            const formatted = formatConditionText(
+              condition,
+              currentRuleData.format,
+            );
             html += `<div style="margin-bottom: 12px; padding: 10px; background: white; border-radius: 4px; border-left: 3px solid #667eea;">
               <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">Condition ${i + 1}:</div>
-              <div style="word-break: break-word;">${condition}</div>
+              <div style="word-break: break-word;">${formatted}</div>
             </div>`;
           });
         } else {
-          const condition = this.getAttribute("data-condition") || "UNCONDITIONAL";
+          const condition =
+            this.getAttribute("data-condition") || "UNCONDITIONAL";
+          const formatted = formatConditionText(
+            condition,
+            currentRuleData.format,
+          );
           html += `<div style="padding: 10px; background: white; border-radius: 4px;">
             <div style="font-weight: bold; color: #667eea; margin-bottom: 4px;">Condition:</div>
-            <div style="word-break: break-word;">${condition}</div>
+            <div style="word-break: break-word;">${formatted}</div>
           </div>`;
         }
-        
+
         content.innerHTML = html;
         panel.style.display = "block";
       });
@@ -903,7 +919,7 @@ function renderFlowGraph(pair, format) {
 
     const circle = document.createElementNS(
       "http://www.w3.org/2000/svg",
-      "circle"
+      "circle",
     );
     circle.setAttribute("r", 15);
     g.appendChild(circle);
@@ -922,7 +938,7 @@ function renderFlowGraph(pair, format) {
 
     const title = document.createElementNS(
       "http://www.w3.org/2000/svg",
-      "title"
+      "title",
     );
     title.textContent = formatBitPosition(bit);
     g.appendChild(title);
@@ -930,7 +946,7 @@ function renderFlowGraph(pair, format) {
     // Label (adjust x position to avoid overlap with circles)
     const label = document.createElementNS(
       "http://www.w3.org/2000/svg",
-      "text"
+      "text",
     );
     label.setAttribute("x", -70); // Further left to avoid overlap
     label.setAttribute("y", 5);
@@ -953,7 +969,7 @@ function renderFlowGraph(pair, format) {
 
     const circle = document.createElementNS(
       "http://www.w3.org/2000/svg",
-      "circle"
+      "circle",
     );
     circle.setAttribute("r", 15);
     g.appendChild(circle);
@@ -972,7 +988,7 @@ function renderFlowGraph(pair, format) {
 
     const title = document.createElementNS(
       "http://www.w3.org/2000/svg",
-      "title"
+      "title",
     );
     title.textContent = formatBitPosition(bit);
     g.appendChild(title);
@@ -980,7 +996,7 @@ function renderFlowGraph(pair, format) {
     // Label (adjust x position to not overlap)
     const label = document.createElementNS(
       "http://www.w3.org/2000/svg",
-      "text"
+      "text",
     );
     label.setAttribute("x", 25); // Right of circle
     label.setAttribute("y", 5);
@@ -1000,7 +1016,7 @@ function renderFlowGraph(pair, format) {
   // Input legend
   const inputCircle = document.createElementNS(
     "http://www.w3.org/2000/svg",
-    "circle"
+    "circle",
   );
   inputCircle.setAttribute("cx", 0);
   inputCircle.setAttribute("cy", 0);
@@ -1010,7 +1026,7 @@ function renderFlowGraph(pair, format) {
 
   const inputText = document.createElementNS(
     "http://www.w3.org/2000/svg",
-    "text"
+    "text",
   );
   inputText.setAttribute("x", 15);
   inputText.setAttribute("y", 5);
@@ -1022,7 +1038,7 @@ function renderFlowGraph(pair, format) {
   // Output legend
   const outputCircle = document.createElementNS(
     "http://www.w3.org/2000/svg",
-    "circle"
+    "circle",
   );
   outputCircle.setAttribute("cx", 100);
   outputCircle.setAttribute("cy", 0);
@@ -1032,7 +1048,7 @@ function renderFlowGraph(pair, format) {
 
   const outputText = document.createElementNS(
     "http://www.w3.org/2000/svg",
-    "text"
+    "text",
   );
   outputText.setAttribute("x", 115);
   outputText.setAttribute("y", 5);
@@ -1070,7 +1086,7 @@ function renderFlowGraph(pair, format) {
     graphNodeMap.size,
     "nodes,",
     graphEdgesByFrom.size,
-    "edge sources"
+    "edge sources",
   );
 
   // Add click handler to SVG background to unselect
@@ -1102,6 +1118,8 @@ function getFlagName(regName, bitNum) {
       9: "IF",
       10: "DF",
       11: "OF",
+      12: "IOPL",
+      13: "IOPL",
       14: "NT",
       16: "RF",
       17: "VM",
@@ -1120,6 +1138,8 @@ function getFlagName(regName, bitNum) {
       9: "IF",
       10: "DF",
       11: "OF",
+      12: "IOPL",
+      13: "IOPL",
       14: "NT",
       16: "RF",
       17: "VM",
@@ -1147,4 +1167,47 @@ function formatBitPosition(bit) {
     return `MEM${bit.slot}[${bit.bit}]`;
   }
   return JSON.stringify(bit);
+}
+
+function globalBitToRegister(bitPos, format) {
+  // Convert a global bit position to register name and bit within that register
+  if (!format || !format.registers) return null;
+
+  let currentPos = 0;
+  for (const reg of format.registers) {
+    if (bitPos < currentPos + reg.bits) {
+      const bitInReg = bitPos - currentPos;
+      const flagName = getFlagName(reg.name, bitInReg);
+      if (flagName) {
+        return `${reg.name}[${bitInReg}:${flagName}]`;
+      }
+      return `${reg.name}[${bitInReg}]`;
+    }
+    currentPos += reg.bits;
+  }
+
+  // Check memory slots
+  if (format.mem_slots) {
+    for (let i = 0; i < format.mem_slots.length; i++) {
+      const memSlot = format.mem_slots[i];
+      if (bitPos < currentPos + memSlot.bits) {
+        const bitInMem = bitPos - currentPos;
+        return `MEM${i}[${bitInMem}]`;
+      }
+      currentPos += memSlot.bits;
+    }
+  }
+
+  return `bit[${bitPos}]`; // Fallback
+}
+
+function formatConditionText(conditionText, format) {
+  // Replace bit[N] references with register names
+  if (!conditionText || !format) return conditionText;
+
+  // Match patterns like "bit[39] = 0" or "bit[7]==1"
+  return conditionText.replace(/bit\[(\d+)\]/g, (match, bitPos) => {
+    const regName = globalBitToRegister(parseInt(bitPos), format);
+    return regName || match;
+  });
 }

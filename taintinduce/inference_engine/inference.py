@@ -182,14 +182,9 @@ class InferenceEngine(object):
             for mutated_input_bit, modified_output_bits in observation.dataflow.items():
                 possible_flows[mutated_input_bit].add(modified_output_bits)
 
-        # Map from condition frozenset -> (representative pairs, dict of input_bit -> output sets)
-        # We group input bits that have the same set of conditions
-        # Store the pairs from first encountered input bit
-        # The dict is used for grouping, then we return just the values
-        condition_groups_dict: dict[
-            frozenset[Optional[TaintCondition]],
-            tuple[list[ConditionDataflowPair], DataflowSet],
-        ] = {}
+        # List of condition groups - each group contains input bits with the same condition pattern
+        # Each entry: (ordered_pairs from representative input bit, dataflow_set for all input bits in group)
+        condition_groups: list[tuple[list[ConditionDataflowPair], DataflowSet]] = []
 
         # Parallelize condition inference across input bits
         max_workers = os.cpu_count() or 1
@@ -218,19 +213,22 @@ class InferenceEngine(object):
                 try:
                     condition_dataflow_pairs = future.result()
 
-                    # Create frozenset key from conditions
+                    # Find existing group with matching condition pattern
                     condition_set = frozenset(pair.condition for pair in condition_dataflow_pairs)
+                    matching_group = None
+                    for ordered_pairs, dataflow_set in condition_groups:
+                        existing_condition_set = frozenset(pair.condition for pair in ordered_pairs)
+                        if condition_set == existing_condition_set:
+                            matching_group = (ordered_pairs, dataflow_set)
+                            break
 
-                    # Store ordered pairs and accumulate output sets for this input bit
-                    if condition_set not in condition_groups_dict:
-                        # First time seeing this condition pattern - store the pairs
-                        condition_groups_dict[condition_set] = (condition_dataflow_pairs, DataflowSet())
+                    if matching_group is None:
+                        # First time seeing this condition pattern - create new group
+                        matching_group = (condition_dataflow_pairs, DataflowSet())
+                        condition_groups.append(matching_group)
 
-                    # Get the dataflow set for this condition group
-                    _, dataflow_set = condition_groups_dict[condition_set]
-
-                    # Store all output sets for this input bit
-                    # Note: Here output_bits is frozenset[BitPosition] (from infer_conditions_for_dataflows)
+                    # Add this input bit's dataflows to the group
+                    _, dataflow_set = matching_group
                     output_sets: set[frozenset[BitPosition]] = {pair.output_bits for pair in condition_dataflow_pairs}  # type: ignore[misc]
                     old_sets: set[frozenset[BitPosition]] = dataflow_set.get(mutated_input_bit, set())
                     dataflow_set[mutated_input_bit] = old_sets.union(output_sets)
@@ -238,8 +236,7 @@ class InferenceEngine(object):
                     logger.error(f'Failed to infer conditions for bit {mutated_input_bit}: {e}')
                     raise
 
-        # Return just the values (ordered_pairs, dataflow_set) without the condition_set keys
-        return list(condition_groups_dict.values())
+        return condition_groups
 
     def infer_conditions_for_dataflows(
         self,
