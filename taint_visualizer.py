@@ -269,7 +269,7 @@ def simulate():
         input_str = data.get('input_state', '0')
 
         # Parse input (support hex or decimal)
-        if input_str.startswith('0x') or input_str.startswith('0X'):
+        if input_str.startswith(('0x', '0X')):
             input_state = int(input_str, 16)
         else:
             input_state = int(input_str)
@@ -543,7 +543,7 @@ def main():
     print()
 
     # Run Flask app
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)  # noqa: S104, S201
 
 
 if __name__ == '__main__':

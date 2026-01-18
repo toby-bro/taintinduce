@@ -82,15 +82,13 @@ def simple_observation(state_format):
     mutate_in = State(num_bits=64, state_value=StateValue(0x0000000012345679))  # bit 32 flipped
     mutate_out = State(num_bits=64, state_value=StateValue(0x0000000012345679))
 
-    obs = Observation(
+    return Observation(
         iopair=(seed_in, seed_out),
         mutated_iopairs=frozenset([(mutate_in, mutate_out)]),
         bytestring='test',
         archstring='X86',
         state_format=state_format,
     )
-
-    return obs
 
 
 @pytest.fixture

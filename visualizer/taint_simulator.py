@@ -179,7 +179,7 @@ def simulate_taint_propagation(
                                     'output_register': reg_name,
                                     'output_bit': bit_idx,
                                     'pair_index': pair_idx,
-                                }
+                                },
                             )
 
     return {
