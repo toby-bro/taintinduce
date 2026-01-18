@@ -56,32 +56,36 @@ function renderRegisterInputs() {
       const isTainted = taintedBitsSet.has(bitKey);
       const bgColor = isTainted ? "#ff9800" : "#f5f5f5";
       const textColor = isTainted ? "white" : "#333";
+      const flagName = getFlagName(reg.name, bitIdx);
 
       html += `
-        <div class="bit-input-cell" 
-             data-register="${reg.name}" 
-             data-bit="${bitIdx}"
-             onclick="toggleBit('${reg.name}', ${bitIdx})"
-             style="
-               width: 32px;
-               height: 32px;
-               background: ${bgColor};
-               color: ${textColor};
-               border: 1px solid #ddd;
-               border-radius: 4px;
-               display: flex;
-               align-items: center;
-               justify-content: center;
-               font-size: 11px;
-               font-weight: bold;
-               cursor: pointer;
-               user-select: none;
-               font-family: monospace;
-               position: relative;
-             "
-             title="${reg.name}[${bitIdx}] - Click to toggle value, Shift+Click to toggle taint">
-          <div style="font-size: 9px; position: absolute; top: 1px; right: 2px; color: #999">${bitIdx}</div>
-          <div id="bit-value-${reg.name}-${bitIdx}">0</div>
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          ${flagName ? `<div style="font-size: 8px; font-weight: bold; color: #667eea; margin-bottom: 2px;">${flagName}</div>` : `<div style="height: 12px;"></div>`}
+          <div class="bit-input-cell" 
+               data-register="${reg.name}" 
+               data-bit="${bitIdx}"
+               onclick="toggleBit('${reg.name}', ${bitIdx})"
+               style="
+                 width: 32px;
+                 height: 32px;
+                 background: ${bgColor};
+                 color: ${textColor};
+                 border: 1px solid #ddd;
+                 border-radius: 4px;
+                 display: flex;
+                 align-items: center;
+                 justify-content: center;
+                 font-size: 11px;
+                 font-weight: bold;
+                 cursor: pointer;
+                 user-select: none;
+                 font-family: monospace;
+                 position: relative;
+               "
+               title="${reg.name}[${bitIdx}]${flagName ? " (" + flagName + ")" : ""} - Click to toggle value, Shift+Click to toggle taint">
+            <div style="font-size: 9px; position: absolute; top: 1px; right: 2px; color: #999">${bitIdx}</div>
+            <div id="bit-value-${reg.name}-${bitIdx}">0</div>
+          </div>
         </div>
       `;
     }
@@ -501,6 +505,7 @@ async function runDetailedSimulation() {
         const isTainted = taintedOutputsSet.has(bitKey);
         const bgColor = isTainted ? "#ff9800" : "#e0e0e0";
         const textColor = isTainted ? "white" : "#666";
+        const flagName = getFlagName(reg.name, bitIdx);
 
         // Get the output bit value from backend
         let bitValue = "0";
@@ -513,25 +518,28 @@ async function runDetailedSimulation() {
         }
 
         html += `
-          <div class="bit-output-cell" 
-               style="
-                 width: 32px;
-                 height: 32px;
-                 background: ${bgColor};
-                 color: ${textColor};
-                 border: 1px solid #ddd;
-                 border-radius: 4px;
-                 display: flex;
-                 align-items: center;
-                 justify-content: center;
-                 font-size: 11px;
-                 font-weight: bold;
-                 font-family: monospace;
-                 position: relative;
-               "
-          >
-            <div style="font-size: 14px">${bitValue}</div>
-            <div style="position: absolute; top: 2px; right: 2px; font-size: 8px; opacity: 0.7">${bitIdx}</div>
+          <div style="display: flex; flex-direction: column; align-items: center;">
+            ${flagName ? `<div style="font-size: 8px; font-weight: bold; color: #667eea; margin-bottom: 2px;">${flagName}</div>` : `<div style="height: 12px;"></div>`}
+            <div class="bit-output-cell" 
+                 style="
+                   width: 32px;
+                   height: 32px;
+                   background: ${bgColor};
+                   color: ${textColor};
+                   border: 1px solid #ddd;
+                   border-radius: 4px;
+                   display: flex;
+                   align-items: center;
+                   justify-content: center;
+                   font-size: 11px;
+                   font-weight: bold;
+                   font-family: monospace;
+                   position: relative;
+                 "
+            >
+              <div style="font-size: 14px">${bitValue}</div>
+              <div style="position: absolute; top: 2px; right: 2px; font-size: 8px; opacity: 0.7">${bitIdx}</div>
+            </div>
           </div>
         `;
       }
