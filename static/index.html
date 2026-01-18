@@ -134,30 +134,167 @@
       </div>
 
       <div id="simulator-tab" class="tab-content">
-        <h2>Interactive Simulator</h2>
+        <h2>Interactive Taint Simulator</h2>
         <p style="margin-bottom: 20px; color: #6c757d">
-          Enter an input state value (hex or decimal) to see which conditions
-          match and what taint propagates.
+          Set input register values bit-by-bit, mark which bits are tainted, and
+          see how taint propagates through the instruction.
         </p>
 
         <div class="simulator">
-          <div class="input-group">
-            <label for="input-state">Input State Value:</label>
-            <input
-              type="text"
-              id="input-state"
-              placeholder="0x1234 or 4660"
-              value="0x0"
-            />
+          <!-- Top control bar -->
+          <div
+            style="
+              margin-bottom: 20px;
+              padding: 15px;
+              background: #f8f9fa;
+              border-radius: 8px;
+              display: flex;
+              flex-wrap: wrap;
+              gap: 10px;
+              align-items: center;
+            "
+          >
+            <!-- Input method selector -->
+            <div style="display: flex; gap: 5px">
+              <button
+                class="btn"
+                onclick="
+                  window.switchInputMode('bits');
+                  return false;
+                "
+                id="btnInputBits"
+                style="background: #667eea; padding: 8px 16px"
+              >
+                Bit-by-Bit Input
+              </button>
+              <button
+                class="btn"
+                onclick="
+                  window.switchInputMode('hex');
+                  return false;
+                "
+                id="btnInputHex"
+                style="background: #e0e0e0; color: #333; padding: 8px 16px"
+              >
+                Hex Input
+              </button>
+            </div>
+
+            <div style="width: 2px; height: 30px; background: #dee2e6"></div>
+
+            <!-- Edit/Taint mode toggle -->
+            <button
+              id="btnToggleEditMode"
+              class="btn"
+              onclick="
+                window.toggleEditMode();
+                return false;
+              "
+              style="background: #ff9800; padding: 8px 16px"
+            >
+              🎨 Taint Mode
+            </button>
+
+            <div style="width: 2px; height: 30px; background: #dee2e6"></div>
+
+            <!-- Bulk taint controls -->
+            <button
+              id="btnTaintAll"
+              class="btn"
+              onclick="
+                window.taintAll();
+                return false;
+              "
+              style="background: #ff9800; padding: 8px 16px"
+            >
+              Taint All
+            </button>
+            <button
+              id="btnClearTaint"
+              class="btn"
+              onclick="
+                window.clearTaint();
+                return false;
+              "
+              style="background: #757575; padding: 8px 16px"
+            >
+              Clear Taint
+            </button>
           </div>
 
-          <button class="btn" onclick="runSimulation()">
-            🚀 Simulate Taint Propagation
-          </button>
+          <!-- Mode description -->
+          <p
+            id="editModeText"
+            style="
+              color: #ff9800;
+              font-size: 13px;
+              margin: -10px 0 15px 0;
+              padding-left: 15px;
+            "
+          >
+            Click bits to mark them as tainted (orange).
+          </p>
 
-          <div class="results" id="simulation-results">
-            <h3>Simulation Results</h3>
-            <div id="matching-pairs"></div>
+          <!-- Hex input mode -->
+          <div id="hex-input-mode" style="display: none">
+            <div class="input-group">
+              <label for="input-state-hex">Input State (Hex):</label>
+              <input
+                type="text"
+                id="input-state-hex"
+                placeholder="0x1234 or 4660"
+                value="0x0"
+                oninput="
+                  window.updateBitsFromHex();
+                  return false;
+                "
+              />
+            </div>
+          </div>
+
+          <!-- Bit-by-bit input mode -->
+          <div id="bit-input-mode">
+            <h3>Input Registers</h3>
+            <div id="register-inputs"></div>
+          </div>
+
+          <div
+            class="results"
+            id="simulation-results-detailed"
+            style="margin-top: 20px"
+          >
+            <h3>Output Registers</h3>
+            <div id="output-registers"></div>
+          </div>
+
+          <!-- Legacy simple simulator -->
+          <div
+            style="
+              margin-top: 40px;
+              padding-top: 20px;
+              border-top: 2px solid #e0e0e0;
+            "
+          >
+            <h3>Simple Condition Matcher</h3>
+            <p style="color: #6c757d; font-size: 14px">
+              Enter an input state to see which condition-dataflow pairs match
+              (no taint tracking).
+            </p>
+            <div class="input-group">
+              <label for="input-state">Input State Value:</label>
+              <input
+                type="text"
+                id="input-state"
+                placeholder="0x1234 or 4660"
+                value="0x0"
+              />
+            </div>
+            <button class="btn" onclick="runSimulation()">
+              Check Matching Conditions
+            </button>
+            <div class="results" id="simulation-results">
+              <div id="matching-pairs"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -252,6 +389,7 @@
     <script src="/static/ui.js"></script>
     <script src="/static/api.js"></script>
     <script src="/static/graph.js"></script>
+    <script src="/static/simulator.js"></script>
     <script src="/static/visualizer-new.js"></script>
   </body>
 </html>

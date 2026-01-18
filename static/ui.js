@@ -43,7 +43,7 @@ function loadPairs(pairs) {
                     ${pair.sample_flows
                       .map(
                         (f) =>
-                          `<div class="flow-item">Bit ${f.input} → [${f.outputs}]</div>`,
+                          `<div class="flow-item">${f.input} → [${f.outputs}]</div>`,
                       )
                       .join("")}
                 </div>
@@ -95,5 +95,10 @@ function updateAllDisplays(data) {
   if (data.pairs && data.pairs.length > 0) {
     document.getElementById("pairSelect").value = "ALL";
     renderGraph();
+  }
+  
+  // Initialize simulator with register inputs
+  if (typeof initializeSimulator === 'function') {
+    initializeSimulator();
   }
 }

@@ -27,6 +27,14 @@ from taintinduce.rules.rules import TaintRule
 from taintinduce.serialization import TaintInduceDecoder
 from taintinduce.state.state import check_ones
 
+# Import visualizer helper modules
+from visualizer.taint_simulator import (
+    build_state_from_bits,
+    extract_bits_from_state,
+    get_flag_info,
+    simulate_taint_propagation,
+)
+
 # Get the directory where this script is located
 SCRIPT_DIR = Path(__file__).parent
 
@@ -48,7 +56,8 @@ def evaluate_condition(condition: TaintCondition | None, state_value: int) -> bo
     if condition.condition_type == LogicType.DNF:
         # DNF: OR of ANDs - any clause can be true
         for bitmask, value in condition.condition_ops:
-            if (state_value & bitmask) == value:
+            # Ensure integers for bitwise operations
+            if (state_value & int(bitmask)) == int(value):
                 return True
         return False
 
@@ -173,10 +182,25 @@ def get_rule_data():
 
         if isinstance(pair.output_bits, dict):
             for input_bit, output_bits in pair.output_bits.items():
-                outputs_str = ', '.join(map(str, sorted(output_bits)))
+                # Convert input bit position to register name
+                in_info = bitpos_to_reg_bit(input_bit, current_rule.format.registers)
+                input_label = (
+                    f"{in_info['name']}[{in_info['bit']}]" if in_info['type'] == 'reg' else f'bit[{input_bit}]'
+                )
+
+                # Convert output bit positions to register names
+                output_labels = []
+                for out_bit in sorted(output_bits):
+                    out_info = bitpos_to_reg_bit(out_bit, current_rule.format.registers)
+                    out_label = (
+                        f"{out_info['name']}[{out_info['bit']}]" if out_info['type'] == 'reg' else f'bit[{out_bit}]'
+                    )
+                    output_labels.append(out_label)
+
+                outputs_str = ', '.join(output_labels)
                 sample_flows.append(
                     {
-                        'input': input_bit,
+                        'input': input_label,
                         'outputs': outputs_str,
                     },
                 )
@@ -342,6 +366,83 @@ def upload_rule():
         return jsonify({'error': f'Invalid JSON: {e!s}'}), 400
     except Exception as e:
         return jsonify({'error': f'Failed to deserialize rule: {e!s}'}), 400
+
+
+@app.route('/api/simulate-detailed', methods=['POST'])
+def simulate_detailed():
+    """API endpoint for detailed bit-level taint simulation.
+
+    Request body:
+    {
+        "register_values": {"EFLAGS": {"0": 1, "6": 0}, "EAX": {"0": 1}},
+        "tainted_bits": [["EFLAGS", 0], ["EAX", 15]],
+        "hex_value": "0x1234" (optional - alternative to register_values)
+    }
+
+    Returns detailed taint propagation results showing which output bits are tainted.
+    """
+    if current_rule is None:
+        return jsonify({'error': 'No rule loaded'}), 400
+
+    try:
+        data = request.json
+
+        # Build input state
+        if data.get('hex_value'):
+            # Parse hex value
+            hex_val = data['hex_value']
+            if isinstance(hex_val, str):
+                if hex_val.startswith(('0x', '0X')):
+                    input_state = int(hex_val, 16)
+                else:
+                    input_state = int(hex_val)
+            else:
+                input_state = int(hex_val)
+
+            # Extract register values from state
+            register_values = extract_bits_from_state(input_state, current_rule.format)
+        else:
+            # Build from register_values
+            register_values = data.get('register_values', {})
+            # Convert string keys to ints where needed
+            cleaned_reg_vals = {}
+            for reg_name, bit_dict in register_values.items():
+                cleaned_reg_vals[reg_name] = {int(k) if isinstance(k, str) else k: int(v) for k, v in bit_dict.items()}
+            register_values = cleaned_reg_vals
+            input_state = build_state_from_bits(register_values, current_rule.format)
+
+        # Parse tainted bits
+        tainted_bits_list = data.get('tainted_bits', [])
+        tainted_bits = {(reg, int(bit)) for reg, bit in tainted_bits_list}
+
+        # Run simulation
+        result = simulate_taint_propagation(current_rule, input_state, tainted_bits)
+
+        # Add formatted register values to response
+        result['register_values'] = register_values
+        result['input_state_hex'] = hex(input_state)
+        result['input_state_bin'] = bin(input_state)
+
+        # Add flag information for tainted bits
+        tainted_with_flags = []
+        for reg_name, bit_idx in result['tainted_outputs']:
+            flag_info = get_flag_info(reg_name, bit_idx)
+            entry = {
+                'register': reg_name,
+                'bit': bit_idx,
+                'flag_name': flag_info['name'] if flag_info else None,
+                'flag_desc': flag_info['desc'] if flag_info else None,
+            }
+            tainted_with_flags.append(entry)
+
+        result['tainted_outputs_detailed'] = tainted_with_flags
+
+        return jsonify(result)
+
+    except ValueError as e:
+        return jsonify({'error': f'Invalid input: {e!s}'}), 400
+    except Exception as e:
+        return jsonify({'error': f'Simulation failed: {e!s}'}), 500
 
 
 def main():
