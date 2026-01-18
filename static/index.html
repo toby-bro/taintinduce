@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title>TaintInduce Visualizer</title>
@@ -12,6 +12,34 @@
         <p style="text-align: center">
           Interactive tool for visualizing and testing taint propagation rules
         </p>
+        <div style="text-align: center; margin-top: 15px">
+          <input
+            type="file"
+            id="ruleFileInput"
+            accept=".json"
+            style="display: none"
+            onchange="handleRuleFileUpload(event)"
+          />
+          <button
+            class="btn"
+            onclick="document.getElementById('ruleFileInput').click()"
+            style="
+              padding: 8px 16px;
+              font-size: 14px;
+              background: #667eea;
+              color: white;
+              border: none;
+              border-radius: 4px;
+              cursor: pointer;
+            "
+          >
+            📁 Upload Rule JSON
+          </button>
+          <span
+            id="uploadStatus"
+            style="margin-left: 10px; color: #28a745; font-weight: bold"
+          ></span>
+        </div>
       </div>
 
       <div class="tabs">
@@ -147,7 +175,10 @@
                   Edge Conditions
                 </h3>
                 <button
-                  onclick="document.getElementById('edgeDetailsPanel').style.display='none'"
+                  onclick="
+                    document.getElementById('edgeDetailsPanel').style.display =
+                      'none'
+                  "
                   style="
                     background: none;
                     border: none;

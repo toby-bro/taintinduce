@@ -18,32 +18,10 @@ async function loadRuleData() {
   const response = await fetch("/api/rule");
   const data = await response.json();
 
-  // Update overview
-  document.getElementById("rule-file").textContent = data.filename;
-  document.getElementById("arch").textContent = data.format.arch;
-  document.getElementById("num-regs").textContent =
-    data.format.registers.length;
-  document.getElementById("num-mem").textContent = data.format.mem_slots.length;
-  document.getElementById("num-pairs").textContent = data.num_pairs;
+  // Update all displays
+  updateAllDisplays(data);
 
-  // Show registers
-  let regsHTML =
-    '<div class="rule-info"><h3>Registers</h3><div class="info-grid">';
-  data.format.registers.forEach((reg, idx) => {
-    regsHTML += `
-            <div class="info-item">
-                <div class="info-label">Register ${idx + 1}</div>
-                <div class="info-value">${reg.name} (${reg.bits}b)</div>
-            </div>
-        `;
-  });
-  regsHTML += "</div></div>";
-  document.getElementById("registers-list").innerHTML = regsHTML;
-
-  // Load pairs
-  loadPairs(data.pairs);
-
-  // Load test cases
+  // Load test cases (only available from backend)
   loadTestCases();
 }
 
@@ -182,6 +160,122 @@ document.addEventListener("DOMContentLoaded", () => {
   loadRuleData();
   populatePairSelector();
 });
+
+function handleRuleFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById("uploadStatus");
+  statusEl.textContent = "Loading...";
+  statusEl.style.color = "#6c757d";
+
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const uploadedData = JSON.parse(e.target.result);
+
+      // Send to backend for proper deserialization
+      const response = await fetch("/api/upload-rule", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(uploadedData),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Upload failed");
+      }
+
+      // Backend successfully deserialized - now fetch the formatted data
+      const ruleResponse = await fetch("/api/rule");
+      const ruleData = await ruleResponse.json();
+
+      if (!ruleResponse.ok) {
+        throw new Error(ruleData.error || "Failed to load rule data");
+      }
+
+      // Update currentRuleData and displays
+      currentRuleData = ruleData;
+      updateAllDisplays(ruleData);
+
+      statusEl.textContent = `✓ Loaded ${result.arch} rule with ${result.num_pairs} pairs!`;
+      statusEl.style.color = "#28a745";
+      setTimeout(() => {
+        statusEl.textContent = "";
+      }, 3000);
+
+      console.log("Rule JSON loaded:", uploadedData);
+    } catch (error) {
+      statusEl.textContent = "✗ Error: " + error.message;
+      statusEl.style.color = "#dc3545";
+      console.error("Failed to load rule JSON:", error);
+    }
+  };
+
+  reader.onerror = function () {
+    statusEl.textContent = "✗ Failed to read file";
+    statusEl.style.color = "#dc3545";
+  };
+
+  reader.readAsText(file);
+}
+
+function updateAllDisplays(data) {
+  // Update overview tab
+  document.getElementById("rule-file").textContent =
+    data.filename || "Uploaded file";
+  document.getElementById("arch").textContent = data.format.arch;
+  document.getElementById("num-regs").textContent =
+    data.format.registers.length;
+  document.getElementById("num-mem").textContent = data.format.mem_slots.length;
+  document.getElementById("num-pairs").textContent =
+    data.num_pairs || data.pairs.length;
+
+  // Update register list
+  let regsHTML =
+    '<div class="rule-info"><h3>Registers</h3><div class="info-grid">';
+  data.format.registers.forEach((reg, idx) => {
+    regsHTML += `
+      <div class="info-item">
+        <div class="info-label">Register ${idx + 1}</div>
+        <div class="info-value">${reg.name} (${reg.bits}b)</div>
+      </div>
+    `;
+  });
+  regsHTML += "</div></div>";
+  document.getElementById("registers-list").innerHTML = regsHTML;
+
+  // Update pairs list
+  loadPairs(data.pairs);
+
+  // Update pair selector and render graph
+  const select = document.getElementById("pairSelect");
+  select.innerHTML = "";
+
+  // Add "ALL" option
+  const allOption = document.createElement("option");
+  allOption.value = "ALL";
+  allOption.textContent = `ALL (${data.pairs.length} pairs)`;
+  select.appendChild(allOption);
+
+  data.pairs.forEach((pair, idx) => {
+    const option = document.createElement("option");
+    option.value = idx;
+    option.textContent = `Pair ${idx + 1}: ${pair.condition_readable || "Unconditional"}`;
+    select.appendChild(option);
+  });
+
+  // Render graph with new data
+  if (data.pairs.length > 0) {
+    renderGraph();
+  }
+
+  // Note: Test cases won't be available from uploaded JSON unless it includes them
+  console.log("All displays updated with new rule data");
+}
 
 // Graph visualization functions
 let currentRuleData = null;

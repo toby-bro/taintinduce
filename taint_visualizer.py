@@ -82,8 +82,11 @@ def format_condition_human_readable(condition: TaintCondition | None) -> str:
     if condition.condition_type == LogicType.DNF:
         clauses = []
         for bitmask, value in condition.condition_ops:
-            bit_positions = sorted(check_ones(bitmask))
-            value_bits = check_ones(value)
+            # Ensure bitmask and value are integers (may be floats from JSON)
+            bitmask_int = int(bitmask)
+            value_int = int(value)
+            bit_positions = sorted(check_ones(bitmask_int))
+            value_bits = check_ones(value_int)
 
             bit_desc = []
             for bit_pos in bit_positions:  # Show all bits
@@ -300,6 +303,44 @@ def get_test_cases():
 
     test_cases = generate_test_cases(current_rule)
     return jsonify({'test_cases': test_cases})
+
+
+@app.route('/api/upload-rule', methods=['POST'])
+def upload_rule():
+    """API endpoint to upload and deserialize a rule JSON file."""
+    global current_rule, rule_file_path
+
+    try:
+        # Get the JSON data from the request
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
+        # Deserialize using TaintInduceDecoder
+        rule = json.loads(json.dumps(data), cls=TaintInduceDecoder)
+
+        if not isinstance(rule, TaintRule):
+            return jsonify({'error': 'Uploaded data is not a valid TaintRule'}), 400
+
+        # Update global rule
+        current_rule = rule
+        rule_file_path = '<uploaded>'
+
+        # Return success - frontend will call /api/rule to get formatted data
+        return jsonify(
+            {
+                'success': True,
+                'message': 'Rule uploaded successfully',
+                'num_pairs': len(rule.pairs),
+                'arch': rule.format.arch,
+            }
+        )
+
+    except json.JSONDecodeError as e:
+        return jsonify({'error': f'Invalid JSON: {e!s}'}), 400
+    except Exception as e:
+        return jsonify({'error': f'Failed to deserialize rule: {e!s}'}), 400
 
 
 def main():
