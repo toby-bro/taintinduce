@@ -124,7 +124,7 @@ def generate_test_cases(rule: TaintRule) -> list[dict[str, Any]]:
             if pair.condition.condition_ops:
                 # Take first clause of DNF
                 bitmask, value = next(iter(pair.condition.condition_ops))
-                test_input = value  # Set bits according to value
+                test_input = int(value)  # Set bits according to value
 
                 test_case = {
                     'pair_index': idx,
@@ -133,8 +133,8 @@ def generate_test_cases(rule: TaintRule) -> list[dict[str, Any]]:
                     'input_state_hex': hex(test_input),
                     'input_state_bin': bin(test_input),
                     'condition_matches': True,
-                    'bitmask': hex(bitmask),
-                    'expected_value': hex(value),
+                    'bitmask': hex(int(bitmask)),
+                    'expected_value': hex(int(value)),
                 }
                 test_cases.append(test_case)
 
@@ -335,7 +335,7 @@ def upload_rule():
                 'message': 'Rule uploaded successfully',
                 'num_pairs': len(rule.pairs),
                 'arch': rule.format.arch,
-            }
+            },
         )
 
     except json.JSONDecodeError as e:

@@ -4,6 +4,51 @@
     <title>TaintInduce Visualizer</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="/static/style.css" />
+    <link rel="icon" type="image/svg+xml" id="favicon" />
+    <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon" />
+    <script>
+      // Update favicon color based on user's theme preference
+      function updateFavicon() {
+        const isDark = window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches;
+        const color = isDark ? "#ffffff" : "#667eea"; // white for dark mode, purple for light mode
+
+        // Load the SVG and update its color
+        fetch("/static/arrow-progress.svg")
+          .then((response) => response.text())
+          .then((svgText) => {
+            // Replace stroke and fill colors in the SVG
+            const updatedSvg = svgText
+              .replace(/stroke="[^"]*"/g, `stroke="${color}"`)
+              .replace(/fill="[^"]*"/g, `fill="${color}"`);
+
+            // Convert to data URI
+            const svgBlob = new Blob([updatedSvg], { type: "image/svg+xml" });
+            const url = URL.createObjectURL(svgBlob);
+
+            // Update favicon
+            const favicon = document.getElementById("favicon");
+            favicon.href = url;
+          })
+          .catch(() => {
+            // Fallback to original SVG if fetch fails
+            console.log("Using default favicon");
+          });
+      }
+
+      // Update on load
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", updateFavicon);
+      } else {
+        updateFavicon();
+      }
+
+      // Listen for theme changes
+      window
+        .matchMedia("(prefers-color-scheme: dark)")
+        .addEventListener("change", updateFavicon);
+    </script>
   </head>
   <body>
     <div class="container">
@@ -202,6 +247,11 @@
       </div>
     </div>
 
-    <script src="/static/visualizer.js"></script>
+    <script src="/static/utils.js"></script>
+    <script src="/static/conditions.js"></script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/api.js"></script>
+    <script src="/static/graph.js"></script>
+    <script src="/static/visualizer-new.js"></script>
   </body>
 </html>
