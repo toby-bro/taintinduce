@@ -65,10 +65,10 @@ def build_state_from_bits(
     for mem_idx, mem_slot in enumerate(format.mem_slots):
         mem_key = f'MEM{mem_idx}'
         mem_bits = register_values.get(mem_key, {})
-        for bit_idx in range(mem_slot.bits):
+        for bit_idx in range(mem_slot.size):
             if mem_bits.get(bit_idx, 0) == 1:
                 state |= 1 << (bit_offset + bit_idx)
-        bit_offset += mem_slot.bits
+        bit_offset += mem_slot.size
 
     return state
 
@@ -100,11 +100,11 @@ def extract_bits_from_state(
     # Handle memory slots
     for mem_idx, mem_slot in enumerate(format.mem_slots):
         mem_bits = {}
-        for bit_idx in range(mem_slot.bits):
+        for bit_idx in range(mem_slot.size):
             bit_value = (state >> (bit_offset + bit_idx)) & 1
             mem_bits[bit_idx] = bit_value
         result[f'MEM{mem_idx}'] = mem_bits
-        bit_offset += mem_slot.bits
+        bit_offset += mem_slot.size
 
     return result
 
@@ -143,10 +143,10 @@ def simulate_taint_propagation(
 
     # Handle memory slots
     for mem_idx, mem_slot in enumerate(rule.format.mem_slots):
-        for bit_idx in range(mem_slot.bits):
+        for bit_idx in range(mem_slot.size):
             if (f'MEM{mem_idx}', bit_idx) in tainted_bits:
                 tainted_positions.add(bit_offset + bit_idx)
-        bit_offset += mem_slot.bits
+        bit_offset += mem_slot.size
 
     # Evaluate each pair
     for pair_idx, pair in enumerate(rule.pairs):
@@ -214,9 +214,9 @@ def _global_bit_to_reg_bit(
 
     # Check memory slots
     for mem_idx, mem_slot in enumerate(format.mem_slots):
-        if bit_pos < offset + mem_slot.bits:
+        if bit_pos < offset + mem_slot.size:
             return (f'MEM{mem_idx}', bit_pos - offset)
-        offset += mem_slot.bits
+        offset += mem_slot.size
 
     # Fallback
     return ('UNKNOWN', bit_pos)
