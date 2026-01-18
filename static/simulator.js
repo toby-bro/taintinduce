@@ -95,8 +95,9 @@ function renderRegisterInputs() {
           </button>
           <button onclick="taintRegister('${reg.name}')" 
                   style="padding: 4px 8px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer">
-            Taint All
+            Toggle Taint
           </button>
+          <div style="flex: 1"></div>
           <button onclick="clearRegister('${reg.name}')" 
                   style="padding: 4px 8px; background: #757575; color: white; border: none; border-radius: 4px; cursor: pointer">
             Clear
@@ -235,21 +236,40 @@ function taintAll() {
 
   const format = currentRuleData.format;
 
-  format.registers.forEach((reg) => {
+  // Check if all bits are tainted
+  let allTainted = true;
+  for (const reg of format.registers) {
     for (let bitIdx = 0; bitIdx < reg.bits; bitIdx++) {
       const bitKey = `${reg.name}:${bitIdx}`;
-      taintedBitsSet.add(bitKey);
-      const cell = document.querySelector(
-        `[data-register="${reg.name}"][data-bit="${bitIdx}"]`,
-      );
-      if (cell) {
-        cell.style.background = "#ff9800";
-        cell.style.color = "white";
+      if (!taintedBitsSet.has(bitKey)) {
+        allTainted = false;
+        break;
       }
     }
-  });
-  // Auto-trigger simulation
-  runDetailedSimulation();
+    if (!allTainted) break;
+  }
+
+  if (allTainted) {
+    // Untaint all
+    clearTaint();
+  } else {
+    // Taint all
+    format.registers.forEach((reg) => {
+      for (let bitIdx = 0; bitIdx < reg.bits; bitIdx++) {
+        const bitKey = `${reg.name}:${bitIdx}`;
+        taintedBitsSet.add(bitKey);
+        const cell = document.querySelector(
+          `[data-register="${reg.name}"][data-bit="${bitIdx}"]`,
+        );
+        if (cell) {
+          cell.style.background = "#ff9800";
+          cell.style.color = "white";
+        }
+      }
+    });
+    // Auto-trigger simulation
+    runDetailedSimulation();
+  }
 }
 
 function clearTaint() {
@@ -271,15 +291,41 @@ function taintRegister(registerName) {
   );
   if (!reg) return;
 
+  // Check if all bits in this register are tainted
+  let allTainted = true;
   for (let bitIdx = 0; bitIdx < reg.bits; bitIdx++) {
     const bitKey = `${registerName}:${bitIdx}`;
-    taintedBitsSet.add(bitKey);
-    const cell = document.querySelector(
-      `[data-register="${registerName}"][data-bit="${bitIdx}"]`,
-    );
-    if (cell) {
-      cell.style.background = "#ff9800";
-      cell.style.color = "white";
+    if (!taintedBitsSet.has(bitKey)) {
+      allTainted = false;
+      break;
+    }
+  }
+
+  if (allTainted) {
+    // Untaint all bits in this register
+    for (let bitIdx = 0; bitIdx < reg.bits; bitIdx++) {
+      const bitKey = `${registerName}:${bitIdx}`;
+      taintedBitsSet.delete(bitKey);
+      const cell = document.querySelector(
+        `[data-register="${registerName}"][data-bit="${bitIdx}"]`,
+      );
+      if (cell) {
+        cell.style.background = "#f5f5f5";
+        cell.style.color = "#333";
+      }
+    }
+  } else {
+    // Taint all bits in this register
+    for (let bitIdx = 0; bitIdx < reg.bits; bitIdx++) {
+      const bitKey = `${registerName}:${bitIdx}`;
+      taintedBitsSet.add(bitKey);
+      const cell = document.querySelector(
+        `[data-register="${registerName}"][data-bit="${bitIdx}"]`,
+      );
+      if (cell) {
+        cell.style.background = "#ff9800";
+        cell.style.color = "white";
+      }
     }
   }
   // Auto-trigger simulation
@@ -456,13 +502,14 @@ async function runDetailedSimulation() {
         const bgColor = isTainted ? "#ff9800" : "#e0e0e0";
         const textColor = isTainted ? "white" : "#666";
 
-        // Get the output bit value (same as input for now, would need backend to compute actual output)
+        // Get the output bit value from backend
         let bitValue = "0";
         if (
-          registerValues[reg.name] &&
-          registerValues[reg.name][bitIdx] !== undefined
+          result.output_register_values &&
+          result.output_register_values[reg.name] &&
+          result.output_register_values[reg.name][bitIdx] !== undefined
         ) {
-          bitValue = registerValues[reg.name][bitIdx].toString();
+          bitValue = result.output_register_values[reg.name][bitIdx].toString();
         }
 
         html += `

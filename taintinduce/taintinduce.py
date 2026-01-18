@@ -89,7 +89,7 @@ def taintinduce_infer(archstring: str, bytestring: str) -> tuple[InsnInfo, list[
     insninfo = gen_insninfo(archstring, bytestring)
     obs_list, obs_engine = gen_obs(archstring, bytestring, insninfo.state_format)
     rule = infer(obs_list, insninfo.cond_reg, obs_engine, enable_refinement=False)
-    taintrule = rule.convert2squirrel(archstring)
+    taintrule = rule.convert2squirrel(archstring, bytestring)
     return insninfo, obs_list, taintrule
 
 
@@ -142,7 +142,7 @@ def main() -> None:
             json.dump(obs_list, f, cls=TaintInduceEncoder)
 
     rule = infer(obs_list, insn.cond_reg, obs_engine, enable_refinement=False)
-    taintrule = rule.convert2squirrel(args.arch)
+    taintrule = rule.convert2squirrel(args.arch, args.bytestring)
     if args.output_dir:
         with open(rule_path, 'w') as myfile:
             json.dump(taintrule, myfile, cls=TaintInduceEncoder, indent=2)

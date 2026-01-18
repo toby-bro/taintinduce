@@ -26,6 +26,8 @@ from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import TaintRule
 from taintinduce.serialization import TaintInduceDecoder
 from taintinduce.state.state import check_ones
+from taintinduce.types import CpuRegisterMap
+from taintinduce.unicorn_cpu.unicorn_cpu import UnicornCPU
 
 # Import visualizer helper modules
 from visualizer.taint_simulator import (
@@ -415,11 +417,72 @@ def simulate_detailed():
         tainted_bits_list = data.get('tainted_bits', [])
         tainted_bits = {(reg, int(bit)) for reg, bit in tainted_bits_list}
 
-        # Run simulation
+        # Execute the instruction to get output state
+        output_register_values = register_values  # Default: output = input
+
+        # Try to execute instruction if bytestring is available
+        if current_rule.bytestring:
+            try:
+                bytecode = bytes.fromhex(current_rule.bytestring)
+
+                # Build proper input_cpu_state from register_values
+                input_cpu_state = CpuRegisterMap()
+                for reg in current_rule.format.registers:
+                    reg_value = 0
+                    reg_bits = register_values.get(reg.name, {})
+                    for bit_idx in range(reg.bits):
+                        if reg_bits.get(bit_idx, 0) == 1:
+                            reg_value |= 1 << bit_idx
+                    input_cpu_state[reg] = reg_value
+
+                # Set CPU state and execute instruction
+                cpu = UnicornCPU(current_rule.format.arch)
+                cpu.set_cpu_state(input_cpu_state)
+                _, output_cpu_state = cpu.execute(bytecode)
+
+                # Extract output register values as bit dict
+                output_register_values = {}
+                for reg in current_rule.format.registers:
+                    reg_value = output_cpu_state[reg]
+                    output_register_values[reg.name] = {}
+                    for bit_idx in range(reg.bits):
+                        output_register_values[reg.name][bit_idx] = (reg_value >> bit_idx) & 1
+            except Exception:
+                # If execution fails, try extracting from filename as fallback
+                if rule_file_path and rule_file_path != '<uploaded>':
+                    try:
+                        filename = Path(rule_file_path).stem
+                        bytestring = filename.split('_')[0]
+                        bytecode = bytes.fromhex(bytestring)
+
+                        input_cpu_state = CpuRegisterMap()
+                        for reg in current_rule.format.registers:
+                            reg_value = 0
+                            reg_bits = register_values.get(reg.name, {})
+                            for bit_idx in range(reg.bits):
+                                if reg_bits.get(bit_idx, 0) == 1:
+                                    reg_value |= 1 << bit_idx
+                            input_cpu_state[reg] = reg_value
+
+                        cpu = UnicornCPU(current_rule.format.arch)
+                        cpu.set_cpu_state(input_cpu_state)
+                        _, output_cpu_state = cpu.execute(bytecode)
+
+                        output_register_values = {}
+                        for reg in current_rule.format.registers:
+                            reg_value = output_cpu_state[reg]
+                            output_register_values[reg.name] = {}
+                            for bit_idx in range(reg.bits):
+                                output_register_values[reg.name][bit_idx] = (reg_value >> bit_idx) & 1
+                    except Exception:
+                        pass
+
+        # Run taint simulation
         result = simulate_taint_propagation(current_rule, input_state, tainted_bits)
 
         # Add formatted register values to response
         result['register_values'] = register_values
+        result['output_register_values'] = output_register_values
         result['input_state_hex'] = hex(input_state)
         result['input_state_bin'] = bin(input_state)
 

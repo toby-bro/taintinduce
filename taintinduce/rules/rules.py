@@ -86,13 +86,16 @@ class TaintRule(SerializableMixin):
 
     format: TaintRuleFormat
     pairs: list[ConditionDataflowPair]
+    bytestring: str
 
     def __init__(
         self,
         format: TaintRuleFormat,
         pairs: list[ConditionDataflowPair],
+        bytestring: str = '',
     ) -> None:
         self.format = format
+        self.bytestring = bytestring
         # Deep copy dataflows - output_bits should always be a Dataflow for TaintRule
         self.pairs = []
         for pair in pairs:
@@ -198,7 +201,7 @@ class Rule(SerializableMixin):
             self.state_format = state_format
             self.pairs = pairs
 
-    def convert2squirrel(self, archstring: str) -> TaintRule:
+    def convert2squirrel(self, archstring: str, bytestring: str) -> TaintRule:
         """Convert internal representation to TaintRule format."""
         reg_list: list[Register] = []
         mem_list: list[MemorySlot] = []
@@ -219,7 +222,7 @@ class Rule(SerializableMixin):
                     output_bits=pair.output_bits,
                 ),
             )
-        return TaintRule(taint_rule_format, pairs_list)
+        return TaintRule(taint_rule_format, pairs_list, bytestring)
 
     def web_string(self) -> str:
         mystr_list = []
