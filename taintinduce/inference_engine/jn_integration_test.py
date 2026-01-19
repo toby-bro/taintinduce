@@ -24,7 +24,7 @@ All tests use pytest.mark.parametrize to avoid code duplication while ensuring
 comprehensive coverage of both register and immediate variants.
 
 Known Issues:
-- Register variants (0, 2, 4, 6) only explain 64.6% of observations (NZVC flag bits)
+- Register variants (0, 2, 4, 6) only explain 64.6% of observations (NZCV flag bits)
 - Immediate variants with specific values (OR #0x3, AND #0xF) may appear unconditional
 """
 
@@ -36,7 +36,7 @@ from taintinduce.inference_engine.observation_processor import extract_observati
 from taintinduce.inference_engine.validation import validate_rule_explains_observations
 from taintinduce.isa.jn_isa import JNOpcode, encode_instruction
 from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex
-from taintinduce.isa.jn_registers import JN_REG_NZVC, JN_REG_R1, JN_REG_R2
+from taintinduce.isa.jn_registers import JN_REG_NZCV, JN_REG_R1, JN_REG_R2
 from taintinduce.observation_engine.observation import (
     ObservationEngine,
     decode_instruction_bytes,
@@ -57,20 +57,20 @@ def jn_hex_to_bytes(hex_string: str) -> bytes:
 
 @pytest.fixture
 def jn_state_format():
-    """JN state format: R1 (4 bits), R2 (4 bits), NZVC (4 bits)."""
-    return [JN_REG_R1(), JN_REG_R2(), JN_REG_NZVC()]
+    """JN state format: R1 (4 bits), R2 (4 bits), NZCV (4 bits)."""
+    return [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
 
 
 @pytest.fixture
 def jn_state_format_immediate():
-    """JN state format for immediate instructions: R1 (4 bits), NZVC (4 bits)."""
-    return [JN_REG_R1(), JN_REG_NZVC()]
+    """JN state format for immediate instructions: R1 (4 bits), NZCV (4 bits)."""
+    return [JN_REG_R1(), JN_REG_NZCV()]
 
 
 @pytest.fixture
 def jn_cond_reg():
-    """JN condition register (NZVC)."""
-    return JN_REG_NZVC()
+    """JN condition register (NZCV)."""
+    return JN_REG_NZCV()
 
 
 @pytest.fixture
@@ -612,24 +612,24 @@ class TestJNExpectedTaintRules:
 
         # Test case 1: R1[0]=1 (tainted), R2[0]=1 (untainted)
         # Expected: taint propagates to output R1[0]
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         # Result: 1 & 1 = 1, taint from R1[0] should propagate
 
         # Test case 2: R1[0]=1 (tainted), R2[0]=0 (untainted)
         # Expected: taint does NOT propagate (result is 0)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0000, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0000, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 0, 'AND with R2=0 should give 0'
 
         # Test case 3: R1[0]=0 (untainted), R2[0]=1 (tainted)
         # Expected: taint does NOT propagate (result is 0)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0000, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0000, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 0, 'AND with R1=0 should give 0'
 
         # Verify R2 is unchanged
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1111, JN_REG_R2(): 0b1010, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1111, JN_REG_R2(): 0b1010, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R2()] == 0b1010, 'R2 should be unchanged by AND'
 
@@ -658,30 +658,30 @@ class TestJNExpectedTaintRules:
 
         # Test case 1: R1[0]=0 (tainted), R2[0]=0 (untainted)
         # Expected: taint propagates to output R1[0] (result is 0)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0000, JN_REG_R2(): 0b0000, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0000, JN_REG_R2(): 0b0000, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 0, 'OR with both 0 should give 0'
 
         # Test case 2: R1[0]=0 (tainted), R2[0]=1 (untainted)
         # Expected: result is 1, taint does NOT propagate (masked by R2=1)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0000, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0000, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 1, 'OR with R2=1 should give 1'
 
         # Test case 3: R1[0]=1 (untainted), R2[0]=0 (tainted)
         # Expected: result is 1, taint propagates from R2
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0000, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0000, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 1, 'OR should give 1'
 
         # Test case 4: R1[0]=1 (untainted), R2[0]=1 (untainted)
         # Expected: result is 1, no taint propagates
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 1, 'OR with both 1 should give 1'
 
         # Verify R2 is unchanged
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1111, JN_REG_R2(): 0b1010, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1111, JN_REG_R2(): 0b1010, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R2()] == 0b1010, 'R2 should be unchanged by OR'
 
@@ -708,27 +708,27 @@ class TestJNExpectedTaintRules:
         cpu = JNCpu()
 
         # Test case 1: No carry (1 + 0 = 1)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0000, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0000, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 1, 'ADD 1+0 should give 1'
 
         # Test case 2: Carry propagation (1 + 1 = 2, bit 0 affects bit 1)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0001, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 0b0010, 'ADD 1+1 should give 2 (carry to bit 1)'
 
         # Test case 3: Multiple carries (7 + 1 = 8, carry propagates to bit 3)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0111, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0111, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 0b1000, 'ADD 7+1 should give 8 (multiple carries)'
 
         # Test case 4: Overflow (15 + 1 = 0 in 4-bit arithmetic)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1111, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1111, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R1()] == 0b0000, 'ADD 15+1 should give 0 (overflow)'
 
         # Verify R2 is unchanged
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0101, JN_REG_R2(): 0b1010, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0101, JN_REG_R2(): 0b1010, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         assert output[JN_REG_R2()] == 0b1010, 'R2 should be unchanged by ADD'
 
@@ -762,7 +762,7 @@ class TestJNConcreteValueValidation:
         """
         bytestring = encode_instruction(JNOpcode.AND_R1_R2)
         cpu = JNCpu()
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1_val, JN_REG_R2(): r2_val, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1_val, JN_REG_R2(): r2_val, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         actual = output[JN_REG_R1()]
         assert actual == expected, f'AND {r1_val} & {r2_val} = {expected}, got {actual}'
@@ -781,7 +781,7 @@ class TestJNConcreteValueValidation:
         """Test OR rule with specific concrete cases."""
         bytestring = encode_instruction(JNOpcode.OR_R1_R2)
         cpu = JNCpu()
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1_val, JN_REG_R2(): r2_val, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1_val, JN_REG_R2(): r2_val, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         actual = output[JN_REG_R1()]
         assert actual == expected, f'OR {r1_val} | {r2_val} = {expected}, got {actual}'
@@ -801,7 +801,7 @@ class TestJNConcreteValueValidation:
         """Test XOR rule with specific concrete cases."""
         bytestring = encode_instruction(JNOpcode.XOR_R1_R2)
         cpu = JNCpu()
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1_val, JN_REG_R2(): r2_val, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1_val, JN_REG_R2(): r2_val, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         actual = output[JN_REG_R1()]
         assert actual == expected, f'XOR {r1_val} ^ {r2_val} = {expected}, got {actual}'
@@ -822,7 +822,7 @@ class TestJNConcreteValueValidation:
         """Test ADD rule with specific concrete cases."""
         bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
         cpu = JNCpu()
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1_val, JN_REG_R2(): r2_val, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1_val, JN_REG_R2(): r2_val, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
         actual = output[JN_REG_R1()]
         assert actual == expected, f'ADD {r1_val} + {r2_val} = {expected}, got {actual}'
@@ -850,7 +850,7 @@ class TestJNImmediateInstructions:
         bytestring = encode_instruction(opcode, immediate)
 
         # Create state format without R2
-        state_format = [JN_REG_R1(), JN_REG_NZVC()]
+        state_format = [JN_REG_R1(), JN_REG_NZCV()]
 
         obs_engine = ObservationEngine(bytestring, 'JN', state_format)
         observations = obs_engine.observe_insn()
@@ -863,18 +863,18 @@ class TestJNImmediateInstructions:
     def test_immediate_instruction_observation_count(self):
         """Test that immediate instructions generate correct number of observations.
 
-        Immediate: 8 bits (R1=4, NZVC=4) = 256 states
-        Register: 12 bits (R1=4, R2=4, NZVC=4) = 4096 states
+        Immediate: 8 bits (R1=4, NZCV=4) = 256 states
+        Register: 12 bits (R1=4, R2=4, NZCV=4) = 4096 states
         """
         # Immediate instruction
         bytestring_imm = encode_instruction(JNOpcode.ADD_R1_IMM, 0xA)
-        state_format_imm = [JN_REG_R1(), JN_REG_NZVC()]
+        state_format_imm = [JN_REG_R1(), JN_REG_NZCV()]
         obs_engine_imm = ObservationEngine(bytestring_imm, 'JN', state_format_imm)
         observations_imm = obs_engine_imm.observe_insn()
 
         # Register instruction
         bytestring_reg = encode_instruction(JNOpcode.ADD_R1_R2)
-        state_format_reg = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZVC()]
+        state_format_reg = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
         obs_engine_reg = ObservationEngine(bytestring_reg, 'JN', state_format_reg)
         observations_reg = obs_engine_reg.observe_insn()
 
@@ -961,7 +961,7 @@ def test_taint_blocking_conditions(opcode, immediate, r1_value, r2_value, expect
 
     # Execute instruction with given values
     cpu = JNCpu()
-    test_state = CpuRegisterMap({JN_REG_R1(): r1_value, JN_REG_R2(): r2_value, JN_REG_NZVC(): 0})
+    test_state = CpuRegisterMap({JN_REG_R1(): r1_value, JN_REG_R2(): r2_value, JN_REG_NZCV(): 0})
     cpu.set_cpu_state(test_state)
     _, after_state = cpu.execute(jn_hex_to_bytes(bytestring))
 
@@ -1088,13 +1088,13 @@ def test_inferred_rules_capture_taint_blocking(
 
     # Determine state format
     use_immediate = immediate is not None
-    state_format = [JN_REG_R1(), JN_REG_NZVC()] if use_immediate else [JN_REG_R1(), JN_REG_R2(), JN_REG_NZVC()]
+    state_format = [JN_REG_R1(), JN_REG_NZCV()] if use_immediate else [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
 
     # Generate observations and infer rule
     obs_engine = ObservationEngine(bytestring, 'JN', state_format)
     observations = obs_engine.observe_insn()
     inference_engine = InferenceEngine()
-    internal_rule = inference_engine.infer(observations, JN_REG_NZVC(), obs_engine, enable_refinement=False)
+    internal_rule = inference_engine.infer(observations, JN_REG_NZCV(), obs_engine, enable_refinement=False)
 
     # Convert to TaintRule for simulation
     taint_rule = internal_rule.convert2squirrel('JN', bytestring)
@@ -1173,11 +1173,11 @@ class TestJNNZCVFlags:
         cpu = JNCpu()
         bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
 
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1, JN_REG_R2(): r2, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1, JN_REG_R2(): r2, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
 
         result = output[JN_REG_R1()]
-        nzcv = output[JN_REG_NZVC()]
+        nzcv = output[JN_REG_NZCV()]
 
         assert result == expected_result, f'ADD {r1} + {r2} should give {expected_result}, got {result}'
 
@@ -1209,15 +1209,15 @@ class TestJNNZCVFlags:
 
         if use_imm:
             bytestring = encode_instruction(opcode, r2_or_imm)
-            cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1, JN_REG_R2(): 0, JN_REG_NZVC(): 0}))
+            cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1, JN_REG_R2(): 0, JN_REG_NZCV(): 0}))
         else:
             bytestring = encode_instruction(opcode)
-            cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1, JN_REG_R2(): r2_or_imm, JN_REG_NZVC(): 0}))
+            cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1, JN_REG_R2(): r2_or_imm, JN_REG_NZCV(): 0}))
 
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
 
         result = output[JN_REG_R1()]
-        nzcv = output[JN_REG_NZVC()]
+        nzcv = output[JN_REG_NZCV()]
 
         # Extract individual flags
         n = (nzcv >> 3) & 1
@@ -1281,27 +1281,27 @@ class TestJNNZCVFlags:
         bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
 
         # Test N flag: 7 + 1 = 8 (bit 3 set, negative in 2's complement)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0111, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0111, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
-        nzcv = output[JN_REG_NZVC()]
+        nzcv = output[JN_REG_NZCV()]
         assert (nzcv >> 3) & 1 == 1, 'N flag (bit 3) should be set'
 
         # Test Z flag: 8 + 8 = 0 (mod 16)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1000, JN_REG_R2(): 0b1000, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1000, JN_REG_R2(): 0b1000, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
-        nzcv = output[JN_REG_NZVC()]
+        nzcv = output[JN_REG_NZCV()]
         assert (nzcv >> 2) & 1 == 1, 'Z flag (bit 2) should be set'
 
         # Test C flag: 15 + 1 = 16 = 0 (mod 16), carry out
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1111, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1111, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
-        nzcv = output[JN_REG_NZVC()]
+        nzcv = output[JN_REG_NZCV()]
         assert (nzcv >> 1) & 1 == 1, 'C flag (bit 1) should be set'
 
         # Test V flag: 7 + 1 = 8 (overflow: positive + positive = negative)
-        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0111, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0111, JN_REG_R2(): 0b0001, JN_REG_NZCV(): 0}))
         _, output = cpu.execute(jn_hex_to_bytes(bytestring))
-        nzcv = output[JN_REG_NZVC()]
+        nzcv = output[JN_REG_NZCV()]
         assert nzcv & 1 == 1, 'V flag (bit 0) should be set'
 
     def test_nzcv_taint_from_specific_bits(self, jn_state_format, jn_cond_reg, inference_engine):

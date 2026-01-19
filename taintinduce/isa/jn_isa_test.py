@@ -30,7 +30,7 @@ class TestJNRegisters:
         assert len(state_format) == 3
         assert state_format[0].name == 'R1'
         assert state_format[1].name == 'R2'
-        assert state_format[2].name == 'NZVC'
+        assert state_format[2].name == 'NZCV'
         assert sum(reg.bits for reg in state_format) == 12
 
 

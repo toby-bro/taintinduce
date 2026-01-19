@@ -50,10 +50,10 @@ class JN(ISA):
         self.cs_arch = None  # type: ignore[assignment]
         self.code_mem = 0
         self.code_addr = 0
-        self.addr_space = 12  # Total state is 12 bits (R1=4, R2=4, NZVC=4)
+        self.addr_space = 12  # Total state is 12 bits (R1=4, R2=4, NZCV=4)
 
         # Condition flags register
-        self.cond_reg = jn_registers.JN_REG_NZVC()
+        self.cond_reg = jn_registers.JN_REG_NZCV()
 
     def name2mem(self, name: str) -> tuple[Register, Register]:
         """JN has no memory operations."""

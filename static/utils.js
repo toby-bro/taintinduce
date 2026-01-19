@@ -42,6 +42,12 @@ function getFlagName(regName, bitNum) {
       20: "VIP",
       21: "ID",
     },
+    NZCV: {
+      0: "V",
+      1: "C",
+      2: "Z",
+      3: "N",
+    },
   };
 
   if (flagDefs[regName] && flagDefs[regName][bitNum]) {
@@ -191,11 +197,15 @@ function decodeFlags(regName, bits, value = null) {
       { bit: 16, name: "GE3", desc: "Greater/Equal [3]" },
     ],
     NZCV: [
-      // AArch64 condition flags
-      { bit: 31, name: "N", desc: "Negative" },
-      { bit: 30, name: "Z", desc: "Zero" },
-      { bit: 29, name: "C", desc: "Carry" },
+      // JN ISA 4-bit condition flags (bits 0-3) and AArch64 (bits 28-31)
+      { bit: 0, name: "V", desc: "Overflow" },
+      { bit: 1, name: "C", desc: "Carry" },
+      { bit: 2, name: "Z", desc: "Zero" },
+      { bit: 3, name: "N", desc: "Negative" },
       { bit: 28, name: "V", desc: "Overflow" },
+      { bit: 29, name: "C", desc: "Carry" },
+      { bit: 30, name: "Z", desc: "Zero" },
+      { bit: 31, name: "N", desc: "Negative" },
     ],
   };
 

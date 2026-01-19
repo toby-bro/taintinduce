@@ -30,18 +30,18 @@ class JN_REG_R2(Register):
         self.address = None
 
 
-class JN_REG_NZVC(CondRegister):
-    """NZVC: Condition flags register (Negative, Zero, oVerflow, Carry).
+class JN_REG_NZCV(CondRegister):
+    """NZCV: Condition flags register (Negative, Zero, Carry, oVerflow).
 
     4-bit register containing condition flags:
-    - bit 0: C (Carry)
-    - bit 1: V (oVerflow)
+    - bit 0: V (oVerflow)
+    - bit 1: C (Carry)
     - bit 2: Z (Zero)
     - bit 3: N (Negative)
     """
 
     def __init__(self):
-        self.name = 'NZVC'
+        self.name = 'NZCV'
         self.uc_const = 0x1002  # Dummy constant for JN
         self.bits = 4
         self.structure = [4]
@@ -49,11 +49,11 @@ class JN_REG_NZVC(CondRegister):
         self.address = None
 
 
-# Standard state format: [R1, R2, NZVC]
+# Standard state format: [R1, R2, NZCV]
 # Bit layout in state (12 bits = 3 nibbles):
 #   bits 0-3:   R1 (4 bits)
 #   bits 4-7:   R2 (4 bits)
-#   bits 8-11:  NZVC (4 bits)
+#   bits 8-11:  NZCV (4 bits)
 def get_jn_state_format():
     """Get the standard JN state format."""
-    return [JN_REG_R1(), JN_REG_R2(), JN_REG_NZVC()]
+    return [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]

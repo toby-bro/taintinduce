@@ -82,7 +82,7 @@ function renderRegisters(format, pair) {
     html += "</div>";
 
     // Add flag decoding if applicable
-    if (reg.name === "EFLAGS" || reg.name === "RFLAGS") {
+    if (reg.name === "EFLAGS" || reg.name === "RFLAGS" || reg.name === "NZCV") {
       html += decodeFlags(reg.name, reg.bits);
     }
 

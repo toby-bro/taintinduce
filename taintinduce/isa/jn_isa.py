@@ -19,7 +19,7 @@ Instructions:
 State layout (12 bits total = 3 nibbles):
   bits 0-3:   R1 (4 bits)
   bits 4-7:   R2 (4 bits)
-  bits 8-11:  NZVC (4 bits) - Condition flags (not yet updated by instructions)
+  bits 8-11:  NZCV (4 bits) - Condition flags
 """
 
 import logging

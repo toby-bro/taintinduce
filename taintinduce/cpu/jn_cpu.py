@@ -7,7 +7,7 @@ allowing JN to work with the standard observation generation code.
 from typing import Sequence
 
 from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex
-from taintinduce.isa.jn_registers import JN_REG_NZVC, JN_REG_R1, JN_REG_R2
+from taintinduce.isa.jn_registers import JN_REG_NZCV, JN_REG_R1, JN_REG_R2
 from taintinduce.isa.register import Register
 from taintinduce.observation_engine.observation import encode_instruction_bytes
 from taintinduce.types import CpuRegisterMap
@@ -24,7 +24,7 @@ class JNCpu(CPU):
             {
                 JN_REG_R1(): 0,
                 JN_REG_R2(): 0,
-                JN_REG_NZVC(): 0,
+                JN_REG_NZCV(): 0,
             },
         )
 
@@ -34,7 +34,7 @@ class JNCpu(CPU):
 
         self.current_state[JN_REG_R1()] = random.randint(0, 0xF)
         self.current_state[JN_REG_R2()] = random.randint(0, 0xF)
-        self.current_state[JN_REG_NZVC()] = random.randint(0, 0xF)
+        self.current_state[JN_REG_NZCV()] = random.randint(0, 0xF)
 
     def set_cpu_state(self, regs: CpuRegisterMap) -> None:
         """Set CPU state from register map.
@@ -116,7 +116,7 @@ class JNCpu(CPU):
         # Update current state
         self.current_state[JN_REG_R1()] = out_r1 & 0xF
         self.current_state[JN_REG_R2()] = out_r2 & 0xF
-        self.current_state[JN_REG_NZVC()] = nzcv & 0xF
+        self.current_state[JN_REG_NZCV()] = nzcv & 0xF
 
         # Return before/after
         state_after = CpuRegisterMap(self.current_state)

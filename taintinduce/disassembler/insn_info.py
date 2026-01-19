@@ -12,7 +12,7 @@ from taintinduce.disassembler.exceptions import (
 from taintinduce.isa import amd64, arm64, jn, x86
 from taintinduce.isa.isa import ISA
 from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex_string
-from taintinduce.isa.jn_registers import JN_REG_NZVC, JN_REG_R1, JN_REG_R2
+from taintinduce.isa.jn_registers import JN_REG_NZCV, JN_REG_R1, JN_REG_R2
 from taintinduce.isa.register import CondRegister, Register
 from taintinduce.serialization import SerializableMixin
 
@@ -77,11 +77,11 @@ class Disassembler(object):
             jn_insn = decode_jn_hex_string(bytestring)
 
             # For immediate instructions, exclude R2 from state (it's not used)
-            # For register instructions, include R1, R2, and NZVC
+            # For register instructions, include R1, R2, and NZCV
             if jn_insn.has_immediate:
-                reg_set = [JN_REG_R1(), JN_REG_NZVC()]
+                reg_set = [JN_REG_R1(), JN_REG_NZCV()]
             else:
-                reg_set = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZVC()]
+                reg_set = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
 
             self.insn_info = InsnInfo(
                 archstring=arch_str,
