@@ -5,6 +5,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Optional
 
+from tqdm import tqdm
+
 if TYPE_CHECKING:
     from taintinduce.observation_engine.observation import ObservationEngine
 
@@ -234,16 +236,18 @@ class InferenceEngine(object):
                 for mutated_input_bit in possible_flows
             }
 
-            # Collect results as they complete
-            for future in as_completed(future_to_bit):
-                mutated_input_bit = future_to_bit[future]
-                try:
-                    condition_dataflow_pairs = future.result()
-                    # Store this input bit's conditions directly - no grouping
-                    per_bit_conditions[mutated_input_bit] = condition_dataflow_pairs
-                except Exception as e:
-                    logger.error(f'Failed to infer conditions for bit {mutated_input_bit}: {e}')
-                    raise
+            # Collect results as they complete with progress bar
+            with tqdm(total=len(future_to_bit), desc='Inferring conditions', unit='bit') as pbar:
+                for future in as_completed(future_to_bit):
+                    mutated_input_bit = future_to_bit[future]
+                    try:
+                        condition_dataflow_pairs = future.result()
+                        # Store this input bit's conditions directly - no grouping
+                        per_bit_conditions[mutated_input_bit] = condition_dataflow_pairs
+                        pbar.update(1)
+                    except Exception as e:
+                        logger.error(f'Failed to infer conditions for bit {mutated_input_bit}: {e}')
+                        raise
 
         return per_bit_conditions
 
@@ -316,8 +320,6 @@ class InferenceEngine(object):
             List of ConditionDataflowPair objects, each pairing a condition with its output bits.
             condition=None represents the default/fallthrough case.
         """
-        logger.info(f'Searching flow conditions for input bit {mutated_input_bit}')
-
         num_partitions = len(possible_flows[mutated_input_bit])
         if num_partitions == 0:
             raise Exception(f'No possible flows for mutated input bit {mutated_input_bit}')
