@@ -22,9 +22,12 @@ State layout (12 bits total = 3 nibbles):
   bits 8-11:  NZVC (4 bits) - Condition flags (not yet updated by instructions)
 """
 
+import logging
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class JNOpcode(IntEnum):
@@ -140,6 +143,8 @@ def decode_hex_string(hex_str: str) -> JNInstruction:
 
     Args:
         hex_str: Hex string like '1A' for 'ADD R1, 0xA'
+                If 2 chars provided with even opcode (0,2,4,6), automatically
+                converts to immediate variant (1,3,5,7) to match user intent.
                 Each character represents a nibble (4 bits)
 
     Returns:
@@ -149,7 +154,17 @@ def decode_hex_string(hex_str: str) -> JNInstruction:
     hex_str = hex_str.replace(' ', '').replace('0x', '').upper()
 
     # Convert each hex digit to a byte
-    data = bytes([int(c, 16) for c in hex_str])
+    data_list = [int(c, 16) for c in hex_str]
+
+    # If we have 2 hex chars and the opcode is even (register variant),
+    # convert to odd (immediate variant) to match user intent and print a warning.
+    if len(data_list) == 2 and (data_list[0] & 1) == 0:
+        logger.warning(
+            f'Interpreting instruction {hex_str} as immediate variant instead of register variant.',
+        )
+        data_list[0] |= 1  # Convert even opcode to odd (e.g., 0->1, 2->3, 4->5, 6->7)
+
+    data = bytes(data_list)
     return JNInstruction.from_bytes(data)
 
 
