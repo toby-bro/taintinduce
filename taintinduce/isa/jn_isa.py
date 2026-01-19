@@ -101,6 +101,48 @@ class JNInstruction:
 
         return cls(opcode, immediate)
 
+    @staticmethod
+    def compute_flags(result: int, operand1: int, operand2: int, is_add: bool) -> int:
+        """Compute NZCV flags for a 4-bit result.
+
+        Args:
+            result: 4-bit result value (may have carry bit in bit 4)
+            operand1: First operand (4 bits)
+            operand2: Second operand (4 bits)
+            is_add: True if operation is ADD (for C and V flags)
+
+        Returns:
+            4-bit NZCV flags: N=bit3, Z=bit2, C=bit1, V=bit0
+        """
+        result_4bit = result & 0xF
+
+        # N (Negative): bit 3 of result (sign bit in 4-bit 2's complement)
+        n = 1 if (result_4bit & 0x8) != 0 else 0
+
+        # Z (Zero): result is zero
+        z = 1 if result_4bit == 0 else 0
+
+        # C (Carry): for ADD, carry out from bit 3
+        if is_add:
+            c = 1 if (result & 0x10) != 0 else 0  # Carry from bit 3 to bit 4
+        else:
+            c = 0  # Non-add operations don't set carry
+
+        # V (Overflow): for ADD, signed overflow in 4-bit 2's complement
+        # Overflow occurs when:
+        # - Adding two positive numbers gives negative result
+        # - Adding two negative numbers gives positive result
+        if is_add:
+            sign_op1 = (operand1 & 0x8) != 0
+            sign_op2 = (operand2 & 0x8) != 0
+            sign_result = (result_4bit & 0x8) != 0
+            v = 1 if (sign_op1 == sign_op2) and (sign_op1 != sign_result) else 0
+        else:
+            v = 0  # Non-add operations don't set overflow
+
+        # Pack NZCV into 4 bits: NZCV from bit 3 to bit 0
+        return (n << 3) | (z << 2) | (c << 1) | v
+
     def execute(self, r1: int, r2: int) -> tuple[int, int]:
         """Execute the instruction and return new register values.
 

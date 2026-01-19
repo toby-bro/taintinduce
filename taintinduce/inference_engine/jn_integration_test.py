@@ -1128,5 +1128,204 @@ def test_inferred_rules_capture_taint_blocking(
             offset += reg.bits
 
 
+# =============================================================================
+# NZCV Flag Tests
+# =============================================================================
+
+
+class TestJNNZCVFlags:
+    """Test NZCV flag computation and taint propagation."""
+
+    @pytest.mark.parametrize(
+        ('r1', 'r2', 'expected_result', 'expected_n', 'expected_z', 'expected_c', 'expected_v'),
+        [
+            # No carry, no overflow
+            (0b0001, 0b0001, 0b0010, 0, 0, 0, 0),  # 1 + 1 = 2
+            (0b0011, 0b0010, 0b0101, 0, 0, 0, 0),  # 3 + 2 = 5
+            # Result is zero
+            (0b0000, 0b0000, 0b0000, 0, 1, 0, 0),  # 0 + 0 = 0
+            (0b1000, 0b1000, 0b0000, 0, 1, 1, 1),  # -8 + -8 = -16 = 0 (carry, overflow)
+            # Carry set (result > 15)
+            (0b1111, 0b0001, 0b0000, 0, 1, 1, 0),  # 15 + 1 = 16 = 0 (mod 16)
+            (0b1010, 0b0111, 0b0001, 0, 0, 1, 0),  # 10 + 7 = 17 = 1 (mod 16)
+            # Negative result (bit 3 set)
+            (0b0111, 0b0010, 0b1001, 1, 0, 0, 1),  # 7 + 2 = 9 (negative in 2's comp, overflow)
+            (0b0111, 0b0001, 0b1000, 1, 0, 0, 1),  # 7 + 1 = 8 (negative in 2's comp, overflow)
+            # Overflow: positive + positive = negative
+            (0b0111, 0b0111, 0b1110, 1, 0, 0, 1),  # 7 + 7 = 14 (overflow: pos+pos=neg)
+            # Overflow: negative + negative = positive
+            (0b1000, 0b1001, 0b0001, 0, 0, 1, 1),  # -8 + -7 = -15 = 1 (overflow, carry)
+            (0b1010, 0b1011, 0b0101, 0, 0, 1, 1),  # -6 + -5 = -11 = 5 (overflow, carry)
+            (0b1111, 0b1111, 0b1110, 1, 0, 1, 0),  # -1 + -1 = -2 (no overflow)
+        ],
+    )
+    def test_add_nzcv_flags(self, r1, r2, expected_result, expected_n, expected_z, expected_c, expected_v):
+        """Test NZCV flag computation for ADD instruction."""
+        cpu = JNCpu()
+        bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
+
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1, JN_REG_R2(): r2, JN_REG_NZVC(): 0}))
+        _, output = cpu.execute(jn_hex_to_bytes(bytestring))
+
+        result = output[JN_REG_R1()]
+        nzcv = output[JN_REG_NZVC()]
+
+        assert result == expected_result, f'ADD {r1} + {r2} should give {expected_result}, got {result}'
+
+        # Extract individual flags from NZCV
+        n = (nzcv >> 3) & 1
+        z = (nzcv >> 2) & 1
+        c = (nzcv >> 1) & 1
+        v = nzcv & 1
+
+        assert n == expected_n, f'N flag should be {expected_n}, got {n} (NZCV={nzcv:04b})'
+        assert z == expected_z, f'Z flag should be {expected_z}, got {z} (NZCV={nzcv:04b})'
+        assert c == expected_c, f'C flag should be {expected_c}, got {c} (NZCV={nzcv:04b})'
+        assert v == expected_v, f'V flag should be {expected_v}, got {v} (NZCV={nzcv:04b})'
+
+    @pytest.mark.parametrize(
+        ('opcode', 'r1', 'r2_or_imm', 'use_imm'),
+        [
+            (JNOpcode.OR_R1_R2, 0b1010, 0b0101, False),
+            (JNOpcode.OR_R1_IMM, 0b1010, 0x5, True),
+            (JNOpcode.AND_R1_R2, 0b1111, 0b0011, False),
+            (JNOpcode.AND_R1_IMM, 0b1111, 0x3, True),
+            (JNOpcode.XOR_R1_R2, 0b1010, 0b0101, False),
+            (JNOpcode.XOR_R1_IMM, 0b1010, 0x5, True),
+        ],
+    )
+    def test_logical_ops_set_nz_flags(self, opcode, r1, r2_or_imm, use_imm):
+        """Test that logical operations set N and Z flags, but not C or V."""
+        cpu = JNCpu()
+
+        if use_imm:
+            bytestring = encode_instruction(opcode, r2_or_imm)
+            cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1, JN_REG_R2(): 0, JN_REG_NZVC(): 0}))
+        else:
+            bytestring = encode_instruction(opcode)
+            cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): r1, JN_REG_R2(): r2_or_imm, JN_REG_NZVC(): 0}))
+
+        _, output = cpu.execute(jn_hex_to_bytes(bytestring))
+
+        result = output[JN_REG_R1()]
+        nzcv = output[JN_REG_NZVC()]
+
+        # Extract individual flags
+        n = (nzcv >> 3) & 1
+        z = (nzcv >> 2) & 1
+        c = (nzcv >> 1) & 1
+        v = nzcv & 1
+
+        # Check N flag (bit 3 of result)
+        expected_n = 1 if (result & 0x8) != 0 else 0
+        assert n == expected_n, f'N flag should be {expected_n}, got {n}'
+
+        # Check Z flag
+        expected_z = 1 if result == 0 else 0
+        assert z == expected_z, f'Z flag should be {expected_z}, got {z}'
+
+        # C and V should be 0 for logical operations
+        assert c == 0, f'C flag should be 0 for logical ops, got {c}'
+        assert v == 0, f'V flag should be 0 for logical ops, got {v}'
+
+    def test_nzcv_taint_propagation_all_ops(self, jn_state_format, jn_cond_reg, inference_engine):
+        """Test that NZCV flags properly capture taint from all operations.
+
+        NZCV flags should be tainted by:
+        - Both R1 and R2 for all operations (since flags depend on the result)
+        - Result affects N and Z unconditionally
+        - For ADD: C and V flags also depend on operands
+        """
+        for opcode in [JNOpcode.ADD_R1_R2, JNOpcode.OR_R1_R2, JNOpcode.AND_R1_R2, JNOpcode.XOR_R1_R2]:
+            bytestring = encode_instruction(opcode)
+            obs_engine = ObservationEngine(bytestring, 'JN', jn_state_format)
+            observations = obs_engine.observe_insn()
+
+            rule = inference_engine.infer(observations, jn_cond_reg, obs_engine, enable_refinement=False)
+
+            # Check that NZCV bits (8-11) receive taint from R1 and R2
+            for input_bit in range(8):  # R1 (0-3) and R2 (4-7)
+                found_nzcv_flow = False
+                for pair in rule.pairs:
+                    if isinstance(pair.output_bits, dict) and input_bit in pair.output_bits:
+                        outputs = pair.output_bits[input_bit]
+                        # Check if any NZCV bit (8-11) is in outputs
+                        nzcv_outputs = [b for b in outputs if 8 <= b <= 11]
+                        if nzcv_outputs:
+                            found_nzcv_flow = True
+                            break
+
+                assert (
+                    found_nzcv_flow
+                ), f'{opcode.name}: Input bit {input_bit} should propagate taint to NZCV flags (bits 8-11)'
+
+    def test_nzcv_flag_bit_meanings(self):
+        """Test that NZCV flag bits are correctly positioned.
+
+        NZCV layout (bits 8-11 of state):
+        - Bit 11 (NZCV bit 3): N (Negative)
+        - Bit 10 (NZCV bit 2): Z (Zero)
+        - Bit 9  (NZCV bit 1): C (Carry)
+        - Bit 8  (NZCV bit 0): V (Overflow)
+        """
+        cpu = JNCpu()
+        bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
+
+        # Test N flag: 7 + 1 = 8 (bit 3 set, negative in 2's complement)
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0111, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        _, output = cpu.execute(jn_hex_to_bytes(bytestring))
+        nzcv = output[JN_REG_NZVC()]
+        assert (nzcv >> 3) & 1 == 1, 'N flag (bit 3) should be set'
+
+        # Test Z flag: 8 + 8 = 0 (mod 16)
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1000, JN_REG_R2(): 0b1000, JN_REG_NZVC(): 0}))
+        _, output = cpu.execute(jn_hex_to_bytes(bytestring))
+        nzcv = output[JN_REG_NZVC()]
+        assert (nzcv >> 2) & 1 == 1, 'Z flag (bit 2) should be set'
+
+        # Test C flag: 15 + 1 = 16 = 0 (mod 16), carry out
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b1111, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        _, output = cpu.execute(jn_hex_to_bytes(bytestring))
+        nzcv = output[JN_REG_NZVC()]
+        assert (nzcv >> 1) & 1 == 1, 'C flag (bit 1) should be set'
+
+        # Test V flag: 7 + 1 = 8 (overflow: positive + positive = negative)
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0b0111, JN_REG_R2(): 0b0001, JN_REG_NZVC(): 0}))
+        _, output = cpu.execute(jn_hex_to_bytes(bytestring))
+        nzcv = output[JN_REG_NZVC()]
+        assert nzcv & 1 == 1, 'V flag (bit 0) should be set'
+
+    def test_nzcv_taint_from_specific_bits(self, jn_state_format, jn_cond_reg, inference_engine):
+        """Test that specific NZCV flag bits get taint from expected sources.
+
+        For ADD R1, R2:
+        - N flag depends on bit 3 of result (most significant bit)
+        - Z flag depends on all bits of result (any bit being 1 makes Z=0)
+        - C flag depends on carry out (all bits contribute)
+        - V flag depends on sign bits and result
+        """
+        bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
+        obs_engine = ObservationEngine(bytestring, 'JN', jn_state_format)
+        observations = obs_engine.observe_insn()
+
+        rule = inference_engine.infer(observations, jn_cond_reg, obs_engine, enable_refinement=False)
+
+        # Verify that all R1 and R2 bits can affect NZCV
+        for input_reg_bit in range(8):  # R1[0-3] and R2[0-3]
+            nzcv_affected = set()
+            for pair in rule.pairs:
+                if isinstance(pair.output_bits, dict) and input_reg_bit in pair.output_bits:
+                    outputs = pair.output_bits[input_reg_bit]
+                    for out_bit in outputs:
+                        if 8 <= out_bit <= 11:
+                            nzcv_affected.add(out_bit)
+
+            # Each input bit should affect at least one NZCV flag
+            assert len(nzcv_affected) > 0, (
+                f'Input bit {input_reg_bit} should affect at least one NZCV flag bit, '
+                f'but affects none. This is unexpected for ADD.'
+            )
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

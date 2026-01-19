@@ -91,9 +91,32 @@ class JNCpu(CPU):
         # Execute instruction directly
         out_r1, out_r2 = instruction.execute(r1, r2)
 
-        # Update current state (NZVC remains unchanged for now - TODO: update flags)
+        # Compute NZCV flags based on operation
+        # Determine operands for flag computation
+        if instruction.has_immediate:
+            operand2 = instruction.immediate if instruction.immediate is not None else 0
+        else:
+            operand2 = r2
+
+        # Determine if it's an ADD operation for C and V flags
+        is_add = instruction.opcode in [
+            instruction.opcode.ADD_R1_R2,
+            instruction.opcode.ADD_R1_IMM,
+        ]
+
+        # Compute result with potential carry for flag computation
+        if is_add:
+            result_with_carry = r1 + operand2
+        else:
+            result_with_carry = out_r1
+
+        # Compute NZCV flags
+        nzcv = instruction.compute_flags(result_with_carry, r1, operand2, is_add)
+
+        # Update current state
         self.current_state[JN_REG_R1()] = out_r1 & 0xF
         self.current_state[JN_REG_R2()] = out_r2 & 0xF
+        self.current_state[JN_REG_NZVC()] = nzcv & 0xF
 
         # Return before/after
         state_after = CpuRegisterMap(self.current_state)
