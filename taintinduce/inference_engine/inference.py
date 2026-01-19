@@ -102,7 +102,7 @@ class InferenceEngine(object):
 
         Args:
             observations ([Observation]): List of observations to infer on.
-            cond_reg: Condition register (EFLAGS or NZCV)
+            cond_reg: Condition register (EFLAGS for X86/AMD64, NZCV for ARM64, or NZVC for JN)
             observation_engine: Optional ObservationEngine for refinement pass
             enable_refinement: Whether to perform refinement pass with targeted observations
         Returns:

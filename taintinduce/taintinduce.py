@@ -51,7 +51,8 @@ def query_yes_no(question: str, default: Optional[str] = 'yes') -> bool:
 
 def gen_insninfo(archstring: str, bytestring: str, emu_verify: bool = True) -> InsnInfo:
     insninfo = Disassembler(archstring, bytestring).insn_info
-    if emu_verify:
+    # JN doesn't use UnicornCPU emulation
+    if emu_verify and archstring != 'JN':
         cpu = UnicornCPU(archstring)
         bytecode = binascii.unhexlify(bytestring)
         mem_regs, jump_reg = cpu.identify_memops_jump(bytecode)
@@ -98,7 +99,7 @@ def main() -> None:
     parser.add_argument(
         'arch',
         type=str,
-        choices=['X86', 'AMD64', 'ARM64'],
+        choices=['X86', 'AMD64', 'ARM64', 'JN'],
         help='Select the architecture of the instruction.',
     )
     parser.add_argument('--output-dir', type=str, default='output', help='Output directory.')

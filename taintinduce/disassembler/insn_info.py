@@ -8,9 +8,9 @@ from taintinduce.disassembler.exceptions import (
     UnsupportedArchException,
     UnsupportedSizeException,
 )
-from taintinduce.isa import amd64, arm64, x86
-from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
+from taintinduce.isa import amd64, arm64, jn, x86
 from taintinduce.isa.isa import ISA
+from taintinduce.isa.jn_registers import JN_REG_NZVC, JN_REG_R1, JN_REG_R2
 from taintinduce.isa.register import CondRegister, Register
 from taintinduce.serialization import SerializableMixin
 
@@ -45,7 +45,7 @@ class InsnInfo(SerializableMixin):
             self.cond_reg = cond_reg
 
 
-ARCH_DICT = {'X86': x86.X86(), 'AMD64': amd64.AMD64(), 'ARM64': arm64.ARM64()}
+ARCH_DICT = {'X86': x86.X86(), 'AMD64': amd64.AMD64(), 'ARM64': arm64.ARM64(), 'JN': jn.JN()}
 
 
 class Disassembler(object):
@@ -57,7 +57,7 @@ class Disassembler(object):
         """Initialize wrapper over Capstone CsInsn or Cs.
 
         arch_str (str)          - the architecture of the instruction (currently
-                            supported: X86, AMD64)
+                            supported: X86, AMD64, ARM64, JN)
         bytestring (str)        - the hex string corresponding to the instruction
                             bytes
         """
@@ -68,6 +68,20 @@ class Disassembler(object):
         self.arch = arch
 
         self.bytestring = bytestring
+
+        # JN doesn't use Capstone disassembler
+        if arch_str == 'JN':
+            # For JN, always include R1, R2, and NZVC in state
+            reg_set: list[Register] = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZVC()]
+
+            self.insn_info = InsnInfo(
+                archstring=arch_str,
+                bytestring=bytestring,
+                state_format=reg_set,
+                cond_reg=self.arch.cond_reg,
+            )
+            return
+
         dis = SquirrelDisassemblerZydis(arch_str)
 
         insn = dis.disassemble(bytestring)
