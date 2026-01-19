@@ -21,6 +21,7 @@ from typing import Any
 
 from flask import Flask, jsonify, request, send_file
 
+from taintinduce.cpu.cpu import CPUFactory
 from taintinduce.disassembler.compat import SquirrelDisassemblerZydis
 from taintinduce.isa.register import Register
 from taintinduce.rules.conditions import LogicType, TaintCondition
@@ -28,7 +29,6 @@ from taintinduce.rules.rules import TaintRule
 from taintinduce.serialization import TaintInduceDecoder
 from taintinduce.state.state import check_ones
 from taintinduce.types import CpuRegisterMap
-from taintinduce.unicorn_cpu.unicorn_cpu import UnicornCPU
 
 # Import visualizer helper modules
 from visualizer.taint_simulator import (
@@ -428,7 +428,7 @@ def _execute_instruction(
 ) -> dict[str, dict[int, int]]:
     """Execute instruction and return output register values."""
     input_cpu_state = _build_cpu_state(register_values, rule)
-    cpu = UnicornCPU(rule.format.arch)
+    cpu = CPUFactory.create_cpu(rule.format.arch)
     cpu.set_cpu_state(input_cpu_state)
     _, output_cpu_state = cpu.execute(bytecode)
     return _extract_output_register_values(output_cpu_state, rule)

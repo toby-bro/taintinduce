@@ -16,7 +16,7 @@ from taintinduce.isa.register import Register
 from taintinduce.isa.x86 import X86
 from taintinduce.types import CpuRegisterMap
 
-from . import cpu
+from .cpu import CPU
 
 
 def is_overlap(x1: int, x2: int, y1: int, y2: int) -> bool:
@@ -113,7 +113,7 @@ class OutOfRangeException(Exception):
     pass
 
 
-class UnicornCPU(cpu.CPU):
+class UnicornCPU(CPU):
     arch: ISA
 
     def __init__(self, archstring: str, debug: bool = False) -> None:

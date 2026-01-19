@@ -3,12 +3,12 @@ from typing import Optional
 from tqdm import tqdm
 from unicorn.unicorn import UcError
 
+from taintinduce.cpu.cpu import CPU, CPUFactory
+from taintinduce.cpu.unicorn_cpu import OutOfRangeException
 from taintinduce.isa.amd64 import AMD64
 from taintinduce.isa.arm64 import ARM64
 from taintinduce.isa.isa import ISA
 from taintinduce.isa.jn import JN
-from taintinduce.isa.jn_executor import JNExecutor
-from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex_string
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86 import X86
 from taintinduce.observation_engine.strategy import (
@@ -22,7 +22,6 @@ from taintinduce.observation_engine.strategy import (
 from taintinduce.state.state import Observation, State
 from taintinduce.state.state_utils import regs2bits
 from taintinduce.types import CpuRegisterMap
-from taintinduce.unicorn_cpu.unicorn_cpu import OutOfRangeException, UnicornCPU
 
 from .strategy import SeedVariation, Strategy
 
@@ -150,7 +149,7 @@ class ObservationEngine(object):
 
     arch: ISA
     bytestring: str
-    cpu: UnicornCPU
+    cpu: CPU
     archstring: str
     state_format: list[Register]
     DEBUG_LOG: bool
@@ -168,15 +167,9 @@ class ObservationEngine(object):
             case _:
                 raise Exception('Unsupported architecture: {}'.format(archstring))
 
-        # JN doesn't use UnicornCPU
-        if archstring != 'JN':
-            self.cpu = UnicornCPU(archstring)
-            bytecode = bytes.fromhex(bytestring)  # noqa: F841
-
-            mem_regs = {x for x in state_format if 'MEM' in x.name}
-            self.cpu.set_memregs(mem_regs)
-        else:
-            self.cpu = None  # type: ignore[assignment]
+        self.cpu = CPUFactory.create_cpu(archstring)
+        mem_regs = {x for x in state_format if 'MEM' in x.name}
+        self.cpu.set_memregs(mem_regs)
 
         state_string = ' '.join(['({},{})'.format(x.name, x.bits) for x in state_format])
         print('')
@@ -211,10 +204,6 @@ class ObservationEngine(object):
         bytestring = self.bytestring
         archstring = self.archstring
         state_format = self.state_format
-
-        # JN uses a simplified observation generation
-        if archstring == 'JN':
-            return self._gen_jn_observations()
 
         observations: list[Observation] = []
         seed_ios = self._gen_seeds(bytestring, archstring, state_format)
@@ -280,9 +269,12 @@ class ObservationEngine(object):
     ) -> list[tuple[CpuRegisterMap, CpuRegisterMap]]:
         """Generates a set of seed states based on the state_format using the strategies defined.
 
+        If the state space is small (< 2^14 states), exhaustively tests all possible states.
+        Otherwise, uses sampling strategies.
+
         Args:
             bytestring (string): String representing the bytes of the instruction in hex without space
-            archstring (string): Architecture String (X86, AMD64, ARM32, ARM64)
+            archstring (string): Architecture String (X86, AMD64, ARM32, ARM64, JN)
             state_format (list(Register)): A list of registers which defines the order of the State object
             strategies (list(Strategy)): A list of Strategy objects to use for seed generation
         Returns:
@@ -290,6 +282,15 @@ class ObservationEngine(object):
         Raises:
             None
         """
+        # Calculate total state space size
+        total_bits = sum(reg.bits for reg in state_format)
+        total_states = 2**total_bits
+
+        # If state space is small enough, exhaustively test all states
+        if total_states < 2**14:  # 16384 states
+            return self._gen_exhaustive_seeds(bytestring, archstring, state_format)
+
+        # Otherwise, use sampling strategies
         if not strategies:
             strategies = [
                 SystematicRange(),
@@ -314,6 +315,51 @@ class ObservationEngine(object):
                     if self.DEBUG_LOG:
                         print('MAX_TRIES-{}-{}-{}-{}'.format(bytestring, archstring, state_format, seed_variation))
                     continue
+
+        return seed_states
+
+    def _gen_exhaustive_seeds(
+        self,
+        bytestring: str,
+        archstring: str,
+        state_format: list[Register],
+    ) -> list[tuple[CpuRegisterMap, CpuRegisterMap]]:
+        """Generate all possible seed states exhaustively for small state spaces.
+
+        Args:
+            bytestring: Hex string of instruction
+            archstring: Architecture string
+            state_format: List of registers defining state
+
+        Returns:
+            List of all possible (input_state, output_state) tuples
+        """
+        total_bits = sum(reg.bits for reg in state_format)
+        total_states = 2**total_bits
+
+        seed_states: list[tuple[CpuRegisterMap, CpuRegisterMap]] = []
+        bytecode = bytes.fromhex(bytestring)
+
+        cpu = CPUFactory.create_cpu(archstring)
+
+        desc = f'Generating exhaustive seeds ({total_states} states)'
+        for state_val in tqdm(range(total_states), desc=desc):
+            # Convert state value to register values
+            input_state = CpuRegisterMap()
+            bit_offset = 0
+
+            for reg in state_format:
+                reg_value = (state_val >> bit_offset) & ((1 << reg.bits) - 1)
+                input_state[reg] = reg_value
+                bit_offset += reg.bits
+
+            # Execute instruction to get output state
+            cpu.set_cpu_state(input_state)
+            try:
+                _, output_state = cpu.execute(bytecode)
+                seed_states.append((input_state, output_state))
+            except (UcError, OutOfRangeException):
+                continue
 
         return seed_states
 
@@ -443,57 +489,6 @@ class ObservationEngine(object):
             refinement_observations.append(obs)
 
         return refinement_observations
-
-    def _gen_jn_observations(self) -> list[Observation]:
-        """Generate observations for JN (Just Nibbles) ISA.
-
-        JN doesn't use emulation - we execute directly and test all possible inputs.
-        """
-        executor = JNExecutor()
-        instruction = decode_jn_hex_string(self.bytestring)
-        observations = []
-
-        # For JN, test all possible 12-bit states (R1=4 bits, R2=4 bits, NZVC=4 bits)
-        # That's 2^12 = 4096 states
-        for state_val in tqdm(range(4096), desc='Generating JN observations'):
-            # Extract R1 (bits 0-3), R2 (bits 4-7), NZVC (bits 8-11)
-            r1_val = state_val & 0xF
-            r2_val = (state_val >> 4) & 0xF
-            nzvc_val = (state_val >> 8) & 0xF
-
-            # Create input state
-            input_state = executor.create_state(r1_val, r2_val, nzvc_val)
-
-            # Execute instruction
-            output_state = executor.execute(instruction, input_state)
-
-            # Create observation with bitflips
-            mutated_iopairs: set[tuple[State, State]] = set()
-
-            # Test each bit flip in the input (12 bits total)
-            for bit_pos in range(12):
-                # Flip the bit
-                flipped_state_val = state_val ^ (1 << bit_pos)
-                flipped_r1 = flipped_state_val & 0xF
-                flipped_r2 = (flipped_state_val >> 4) & 0xF
-                flipped_nzvc = (flipped_state_val >> 8) & 0xF
-
-                flipped_input = executor.create_state(flipped_r1, flipped_r2, flipped_nzvc)
-                flipped_output = executor.execute(instruction, flipped_input)
-
-                mutated_iopairs.add((flipped_input, flipped_output))
-
-            # Create the observation with correct constructor
-            obs = Observation(
-                iopair=(input_state, output_state),
-                mutated_iopairs=frozenset(mutated_iopairs),
-                bytestring=self.bytestring,
-                archstring=self.archstring,
-                state_format=self.state_format,
-            )
-            observations.append(obs)
-
-        return observations
 
     def _gen_refinement_observations_helper(
         self,

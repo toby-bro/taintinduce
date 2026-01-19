@@ -1,5 +1,6 @@
 from typing import Optional
 
+from capstone import CsInsn
 from capstone.arm64 import ARM64_OP_REG
 from capstone.x86 import X86_OP_REG
 
@@ -10,6 +11,7 @@ from taintinduce.disassembler.exceptions import (
 )
 from taintinduce.isa import amd64, arm64, jn, x86
 from taintinduce.isa.isa import ISA
+from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex_string
 from taintinduce.isa.jn_registers import JN_REG_NZVC, JN_REG_R1, JN_REG_R2
 from taintinduce.isa.register import CondRegister, Register
 from taintinduce.serialization import SerializableMixin
@@ -71,20 +73,34 @@ class Disassembler(object):
 
         # JN doesn't use Capstone disassembler
         if arch_str == 'JN':
-            # For JN, always include R1, R2, and NZVC in state
-            reg_set: list[Register] = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZVC()]
+            # Decode the instruction to check if it has an immediate operand
+            jn_insn = decode_jn_hex_string(bytestring)
+
+            # For immediate instructions, exclude R2 from state (it's not used)
+            # For register instructions, include R1, R2, and NZVC
+            if jn_insn.has_immediate:
+                reg_set = [JN_REG_R1(), JN_REG_NZVC()]
+            else:
+                reg_set = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZVC()]
+
+            # Pad bytestring with leading zero if it's only one character
+            padded_bytestring = bytestring if len(bytestring) > 1 else bytestring + '0'
 
             self.insn_info = InsnInfo(
                 archstring=arch_str,
-                bytestring=bytestring,
+                bytestring=padded_bytestring,
                 state_format=reg_set,
                 cond_reg=self.arch.cond_reg,
             )
             return
 
         dis = SquirrelDisassemblerZydis(arch_str)
+        if not isinstance(dis, SquirrelDisassemblerZydis):
+            raise Exception('Disassembler is not SquirrelDisassemblerZydis instance!')
 
         insn = dis.disassemble(bytestring)
+        if not isinstance(insn, CsInsn):
+            raise Exception('Disassembled object is not a CsInsn instance.')
 
         # capstone register set
         self.cs_reg_set = []

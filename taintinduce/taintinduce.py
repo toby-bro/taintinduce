@@ -9,6 +9,7 @@ from typing import Optional
 
 import taintinduce.inference_engine.inference as inference_engine
 import taintinduce.observation_engine.observation as observation_engine
+from taintinduce.cpu.cpu import CPUFactory
 from taintinduce.disassembler.insn_info import Disassembler, InsnInfo
 from taintinduce.isa.register import CondRegister, Register
 from taintinduce.rules.rules import Rule, TaintRule
@@ -16,7 +17,6 @@ from taintinduce.rules.rules import Rule, TaintRule
 # Replaced squirrel imports with our own serialization
 from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder
 from taintinduce.state.state import Observation
-from taintinduce.unicorn_cpu.unicorn_cpu import UnicornCPU
 
 
 def query_yes_no(question: str, default: Optional[str] = 'yes') -> bool:
@@ -53,7 +53,7 @@ def gen_insninfo(archstring: str, bytestring: str, emu_verify: bool = True) -> I
     insninfo = Disassembler(archstring, bytestring).insn_info
     # JN doesn't use UnicornCPU emulation
     if emu_verify and archstring != 'JN':
-        cpu = UnicornCPU(archstring)
+        cpu = CPUFactory.create_cpu(archstring)
         bytecode = binascii.unhexlify(bytestring)
         mem_regs, jump_reg = cpu.identify_memops_jump(bytecode)
         if jump_reg and jump_reg not in insninfo.state_format:

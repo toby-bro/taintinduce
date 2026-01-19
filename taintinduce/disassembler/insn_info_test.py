@@ -7,6 +7,7 @@ from taintinduce.disassembler.exceptions import (
     UnsupportedArchException,
 )
 from taintinduce.disassembler.insn_info import Disassembler, InsnInfo
+from taintinduce.isa.jn_registers import JN_REG_NZVC
 from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EFLAGS
 
 
@@ -229,6 +230,113 @@ class TestRealWorldInstructions:
         # Should include ESI, EDI
         assert 'ESI' in reg_names or 'SI' in reg_names
         assert 'EDI' in reg_names or 'DI' in reg_names
+
+
+class TestDisassemblerJN:
+    """Test cases for JN (Just Nibbles) ISA."""
+
+    def test_add_register_instruction(self):
+        """Test ADD R1, R2 (opcode 0 - register variant).
+
+        Register instructions should include R1, R2, and NZVC in state_format.
+        """
+        dis = Disassembler('JN', '0')
+        assert dis.insn_info.archstring == 'JN'
+        assert dis.insn_info.bytestring == '0'
+
+        # Should track R1, R2, and NZVC
+        reg_names = {reg.name for reg in dis.insn_info.state_format}
+        assert 'R1' in reg_names, 'R1 should be in state_format for register instruction'
+        assert 'R2' in reg_names, 'R2 should be in state_format for register instruction'
+        assert 'NZVC' in reg_names, 'NZVC should be in state_format'
+        assert len(dis.insn_info.state_format) == 3
+
+    def test_add_immediate_instruction(self):
+        """Test ADD R1, #0xA (opcode 1A - immediate variant).
+
+        Immediate instructions should ONLY include R1 and NZVC (R2 excluded).
+        """
+        dis = Disassembler('JN', '1A')
+        assert dis.insn_info.archstring == 'JN'
+        assert dis.insn_info.bytestring == '1A'
+
+        # Should track R1 and NZVC, but NOT R2
+        reg_names = {reg.name for reg in dis.insn_info.state_format}
+        assert 'R1' in reg_names, 'R1 should be in state_format for immediate instruction'
+        assert 'R2' not in reg_names, 'R2 should NOT be in state_format for immediate instruction'
+        assert 'NZVC' in reg_names, 'NZVC should be in state_format'
+        assert len(dis.insn_info.state_format) == 2
+
+    def test_or_register_instruction(self):
+        """Test OR R1, R2 (opcode 2 - register variant)."""
+        dis = Disassembler('JN', '2')
+        reg_names = {reg.name for reg in dis.insn_info.state_format}
+        assert 'R1' in reg_names
+        assert 'R2' in reg_names
+        assert 'NZVC' in reg_names
+        assert len(dis.insn_info.state_format) == 3
+
+    def test_or_immediate_instruction(self):
+        """Test OR R1, #0xF (opcode 3F - immediate variant)."""
+        dis = Disassembler('JN', '3F')
+        reg_names = {reg.name for reg in dis.insn_info.state_format}
+        assert 'R1' in reg_names
+        assert 'R2' not in reg_names
+        assert 'NZVC' in reg_names
+        assert len(dis.insn_info.state_format) == 2
+
+    def test_and_register_instruction(self):
+        """Test AND R1, R2 (opcode 4 - register variant)."""
+        dis = Disassembler('JN', '4')
+        reg_names = {reg.name for reg in dis.insn_info.state_format}
+        assert 'R1' in reg_names
+        assert 'R2' in reg_names
+        assert 'NZVC' in reg_names
+
+    def test_and_immediate_instruction(self):
+        """Test AND R1, #0x5 (opcode 55 - immediate variant)."""
+        dis = Disassembler('JN', '55')
+        reg_names = {reg.name for reg in dis.insn_info.state_format}
+        assert 'R1' in reg_names
+        assert 'R2' not in reg_names
+        assert 'NZVC' in reg_names
+
+    def test_xor_register_instruction(self):
+        """Test XOR R1, R2 (opcode 6 - register variant)."""
+        dis = Disassembler('JN', '6')
+        reg_names = {reg.name for reg in dis.insn_info.state_format}
+        assert 'R1' in reg_names
+        assert 'R2' in reg_names
+        assert 'NZVC' in reg_names
+
+    def test_xor_immediate_instruction(self):
+        """Test XOR R1, #0x9 (opcode 79 - immediate variant)."""
+        dis = Disassembler('JN', '79')
+        reg_names = {reg.name for reg in dis.insn_info.state_format}
+        assert 'R1' in reg_names
+        assert 'R2' not in reg_names
+        assert 'NZVC' in reg_names
+
+    def test_all_register_instructions_include_r2(self):
+        """Verify all register-variant instructions include R2."""
+        register_opcodes = ['0', '2', '4', '6']  # Even opcodes = register
+        for opcode in register_opcodes:
+            dis = Disassembler('JN', opcode)
+            reg_names = {reg.name for reg in dis.insn_info.state_format}
+            assert 'R2' in reg_names, f'Opcode {opcode} should include R2 (register variant)'
+
+    def test_all_immediate_instructions_exclude_r2(self):
+        """Verify all immediate-variant instructions exclude R2."""
+        immediate_opcodes = ['1A', '3F', '55', '79']  # Odd opcodes with immediate
+        for opcode in immediate_opcodes:
+            dis = Disassembler('JN', opcode)
+            reg_names = {reg.name for reg in dis.insn_info.state_format}
+            assert 'R2' not in reg_names, f'Opcode {opcode} should NOT include R2 (immediate variant)'
+
+    def test_jn_cond_reg_is_nzvc(self):
+        """Verify JN uses NZVC as condition register."""
+        dis = Disassembler('JN', '1A')
+        assert isinstance(dis.insn_info.cond_reg, JN_REG_NZVC)
 
 
 if __name__ == '__main__':

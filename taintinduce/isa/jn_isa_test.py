@@ -3,7 +3,6 @@
 Test the simplified 4-bit ISA implementation.
 """
 
-from taintinduce.isa.jn_executor import JNExecutor
 from taintinduce.isa.jn_isa import JNInstruction, JNOpcode, decode_hex_string, encode_instruction
 from taintinduce.isa.jn_registers import JN_REG_R1, JN_REG_R2, get_jn_state_format
 
@@ -159,60 +158,6 @@ class TestJNInstructionExecution:
         new_r1, new_r2 = instr.execute(r1=0b1010, r2=0b0000)
         assert new_r1 == 0b0101  # 0xA ^ 0xF = 0x5
         assert new_r2 == 0b0000
-
-
-class TestJNExecutor:
-    """Test JN instruction executor."""
-
-    def test_create_state(self):
-        """Test state creation from register values."""
-        executor = JNExecutor()
-        state = executor.create_state(r1=0xA, r2=0x5)
-        assert state.state_value == 0x5A  # R2 in upper nibble, R1 in lower
-
-    def test_extract_registers(self):
-        """Test register extraction from state."""
-        executor = JNExecutor()
-        state = executor.create_state(r1=0x7, r2=0xB)
-        r1, r2, _ = executor.extract_registers(state)
-        assert r1 == 0x7
-        assert r2 == 0xB
-
-    def test_execute_add_r1_r2(self):
-        """Test executing ADD R1, R2 through executor."""
-        executor = JNExecutor()
-        instr = JNInstruction(JNOpcode.ADD_R1_R2)
-
-        input_state = executor.create_state(r1=3, r2=5)
-        output_state = executor.execute(instr, input_state)
-
-        r1_out, r2_out, _ = executor.extract_registers(output_state)
-        assert r1_out == 8  # 3 + 5 = 8
-        assert r2_out == 5  # R2 unchanged
-
-    def test_execute_add_r1_imm(self):
-        """Test executing ADD R1, imm4 through executor."""
-        executor = JNExecutor()
-        instr = JNInstruction(JNOpcode.ADD_R1_IMM, 0x2)
-
-        input_state = executor.create_state(r1=0xE, r2=0x3)
-        output_state = executor.execute(instr, input_state)
-
-        r1_out, r2_out, _ = executor.extract_registers(output_state)
-        assert r1_out == 0x0  # (0xE + 0x2) mod 16 = 0
-        assert r2_out == 0x3  # R2 unchanged
-
-    def test_execute_and_r1_r2(self):
-        """Test executing AND R1, R2 through executor."""
-        executor = JNExecutor()
-        instr = JNInstruction(JNOpcode.AND_R1_R2)
-
-        input_state = executor.create_state(r1=0xF, r2=0x3)
-        output_state = executor.execute(instr, input_state)
-
-        r1_out, r2_out, _ = executor.extract_registers(output_state)
-        assert r1_out == 0x3  # 0xF & 0x3 = 0x3
-        assert r2_out == 0x3  # R2 unchanged
 
 
 class TestJNInstructionMnemonics:

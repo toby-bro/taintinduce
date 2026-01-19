@@ -2,6 +2,7 @@
 
 import pytest
 
+from taintinduce.cpu.unicorn_cpu import UnicornCPU
 from taintinduce.disassembler.insn_info import Disassembler
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV, ARM64_REG_X0
 from taintinduce.isa.x86_registers import (
@@ -11,7 +12,6 @@ from taintinduce.isa.x86_registers import (
 )
 from taintinduce.observation_engine.observation import ObservationEngine
 from taintinduce.state.state import Observation
-from taintinduce.unicorn_cpu.unicorn_cpu import UnicornCPU
 
 
 class TestObservationGenerationMocked:
@@ -253,6 +253,115 @@ class TestActualExecution:
         assert (
             state_before[x0_reg] != state_after[x0_reg]
         ), 'ARM64 instruction must produce state change (not silently fail)'
+
+
+class TestJNObservationGeneration:
+    """Test JN-specific observation generation."""
+
+    def test_immediate_instruction_generates_256_observations(self):
+        """Verify immediate instructions generate 256 observations (R1 x NZVC = 8 bits)."""
+        # ADD R1, #0xA (immediate variant)
+        dis = Disassembler('JN', '1A')
+        obs_engine = ObservationEngine('1A', 'JN', dis.insn_info.state_format)
+        observations = obs_engine._gen_jn_observations()
+
+        assert len(observations) == 256, 'Immediate instruction should generate 256 observations'
+
+        # Verify all observations have correct state format (R1 + NZVC only)
+        for obs in observations:
+            assert len(obs.state_format) == 2, 'Immediate instruction should have 2 registers in state_format'
+            reg_names = {reg.name for reg in obs.state_format}
+            assert 'R1' in reg_names
+            assert 'R2' not in reg_names, 'R2 should not be in state_format for immediate instruction'
+            assert 'NZVC' in reg_names
+
+    def test_register_instruction_generates_4096_observations(self):
+        """Verify register instructions generate 4096 observations (R1 x R2 x NZVC = 12 bits)."""
+        # ADD R1, R2 (register variant)
+        dis = Disassembler('JN', '0')
+        obs_engine = ObservationEngine('0', 'JN', dis.insn_info.state_format)
+        observations = obs_engine._gen_jn_observations()
+
+        assert len(observations) == 4096, 'Register instruction should generate 4096 observations'
+
+        # Verify all observations have correct state format (R1 + R2 + NZVC)
+        for obs in observations:
+            assert len(obs.state_format) == 3, 'Register instruction should have 3 registers in state_format'
+            reg_names = {reg.name for reg in obs.state_format}
+            assert 'R1' in reg_names
+            assert 'R2' in reg_names, 'R2 should be in state_format for register instruction'
+            assert 'NZVC' in reg_names
+
+    def test_immediate_instruction_state_bits(self):
+        """Verify immediate instructions test 8 bits (R1 + NZVC)."""
+        dis = Disassembler('JN', '3F')
+        obs_engine = ObservationEngine('3F', 'JN', dis.insn_info.state_format)  # OR R1, #0xF
+        observations = obs_engine._gen_jn_observations()
+
+        # Each observation should have 8 mutated pairs (one for each bit flip)
+        for obs in observations:
+            assert len(obs.mutated_ios) == 8, 'Should have 8 bit flips for 8-bit state'
+
+    def test_register_instruction_state_bits(self):
+        """Verify register instructions test 12 bits (R1 + R2 + NZVC)."""
+        dis = Disassembler('JN', '2')
+        obs_engine = ObservationEngine('2', 'JN', dis.insn_info.state_format)  # OR R1, R2
+        observations = obs_engine._gen_jn_observations()
+
+        # Each observation should have 12 mutated pairs (one for each bit flip)
+        for obs in observations:
+            assert len(obs.mutated_ios) == 12, 'Should have 12 bit flips for 12-bit state'
+
+    def test_all_immediate_opcodes(self):
+        """Test all immediate variant opcodes generate 256 observations."""
+        immediate_opcodes = ['1A', '3F', '55', '79']  # ADD, OR, AND, XOR with immediate
+        for opcode in immediate_opcodes:
+            dis = Disassembler('JN', opcode)
+            obs_engine = ObservationEngine(opcode, 'JN', dis.insn_info.state_format)
+            observations = obs_engine._gen_jn_observations()
+            assert len(observations) == 256, f'Opcode {opcode} should generate 256 observations'
+
+    def test_all_register_opcodes(self):
+        """Test all register variant opcodes generate 4096 observations."""
+        register_opcodes = ['0', '2', '4', '6']  # ADD, OR, AND, XOR with register
+        for opcode in register_opcodes:
+            dis = Disassembler('JN', opcode)
+            obs_engine = ObservationEngine(opcode, 'JN', dis.insn_info.state_format)
+            observations = obs_engine._gen_jn_observations()
+            assert len(observations) == 4096, f'Opcode {opcode} should generate 4096 observations'
+
+    def test_observation_seed_io_structure(self):
+        """Verify observation seed_io has correct structure."""
+        dis = Disassembler('JN', '1A')
+        obs_engine = ObservationEngine('1A', 'JN', dis.insn_info.state_format)
+        observations = obs_engine._gen_jn_observations()
+
+        # Check first observation
+        obs = observations[0]
+        assert hasattr(obs, 'seed_io'), 'Observation should have seed_io attribute'
+        assert len(obs.seed_io) == 2, 'seed_io should be a tuple of (input_state, output_state)'
+
+        # Both should be State objects
+        input_state, output_state = obs.seed_io
+        assert hasattr(input_state, 'state_value'), 'Input state should have state_value'
+        assert hasattr(output_state, 'state_value'), 'Output state should have state_value'
+
+    def test_observation_mutated_pairs_structure(self):
+        """Verify mutated_ios have correct structure."""
+        dis = Disassembler('JN', '0')
+        obs_engine = ObservationEngine('0', 'JN', dis.insn_info.state_format)
+        observations = obs_engine._gen_jn_observations()
+
+        obs = observations[0]
+        assert hasattr(obs, 'mutated_ios'), 'Observation should have mutated_ios'
+        assert isinstance(obs.mutated_ios, frozenset), 'mutated_ios should be a frozenset'
+
+        # Each mutated pair should be a tuple of (input_state, output_state)
+        for mutated_pair in obs.mutated_ios:
+            assert len(mutated_pair) == 2, 'Each mutated pair should be (input, output) tuple'
+            input_state, output_state = mutated_pair
+            assert hasattr(input_state, 'state_value')
+            assert hasattr(output_state, 'state_value')
 
 
 if __name__ == '__main__':
