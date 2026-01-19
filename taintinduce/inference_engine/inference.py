@@ -21,7 +21,7 @@ from taintinduce.types import (
     ObservationDependency,
 )
 
-from . import condition_generator, observation_processor, partition_handler
+from . import condition_generator, observation_processor, partition_handler, validation
 
 """Inference engine for data-dependent taint propagation rules.
 
@@ -137,7 +137,21 @@ class InferenceEngine(object):
         # Process ALL condition groups using the stored pairs
         condition_dataflow_pairs_full = self._build_full_dataflows(condition_groups)
 
-        return Rule(state_format, pairs=condition_dataflow_pairs_full)
+        rule = Rule(state_format, pairs=condition_dataflow_pairs_full)
+
+        # Validate that the generated rule explains all observations
+        observation_dependencies = observation_processor.extract_observation_dependencies(observations)
+        explained, total = validation.validate_rule_explains_observations(rule, observation_dependencies)
+
+        if explained < total:
+            logger.warning(
+                f'Rule validation incomplete: {explained}/{total} behaviors explained '
+                f'({explained/total*100:.1f}%). Some observations may not be fully captured by conditions.',
+            )
+        else:
+            logger.info(f'Rule validation successful: all {total} observation behaviors explained.')
+
+        return rule
 
     def infer_flow_conditions(
         self,
