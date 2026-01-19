@@ -21,6 +21,7 @@ from typing import Any
 
 from flask import Flask, jsonify, request, send_file
 
+from taintinduce.disassembler.compat import SquirrelDisassemblerZydis
 from taintinduce.isa.register import Register
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import TaintRule
@@ -169,6 +170,16 @@ def bitpos_to_reg_bit(bitpos: int, registers: list[Register]) -> dict['str', obj
     return {'type': 'unknown', 'bitpos': bitpos}
 
 
+def get_instruction_text(arch: str, bytestring: str) -> str:
+    """Disassemble instruction bytes to human-readable assembly."""
+    try:
+        dis = SquirrelDisassemblerZydis(arch)
+        insn = dis.disassemble(bytestring)
+        return f'{insn.mnemonic} {insn.op_str}'
+    except Exception as e:
+        return f'<disassembly failed: {e!s}>'
+
+
 @app.route('/api/rule')
 def get_rule_data():
     """API endpoint to get rule data."""
@@ -247,6 +258,11 @@ def get_rule_data():
     return jsonify(
         {
             'filename': rule_file_path,
+            'instruction': {
+                'bytestring': current_rule.bytestring,
+                'asm': get_instruction_text(current_rule.format.arch, current_rule.bytestring),
+                'arch': current_rule.format.arch,
+            },
             'format': {
                 'arch': current_rule.format.arch,
                 'registers': [{'name': reg.name, 'bits': reg.bits} for reg in current_rule.format.registers],

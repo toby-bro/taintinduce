@@ -68,6 +68,15 @@ function updateAllDisplays(data) {
   document.getElementById("rule-file").textContent =
     data.filename || "Uploaded Rule";
   document.getElementById("arch").textContent = data.format?.arch || "N/A";
+  
+  // Add instruction display
+  if (data.instruction) {
+    const instrEl = document.getElementById("instruction");
+    if (instrEl) {
+      instrEl.innerHTML = `<strong>${data.instruction.bytestring}</strong><br><span style="color: #667eea; font-family: monospace;">${data.instruction.asm}</span>`;
+    }
+  }
+  
   document.getElementById("num-regs").textContent =
     data.format?.registers?.length || 0;
   document.getElementById("num-mem").textContent = data.format?.mem_slots || 0;
