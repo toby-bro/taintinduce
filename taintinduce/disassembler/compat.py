@@ -15,6 +15,40 @@ from capstone import (
 )
 
 from taintinduce.disassembler.exceptions import ParseInsnException
+from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex_string
+
+
+class JNInsnWrapper:
+    """Wrapper to make JN instructions compatible with Capstone's CsInsn interface."""
+
+    def __init__(self, jn_insn):
+        self._jn_insn = jn_insn
+        # Use the JNInstruction's mnemonic property for proper formatting
+        # The mnemonic includes both the operation and operands
+        full_insn = jn_insn.mnemonic
+        # Split into mnemonic and operands (e.g., "ADD R1, 0xA" -> "ADD" and "R1, 0xA")
+        parts = full_insn.split(maxsplit=1)
+        self.mnemonic = parts[0] if parts else ''
+        self.op_str = parts[1] if len(parts) > 1 else ''
+
+
+class SquirrelDisassemblerJN:
+    """JN ISA disassembler compatible with Capstone interface."""
+
+    def __init__(self, arch_str: str) -> None:
+        self.arch_str = arch_str
+
+    def disassemble(self, bytecode: bytes | str, address: int = 0x1000) -> JNInsnWrapper:  # noqa: ARG002
+        """Disassemble JN bytecode and return wrapped instruction object."""
+        # Convert bytes to hex string if needed
+        if isinstance(bytecode, bytes):
+            bytecode = bytecode.hex()
+
+        try:
+            jn_insn = decode_jn_hex_string(str(bytecode))
+            return JNInsnWrapper(jn_insn)
+        except Exception as e:
+            raise ParseInsnException(f'Failed to disassemble JN instruction: {e}') from e
 
 
 class SquirrelDisassemblerCapstone:
@@ -56,6 +90,12 @@ class SquirrelDisassemblerCapstone:
 
 class SquirrelDisassemblerZydis(SquirrelDisassemblerCapstone):
     """
-    Zydis disassembler stub - falls back to Capstone.
+    Zydis disassembler stub - falls back to Capstone for x86/x64, uses JN decoder for JN.
     Original squirrel used Zydis for x86/x64, but Capstone works fine.
     """
+
+    def __new__(cls, arch_str: str):  # type: ignore[no-untyped-def]
+        """Create appropriate disassembler based on architecture."""
+        if arch_str == 'JN':
+            return SquirrelDisassemblerJN(arch_str)
+        return super().__new__(cls)
