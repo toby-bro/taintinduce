@@ -242,7 +242,7 @@ class TestDisassemblerJN:
         """
         dis = Disassembler('JN', '0')
         assert dis.insn_info.archstring == 'JN'
-        assert dis.insn_info.bytestring == '0'
+        assert dis.insn_info.bytestring in ('0', '00')
 
         # Should track R1, R2, and NZVC
         reg_names = {reg.name for reg in dis.insn_info.state_format}

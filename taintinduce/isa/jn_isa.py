@@ -158,7 +158,7 @@ def decode_hex_string(hex_str: str) -> JNInstruction:
 
     # If we have 2 hex chars and the opcode is even (register variant), and the second is not 0,
     # convert to odd (immediate variant) to match user intent and print a warning.
-    if len(data_list) == 2 and (data_list[0] & 1) == 0 and data_list[1] != 0:
+    if len(data_list) == 2 and (data_list[0] & 1) == 0 and (data_list[1] * data_list[0] != 0):
         logger.warning(
             f'Interpreting instruction {hex_str} as immediate variant instead of register variant.',
         )
