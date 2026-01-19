@@ -1336,5 +1336,174 @@ class TestJNNZCVFlags:
             )
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+class TestJNSubInstruction:
+    """Test SUB instruction behavior and taint propagation."""
+
+    def test_sub_r1_r2_basic_subtraction(self) -> None:
+        """Test SUB R1, R2 performs correct subtraction."""
+        cpu = JNCpu()
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0x7, JN_REG_R2(): 0x3, JN_REG_NZCV(): 0}))
+
+        bytecode = jn_hex_to_bytes('8')  # SUB R1, R2
+        _, state_after = cpu.execute(bytecode)
+
+        # 7 - 3 = 4
+        assert state_after[JN_REG_R1()] == 0x4
+        assert state_after[JN_REG_R2()] == 0x3  # R2 unchanged
+
+    def test_sub_r1_imm_basic_subtraction(self) -> None:
+        """Test SUB R1, imm4 performs correct subtraction."""
+        cpu = JNCpu()
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0xA, JN_REG_R2(): 0x0, JN_REG_NZCV(): 0}))
+
+        bytecode = jn_hex_to_bytes('95')  # SUB R1, #5
+        _, state_after = cpu.execute(bytecode)
+
+        # 10 - 5 = 5
+        assert state_after[JN_REG_R1()] == 0x5
+
+    def test_sub_underflow(self) -> None:
+        """Test SUB with underflow wraps correctly."""
+        cpu = JNCpu()
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0x2, JN_REG_R2(): 0x5, JN_REG_NZCV(): 0}))
+
+        bytecode = jn_hex_to_bytes('8')  # SUB R1, R2
+        _, state_after = cpu.execute(bytecode)
+
+        # 2 - 5 = -3, which wraps to 13 (0xD) in 4-bit unsigned
+        assert state_after[JN_REG_R1()] == 0xD
+
+    def test_sub_zero_flag(self) -> None:
+        """Test SUB sets Zero flag when result is 0."""
+        cpu = JNCpu()
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0x5, JN_REG_R2(): 0x5, JN_REG_NZCV(): 0}))
+
+        bytecode = jn_hex_to_bytes('8')  # SUB R1, R2
+        _, state_after = cpu.execute(bytecode)
+
+        # 5 - 5 = 0, Z flag should be set
+        z_flag = (state_after[JN_REG_NZCV()] >> 2) & 1
+        assert z_flag == 1
+
+    def test_sub_negative_flag(self) -> None:
+        """Test SUB sets Negative flag when result is negative (bit 3 set)."""
+        cpu = JNCpu()
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0x3, JN_REG_R2(): 0x7, JN_REG_NZCV(): 0}))
+
+        bytecode = jn_hex_to_bytes('8')  # SUB R1, R2
+        _, state_after = cpu.execute(bytecode)
+
+        # 3 - 7 = -4, which is 0xC (1100 in binary) in 4-bit
+        # Bit 3 is 1, so N flag should be set
+        result = state_after[JN_REG_R1()]
+        assert result == 0xC
+        n_flag = (state_after[JN_REG_NZCV()] >> 3) & 1
+        assert n_flag == 1
+
+    def test_sub_carry_flag_no_borrow(self) -> None:
+        """Test SUB sets Carry flag when no borrow (operand1 >= operand2)."""
+        cpu = JNCpu()
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0x7, JN_REG_R2(): 0x3, JN_REG_NZCV(): 0}))
+
+        bytecode = jn_hex_to_bytes('8')  # SUB R1, R2
+        _, state_after = cpu.execute(bytecode)
+
+        # 7 - 3 = 4, no borrow, C should be 1
+        c_flag = (state_after[JN_REG_NZCV()] >> 1) & 1
+        assert c_flag == 1
+
+    def test_sub_carry_flag_with_borrow(self) -> None:
+        """Test SUB clears Carry flag when borrow occurs (operand1 < operand2)."""
+        cpu = JNCpu()
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0x3, JN_REG_R2(): 0x7, JN_REG_NZCV(): 0}))
+
+        bytecode = jn_hex_to_bytes('8')  # SUB R1, R2
+        _, state_after = cpu.execute(bytecode)
+
+        # 3 - 7, borrow occurs, C should be 0
+        c_flag = (state_after[JN_REG_NZCV()] >> 1) & 1
+        assert c_flag == 0
+
+    def test_sub_overflow_flag(self) -> None:
+        """Test SUB sets Overflow flag on signed overflow."""
+        cpu = JNCpu()
+        # Use signed interpretation: 0x1 = +1, 0x8 = -8 (in 4-bit 2's complement)
+        cpu.set_cpu_state(CpuRegisterMap({JN_REG_R1(): 0x1, JN_REG_R2(): 0x8, JN_REG_NZCV(): 0}))
+
+        bytecode = jn_hex_to_bytes('8')  # SUB R1, R2
+        _, state_after = cpu.execute(bytecode)
+
+        # +1 - (-8) = +9, but +9 can't be represented in 4-bit signed
+        # Result wraps to 0x9 (1001), which is -7 in 2's complement
+        # Overflow should be set because different sign operands produced wrong sign result
+        v_flag = state_after[JN_REG_NZCV()] & 1
+        assert v_flag == 1
+
+    def test_sub_taint_propagation(self, jn_state_format, inference_engine):
+        """Test that SUB R1, R2 correctly propagates taint from both operands."""
+        bytestring = encode_instruction(JNOpcode.SUB_R1_R2)
+        obs_engine = ObservationEngine(bytestring, 'JN', jn_state_format)
+        observations = obs_engine.observe_insn()
+
+        rule = inference_engine.infer(observations, None, obs_engine, enable_refinement=False)
+
+        # SUB should propagate taint from both R1 and R2 to result in R1
+        input_bits = set()
+        for pair in rule.pairs:
+            if isinstance(pair.output_bits, dict):
+                for input_bit in pair.output_bits:
+                    input_bits.add(input_bit)
+
+        # Should see taint from R1[0-3] and R2[4-7]
+        assert any(0 <= bit <= 3 for bit in input_bits), 'Should see R1 bits as inputs'
+        assert any(4 <= bit <= 7 for bit in input_bits), 'Should see R2 bits as inputs'
+
+    def test_sub_immediate_taint_propagation(self, jn_state_format, inference_engine):
+        """Test that SUB R1, imm propagates taint from R1 only (to R1 output).
+
+        Note: NZCV flags may show dependencies on all state bits, which is expected
+        due to how taint analysis works. We focus on R1 output bits here.
+        """
+        bytestring = encode_instruction(JNOpcode.SUB_R1_IMM, immediate=0x5)
+        obs_engine = ObservationEngine(bytestring, 'JN', jn_state_format)
+        observations = obs_engine.observe_insn()
+
+        rule = inference_engine.infer(observations, None, obs_engine, enable_refinement=False)
+
+        # Check R1 output bits specifically (bits 0-3)
+        r1_output_dependencies = set()
+        for pair in rule.pairs:
+            if isinstance(pair.output_bits, dict):
+                for input_bit, outputs in pair.output_bits.items():
+                    for output_bit in outputs:
+                        if 0 <= output_bit <= 3:  # R1 output bits
+                            r1_output_dependencies.add(input_bit)
+
+        # R1 output should depend on R1 input (bits 0-3)
+        assert any(0 <= bit <= 3 for bit in r1_output_dependencies), 'R1 output should depend on R1 inputs'
+
+        # R1 output should NOT depend on R2 (bits 4-7) for immediate variant
+        assert not any(4 <= bit <= 7 for bit in r1_output_dependencies), (
+            f'R1 output should NOT depend on R2 for SUB immediate, but found dependencies: '
+            f'{[bit for bit in r1_output_dependencies if 4 <= bit <= 7]}'
+        )
+
+    def test_sub_observation_coverage(self, jn_state_format, inference_engine):
+        """Test that SUB R1, R2 inference explains all observations."""
+        bytestring = encode_instruction(JNOpcode.SUB_R1_R2)
+        obs_engine = ObservationEngine(bytestring, 'JN', jn_state_format)
+        observations = obs_engine.observe_insn()
+
+        rule = inference_engine.infer(observations, None, obs_engine, enable_refinement=False)
+
+        # Process observations into dependencies
+        observation_dependencies = extract_observation_dependencies(observations)
+
+        # Validate that rule explains all observations
+        explained, total = validate_rule_explains_observations(rule, observation_dependencies)
+        coverage = explained / total if total > 0 else 0
+
+        assert coverage == 1.0, (
+            f'SUB R1, R2 should explain 100% of observations, but only explains {coverage:.1%} '
+            f'({explained}/{total}). Unexplained behaviors suggest inference issues.'
+        )

@@ -15,6 +15,8 @@ Instructions:
 0x5: AND R1, imm4   - R1 = R1 & imm4
 0x6: XOR R1, R2     - R1 = R1 ^ R2
 0x7: XOR R1, imm4   - R1 = R1 ^ imm4
+0x8: SUB R1, R2     - R1 = R1 - R2 (mod 16)
+0x9: SUB R1, imm4   - R1 = R1 - imm4 (mod 16)
 
 State layout (12 bits total = 3 nibbles):
   bits 0-3:   R1 (4 bits)
@@ -41,6 +43,8 @@ class JNOpcode(IntEnum):
     AND_R1_IMM = 0x5
     XOR_R1_R2 = 0x6
     XOR_R1_IMM = 0x7
+    SUB_R1_R2 = 0x8
+    SUB_R1_IMM = 0x9
 
 
 @dataclass
@@ -58,6 +62,7 @@ class JNInstruction:
             JNOpcode.OR_R1_IMM,
             JNOpcode.AND_R1_IMM,
             JNOpcode.XOR_R1_IMM,
+            JNOpcode.SUB_R1_IMM,
         ]
 
     @property
@@ -72,6 +77,8 @@ class JNInstruction:
             JNOpcode.AND_R1_IMM: f'AND R1, 0x{self.immediate:X}' if self.immediate is not None else 'AND R1, imm4',
             JNOpcode.XOR_R1_R2: 'XOR R1, R2',
             JNOpcode.XOR_R1_IMM: f'XOR R1, 0x{self.immediate:X}' if self.immediate is not None else 'XOR R1, imm4',
+            JNOpcode.SUB_R1_R2: 'SUB R1, R2',
+            JNOpcode.SUB_R1_IMM: f'SUB R1, 0x{self.immediate:X}' if self.immediate is not None else 'SUB R1, imm4',
         }
         return mnemonics[self.opcode]
 
@@ -94,7 +101,13 @@ class JNInstruction:
         immediate = None
 
         # Check if this opcode requires an immediate
-        if opcode in [JNOpcode.ADD_R1_IMM, JNOpcode.OR_R1_IMM, JNOpcode.AND_R1_IMM, JNOpcode.XOR_R1_IMM]:
+        if opcode in [
+            JNOpcode.ADD_R1_IMM,
+            JNOpcode.OR_R1_IMM,
+            JNOpcode.AND_R1_IMM,
+            JNOpcode.XOR_R1_IMM,
+            JNOpcode.SUB_R1_IMM,
+        ]:
             if len(data) < 2:
                 raise ValueError(f'Instruction {opcode.name} requires immediate value')
             immediate = data[1] & 0xF
@@ -102,14 +115,15 @@ class JNInstruction:
         return cls(opcode, immediate)
 
     @staticmethod
-    def compute_flags(result: int, operand1: int, operand2: int, is_add: bool) -> int:
+    def compute_flags(result: int, operand1: int, operand2: int, is_add: bool, is_sub: bool) -> int:
         """Compute NZCV flags for a 4-bit result.
 
         Args:
-            result: 4-bit result value (may have carry bit in bit 4)
+            result: 4-bit result value (may have carry bit in bit 4 for ADD, or full subtraction result for SUB)
             operand1: First operand (4 bits)
             operand2: Second operand (4 bits)
             is_add: True if operation is ADD (for C and V flags)
+            is_sub: True if operation is SUB (for C and V flags)
 
         Returns:
             4-bit NZCV flags: N=bit3, Z=bit2, C=bit1, V=bit0
@@ -122,28 +136,36 @@ class JNInstruction:
         # Z (Zero): result is zero
         z = 1 if result_4bit == 0 else 0
 
-        # C (Carry): for ADD, carry out from bit 3
+        # C (Carry): for ADD, carry out from bit 3; for SUB, no borrow (inverted)
         if is_add:
             c = 1 if (result & 0x10) != 0 else 0  # Carry from bit 3 to bit 4
+        elif is_sub:
+            # In ARM, C=1 means no borrow (operand1 >= operand2 unsigned)
+            c = 1 if operand1 >= operand2 else 0
         else:
-            c = 0  # Non-add operations don't set carry
+            c = 0  # Non-arithmetic operations don't set carry
 
-        # V (Overflow): for ADD, signed overflow in 4-bit 2's complement
-        # Overflow occurs when:
-        # - Adding two positive numbers gives negative result
-        # - Adding two negative numbers gives positive result
+        # V (Overflow): for ADD/SUB, signed overflow in 4-bit 2's complement
+        # ADD overflow: same sign operands produce different sign result
+        # SUB overflow: different sign operands produce unexpected sign result
         if is_add:
             sign_op1 = (operand1 & 0x8) != 0
             sign_op2 = (operand2 & 0x8) != 0
             sign_result = (result_4bit & 0x8) != 0
             v = 1 if (sign_op1 == sign_op2) and (sign_op1 != sign_result) else 0
+        elif is_sub:
+            sign_op1 = (operand1 & 0x8) != 0
+            sign_op2 = (operand2 & 0x8) != 0
+            sign_result = (result_4bit & 0x8) != 0
+            # SUB overflow: operands have different signs and result has wrong sign
+            v = 1 if (sign_op1 != sign_op2) and (sign_op1 != sign_result) else 0
         else:
-            v = 0  # Non-add operations don't set overflow
+            v = 0  # Non-arithmetic operations don't set overflow
 
         # Pack NZCV into 4 bits: NZCV from bit 3 to bit 0
         return (n << 3) | (z << 2) | (c << 1) | v
 
-    def execute(self, r1: int, r2: int) -> tuple[int, int]:
+    def execute(self, r1: int, r2: int) -> tuple[int, int]:  # noqa: C901
         """Execute the instruction and return new register values.
 
         Args:
@@ -157,27 +179,34 @@ class JNInstruction:
         r1 = r1 & 0xF
         r2 = r2 & 0xF
 
-        if self.opcode == JNOpcode.ADD_R1_R2:
-            return (r1 + r2) & 0xF, r2
-        if self.opcode == JNOpcode.ADD_R1_IMM:
-            assert self.immediate is not None
-            return (r1 + (self.immediate & 0xF)) & 0xF, r2
-        if self.opcode == JNOpcode.OR_R1_R2:
-            return r1 | r2, r2
-        if self.opcode == JNOpcode.OR_R1_IMM:
-            assert self.immediate is not None
-            return r1 | (self.immediate & 0xF), r2
-        if self.opcode == JNOpcode.AND_R1_R2:
-            return r1 & r2, r2
-        if self.opcode == JNOpcode.AND_R1_IMM:
-            assert self.immediate is not None
-            return r1 & (self.immediate & 0xF), r2
-        if self.opcode == JNOpcode.XOR_R1_R2:
-            return r1 ^ r2, r2
-        if self.opcode == JNOpcode.XOR_R1_IMM:
-            assert self.immediate is not None
-            return r1 ^ (self.immediate & 0xF), r2
-        raise ValueError(f'Unknown opcode: {self.opcode}')
+        match self.opcode:
+            case JNOpcode.ADD_R1_R2:
+                return (r1 + r2) & 0xF, r2
+            case JNOpcode.ADD_R1_IMM:
+                assert self.immediate is not None
+                return (r1 + (self.immediate & 0xF)) & 0xF, r2
+            case JNOpcode.OR_R1_R2:
+                return r1 | r2, r2
+            case JNOpcode.OR_R1_IMM:
+                assert self.immediate is not None
+                return r1 | (self.immediate & 0xF), r2
+            case JNOpcode.AND_R1_R2:
+                return r1 & r2, r2
+            case JNOpcode.AND_R1_IMM:
+                assert self.immediate is not None
+                return r1 & (self.immediate & 0xF), r2
+            case JNOpcode.XOR_R1_R2:
+                return r1 ^ r2, r2
+            case JNOpcode.XOR_R1_IMM:
+                assert self.immediate is not None
+                return r1 ^ (self.immediate & 0xF), r2
+            case JNOpcode.SUB_R1_R2:
+                return (r1 - r2) & 0xF, r2
+            case JNOpcode.SUB_R1_IMM:
+                assert self.immediate is not None
+                return (r1 - (self.immediate & 0xF)) & 0xF, r2
+            case _:
+                raise ValueError(f'Unknown opcode: {self.opcode}')
 
 
 def decode_hex_string(hex_str: str) -> JNInstruction:

@@ -98,20 +98,27 @@ class JNCpu(CPU):
         else:
             operand2 = r2
 
-        # Determine if it's an ADD operation for C and V flags
+        # Determine if it's an ADD or SUB operation for C and V flags
         is_add = instruction.opcode in [
             instruction.opcode.ADD_R1_R2,
             instruction.opcode.ADD_R1_IMM,
+        ]
+        is_sub = instruction.opcode in [
+            instruction.opcode.SUB_R1_R2,
+            instruction.opcode.SUB_R1_IMM,
         ]
 
         # Compute result with potential carry for flag computation
         if is_add:
             result_with_carry = r1 + operand2
+        elif is_sub:
+            # For SUB, we just pass the result (no need for extended computation)
+            result_with_carry = out_r1
         else:
             result_with_carry = out_r1
 
         # Compute NZCV flags
-        nzcv = instruction.compute_flags(result_with_carry, r1, operand2, is_add)
+        nzcv = instruction.compute_flags(result_with_carry, r1, operand2, is_add, is_sub)
 
         # Update current state
         self.current_state[JN_REG_R1()] = out_r1 & 0xF
