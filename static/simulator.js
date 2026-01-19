@@ -15,6 +15,7 @@ function switchInputMode(mode) {
   const btnHex = document.getElementById("btnInputHex");
 
   if (mode === "bits") {
+    // In bits mode, show register inputs and hide hex input
     bitMode.style.display = "block";
     hexMode.style.display = "none";
     btnBits.style.background = "#667eea";
@@ -22,7 +23,8 @@ function switchInputMode(mode) {
     btnHex.style.background = "#e0e0e0";
     btnHex.style.color = "#333";
   } else {
-    bitMode.style.display = "none";
+    // In hex mode, show both hex input AND register inputs (so user can see the bits being updated)
+    bitMode.style.display = "block";
     hexMode.style.display = "block";
     btnBits.style.background = "#e0e0e0";
     btnBits.style.color = "#333";
@@ -194,6 +196,8 @@ function toggleBitValue(registerName, bitIdx) {
   const currentValue = parseInt(valueEl.textContent);
   const newValue = currentValue === 0 ? 1 : 0;
   valueEl.textContent = newValue;
+  // Update hex input to reflect the change
+  updateHexFromBits();
   // Auto-trigger simulation
   runDetailedSimulation();
 }
@@ -367,6 +371,8 @@ function clearRegister(registerName) {
     );
     if (valueEl) valueEl.textContent = "0";
   }
+  // Update hex input to reflect the change
+  updateHexFromBits();
   // Auto-trigger simulation
   runDetailedSimulation();
 }
@@ -396,6 +402,8 @@ function setRegisterHex(registerName, hexValue) {
       );
       if (valueEl) valueEl.textContent = bitValue;
     }
+    // Update hex input to reflect the change
+    updateHexFromBits();
     // Auto-trigger simulation
     runDetailedSimulation();
   } catch (e) {
@@ -403,36 +411,85 @@ function setRegisterHex(registerName, hexValue) {
   }
 }
 
-function updateBitsFromHex() {
-  const hexInput = document.getElementById("input-state-hex");
-  const hexValue = hexInput.value;
+function updateHexFromBits() {
+  if (!currentRuleData || !currentRuleData.format) return;
 
-  if (!hexValue || !currentRuleData || !currentRuleData.format) return;
+  const hexInput = document.getElementById("input-state-hex");
+  if (!hexInput) return;
 
   try {
-    let value;
-    if (hexValue.startsWith("0x") || hexValue.startsWith("0X")) {
-      value = parseInt(hexValue, 16);
-    } else {
-      value = parseInt(hexValue);
-    }
-
-    // Update all register bit values
+    let value = 0n; // Use BigInt for large values
     let bitOffset = 0;
+
+    // Build the state value by concatenating all register bits
     currentRuleData.format.registers.forEach((reg) => {
       for (let bitIdx = 0; bitIdx < reg.bits; bitIdx++) {
-        const bitValue = (value >> (bitOffset + bitIdx)) & 1;
         const valueEl = document.getElementById(
           `bit-value-${reg.name}-${bitIdx}`,
         );
-        if (valueEl) valueEl.textContent = bitValue;
+        if (valueEl) {
+          const bitValue = parseInt(valueEl.textContent);
+          if (bitValue === 1) {
+            value |= 1n << BigInt(bitOffset + bitIdx);
+          }
+        }
+      }
+      bitOffset += reg.bits;
+    });
+
+    // Convert to hex string
+    hexInput.value = "0x" + value.toString(16).toUpperCase();
+  } catch (e) {
+    console.error("Error updating hex from bits:", e);
+  }
+}
+
+function updateBitsFromHex() {
+  const hexInput = document.getElementById("input-state-hex");
+  const hexValue = hexInput.value.trim();
+
+  if (!hexValue || !currentRuleData || !currentRuleData.format) return;
+
+  // Don't try to parse incomplete hex values like "0x" or empty strings
+  if (hexValue === "0x" || hexValue === "0X" || hexValue === "") return;
+
+  try {
+    let value;
+    // Parse hex or decimal value
+    if (hexValue.startsWith("0x") || hexValue.startsWith("0X")) {
+      // Remove the 0x prefix and validate hex string
+      const hexDigits = hexValue.substring(2);
+      if (!/^[0-9a-fA-F]+$/.test(hexDigits)) {
+        // Invalid hex characters, ignore silently
+        return;
+      }
+      value = BigInt(hexValue);
+    } else {
+      // Parse as decimal
+      if (!/^[0-9]+$/.test(hexValue)) {
+        // Invalid decimal, ignore silently
+        return;
+      }
+      value = BigInt(hexValue);
+    }
+
+    // Update all register bit values according to state format
+    let bitOffset = 0;
+    currentRuleData.format.registers.forEach((reg) => {
+      for (let bitIdx = 0; bitIdx < reg.bits; bitIdx++) {
+        const bitValue = (value >> BigInt(bitOffset + bitIdx)) & 1n;
+        const valueEl = document.getElementById(
+          `bit-value-${reg.name}-${bitIdx}`,
+        );
+        if (valueEl) valueEl.textContent = bitValue.toString();
       }
       bitOffset += reg.bits;
     });
     // Auto-trigger simulation
     runDetailedSimulation();
   } catch (e) {
-    // Invalid input, ignore
+    // Invalid input, ignore silently (user is still typing)
+    // console.error("Error parsing hex value:", e);
   }
 }
 
@@ -605,6 +662,9 @@ function initializeSimulator() {
   // Add keyboard event listener for edit mode
   document.addEventListener("keydown", handleKeyPress);
 
+  // Initialize hex input value
+  updateHexFromBits();
+
   // Run initial simulation to show output
   runDetailedSimulation();
 }
@@ -621,6 +681,8 @@ function handleKeyPress(event) {
     );
     if (valueEl) {
       valueEl.textContent = key;
+      // Update hex input to reflect the change
+      updateHexFromBits();
       // Auto-trigger simulation
       runDetailedSimulation();
       // Auto-advance to next bit
