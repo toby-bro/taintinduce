@@ -10,9 +10,7 @@ from typing import Optional
 import taintinduce.inference_engine.inference as inference_engine
 import taintinduce.observation_engine.observation as observation_engine
 from taintinduce.disassembler.insn_info import Disassembler, InsnInfo
-from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
-from taintinduce.isa.register import Register
-from taintinduce.isa.x86_registers import X86_REG_EFLAGS
+from taintinduce.isa.register import CondRegister, Register
 from taintinduce.rules.rules import Rule, TaintRule
 
 # Replaced squirrel imports with our own serialization
@@ -77,7 +75,7 @@ def gen_obs(
 
 def infer(
     observations: list[Observation],
-    cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+    cond_reg: CondRegister,
     obs_engine: observation_engine.ObservationEngine | None = None,
     enable_refinement: bool = True,
 ) -> Rule:

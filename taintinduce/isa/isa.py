@@ -2,9 +2,7 @@ from abc import ABC, abstractmethod
 
 from taintinduce.serialization import SerializableMixin
 
-from .arm64_registers import ARM64_REG_NZCV
-from .register import Register
-from .x86_registers import X86_REG_EFLAGS
+from .register import CondRegister, Register
 
 
 class ISA(ABC, SerializableMixin):
@@ -18,7 +16,7 @@ class ISA(ABC, SerializableMixin):
     pc_reg: Register
     flag_reg: list[Register]
     state_reg: list[Register]
-    cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV
+    cond_reg: CondRegister
     uc_arch: tuple[int, int]
     ks_arch: tuple[int, int]
     cs_arch: tuple[int, int]

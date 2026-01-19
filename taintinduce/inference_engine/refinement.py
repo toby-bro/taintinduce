@@ -10,9 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from taintinduce.observation_engine.observation import ObservationEngine
 
-from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
-from taintinduce.isa.register import Register
-from taintinduce.isa.x86_registers import X86_REG_EFLAGS
+from taintinduce.isa.register import CondRegister, Register
 from taintinduce.rules.conditions import TaintCondition
 from taintinduce.state.state import Observation, State
 from taintinduce.types import BitPosition
@@ -57,7 +55,7 @@ class ConditionRefiner:
         observation_engine: 'ObservationEngine',
         all_observations: list[Observation],
         state_format: list[Register],
-        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        cond_reg: CondRegister,
     ) -> TaintCondition:
         """Refine a specific condition by generating targeted observations.
 

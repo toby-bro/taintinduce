@@ -6,9 +6,7 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from taintinduce.observation_engine.observation import ObservationEngine
 
-from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
-from taintinduce.isa.register import Register
-from taintinduce.isa.x86_registers import X86_REG_EFLAGS
+from taintinduce.isa.register import CondRegister, Register
 from taintinduce.rules.conditions import TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair
 from taintinduce.state.state import Observation, State
@@ -42,7 +40,7 @@ def process_output_partition(
     output_set: frozenset[BitPosition],
     partitions: dict[frozenset[BitPosition], set[State]],
     state_format: list[Register],
-    cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+    cond_reg: CondRegister,
     mutated_input_bit: BitPosition,
     enable_refinement: bool,
     observation_engine: Optional['ObservationEngine'],
@@ -101,7 +99,7 @@ def handle_multiple_partitions(
     mutated_input_bit: BitPosition,
     observation_dependencies: list[ObservationDependency],
     state_format: list[Register],
-    cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+    cond_reg: CondRegister,
     enable_refinement: bool,
     observation_engine: Optional['ObservationEngine'],
     all_observations: Optional[list[Observation]],

@@ -11,8 +11,7 @@ from taintinduce.disassembler.exceptions import (
 from taintinduce.isa import amd64, arm64, x86
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
 from taintinduce.isa.isa import ISA
-from taintinduce.isa.register import Register
-from taintinduce.isa.x86_registers import X86_REG_EFLAGS
+from taintinduce.isa.register import CondRegister, Register
 from taintinduce.serialization import SerializableMixin
 
 
@@ -22,7 +21,7 @@ class InsnInfo(SerializableMixin):
     archstring: str
     bytestring: str
     state_format: list[Register]
-    cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV
+    cond_reg: CondRegister
 
     def __init__(
         self,
@@ -30,7 +29,7 @@ class InsnInfo(SerializableMixin):
         archstring: Optional[str] = None,
         bytestring: Optional[str] = None,
         state_format: Optional[list[Register]] = None,
-        cond_reg: Optional[X86_REG_EFLAGS | ARM64_REG_NZCV] = None,
+        cond_reg: Optional[CondRegister] = None,
         repr_str: Optional[str] = None,
     ) -> None:
         if repr_str:

@@ -28,3 +28,11 @@ class Register(ABC, SerializableMixin):
 
     def __ne__(self, other: object) -> bool:
         return not (self == other)
+
+
+class CondRegister(Register):
+    """Abstract base class for condition flag registers."""
+
+    @abstractmethod
+    def __init__(self, repr_str: Optional[str] = None) -> None:
+        pass

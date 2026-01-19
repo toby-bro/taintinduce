@@ -1,6 +1,6 @@
 import unicorn.arm64_const as uc_arm64
 
-from .register import Register
+from .register import CondRegister, Register
 
 
 class ARM64_MEM_READ1(Register):
@@ -1103,7 +1103,7 @@ class ARM64_REG_LR(Register):
         self.address = None
 
 
-class ARM64_REG_NZCV(Register):
+class ARM64_REG_NZCV(CondRegister):
     def __init__(self):
         self.name = 'NZCV'
         self.uc_const = uc_arm64.UC_ARM64_REG_NZCV

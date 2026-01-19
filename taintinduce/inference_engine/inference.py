@@ -8,9 +8,7 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from taintinduce.observation_engine.observation import ObservationEngine
 
-from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
-from taintinduce.isa.register import Register
-from taintinduce.isa.x86_registers import X86_REG_EFLAGS
+from taintinduce.isa.register import CondRegister, Register
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, Rule
 from taintinduce.state.state import Observation, State
@@ -96,7 +94,7 @@ class InferenceEngine(object):
     def infer(
         self,
         observations: list[Observation],
-        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        cond_reg: CondRegister,
         observation_engine: Optional['ObservationEngine'] = None,
         enable_refinement: bool = False,
     ) -> Rule:
@@ -156,7 +154,7 @@ class InferenceEngine(object):
     def infer_flow_conditions(
         self,
         observations: list[Observation],
-        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        cond_reg: CondRegister,
         state_format: list[Register],
         enable_refinement: bool = False,
         observation_engine: Optional['ObservationEngine'] = None,
@@ -247,7 +245,7 @@ class InferenceEngine(object):
         output_set: frozenset[BitPosition],
         partitions: dict[frozenset[BitPosition], set[State]],
         state_format: list[Register],
-        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        cond_reg: CondRegister,
         mutated_input_bit: BitPosition,
         enable_refinement: bool,
         observation_engine: Optional['ObservationEngine'],
@@ -270,7 +268,7 @@ class InferenceEngine(object):
         mutated_input_bit: BitPosition,
         observation_dependencies: list[ObservationDependency],
         state_format: list[Register],
-        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        cond_reg: CondRegister,
         enable_refinement: bool,
         observation_engine: Optional['ObservationEngine'],
         all_observations: Optional[list[Observation]],
@@ -288,7 +286,7 @@ class InferenceEngine(object):
 
     def infer_conditions_for_dataflows(
         self,
-        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        cond_reg: CondRegister,
         state_format: list[Register],
         observation_dependencies: list[ObservationDependency],
         possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],

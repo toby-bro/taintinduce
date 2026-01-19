@@ -1,6 +1,6 @@
 import unicorn.x86_const as uc_x86
 
-from .register import Register
+from .register import CondRegister, Register
 
 
 class X86_REG_AH(Register):
@@ -383,7 +383,7 @@ class X86_REG_EDX(Register):
         self.address = None
 
 
-class X86_REG_EFLAGS(Register):
+class X86_REG_EFLAGS(CondRegister):
     def __init__(self):
         self.name = 'EFLAGS'
         self.uc_const = uc_x86.UC_X86_REG_EFLAGS
@@ -393,7 +393,7 @@ class X86_REG_EFLAGS(Register):
         self.address = None
 
 
-class X86_REG_RFLAGS(Register):
+class X86_REG_RFLAGS(CondRegister):
     def __init__(self):
         self.name = 'EFLAGS'
         self.uc_const = uc_x86.UC_X86_REG_EFLAGS

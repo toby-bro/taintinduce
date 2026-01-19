@@ -8,9 +8,7 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from taintinduce.observation_engine.observation import ObservationEngine
 
-from taintinduce.isa.arm64_registers import ARM64_REG_NZCV
-from taintinduce.isa.register import Register
-from taintinduce.isa.x86_registers import X86_REG_EFLAGS
+from taintinduce.isa.register import CondRegister, Register
 from taintinduce.rules.conditions import TaintCondition
 from taintinduce.rules.rule_utils import espresso2cond, shift_espresso
 from taintinduce.state.state import Observation, State
@@ -57,7 +55,7 @@ class ConditionGenerator:
         aggreeing_partition: set[State],
         opposing_partition: set[State],
         state_format: list[Register],
-        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        cond_reg: CondRegister,
         use_full_state: bool = True,
     ) -> Optional[TaintCondition]:
         """Generate condition that separates two state partitions.
@@ -141,7 +139,7 @@ class ConditionGenerator:
         observation_engine: 'ObservationEngine',
         all_observations: list[Observation],
         state_format: list[Register],
-        cond_reg: X86_REG_EFLAGS | ARM64_REG_NZCV,
+        cond_reg: CondRegister,
     ) -> TaintCondition:
         """Refine a specific condition by generating targeted observations.
 
