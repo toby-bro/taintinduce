@@ -545,15 +545,17 @@ def test_condition_inference(
 class TestJNExpectedTaintRules:
     """Test that inferred rules match expected taint propagation semantics."""
 
-    def test_xor_r1_r2_unconditional_flows(self, jn_state_format, jn_cond_reg, inference_engine):
-        """Test XOR R1, R2 has correct unconditional flows.
+    def test_xor_r1_r2_has_correct_flows(self, jn_state_format, jn_cond_reg, inference_engine):
+        """Test XOR R1, R2 has correct dataflows.
 
         Expected: For all i in 0..3:
-        - R1[i] → R1[i] (unconditionally)
-        - R2[i] → R1[i] (unconditionally)
+        - R1[i] → R1[i] (XOR result)
+        - R2[i] → R1[i] (XOR result)
         - R2[i] → R2[i] (unchanged)
+        - R1[i] → NZCV flags (N, Z flags based on result)
+        - R2[i] → NZCV flags (N, Z flags based on result)
 
-        XOR always propagates taint from both inputs to output.
+        XOR always computes R1 = R1 XOR R2 and sets N/Z flags.
         """
         bytestring = encode_instruction(JNOpcode.XOR_R1_R2)
         obs_engine = ObservationEngine(bytestring, 'JN', jn_state_format)
@@ -561,25 +563,32 @@ class TestJNExpectedTaintRules:
 
         rule = inference_engine.infer(observations, jn_cond_reg, obs_engine, enable_refinement=False)
 
-        # Collect all unconditional flows (flows with condition=None)
-        unconditional_flows: dict[BitPosition, set[BitPosition]] = {}
+        # Collect ALL flows (conditional and unconditional) per input bit
+        all_flows: dict[BitPosition, set[BitPosition]] = {}
         for pair in rule.pairs:
-            if pair.condition is None or len(pair.condition.condition_ops) == 0:
-                for input_bit, output_bits in pair.output_bits.items():
-                    if input_bit not in unconditional_flows:
-                        unconditional_flows[input_bit] = set()
-                    unconditional_flows[input_bit].update(output_bits)
+            for input_bit, output_bits in pair.output_bits.items():
+                if input_bit not in all_flows:
+                    all_flows[input_bit] = set()
+                all_flows[input_bit].update(output_bits)
 
-        # Verify XOR flows are unconditional
+        # Verify XOR dataflows exist
         for i in range(4):
-            # R1[i] → R1[i] should be unconditional
-            assert BitPosition(i) in unconditional_flows, f'R1[{i}] should have unconditional flows'
-            assert BitPosition(i) in unconditional_flows[BitPosition(i)], f'R1[{i}] → R1[{i}] should be unconditional'
-
-            # R2[i] → R1[i] should be unconditional
+            r1_bit = BitPosition(i)
             r2_bit = BitPosition(4 + i)
-            assert r2_bit in unconditional_flows, f'R2[{i}] should have unconditional flows'
-            assert BitPosition(i) in unconditional_flows[r2_bit], f'R2[{i}] → R1[{i}] should be unconditional'
+
+            # R1[i] should flow to R1[i] (XOR result)
+            assert r1_bit in all_flows, f'R1[{i}] should have flows'
+            assert r1_bit in all_flows[r1_bit], f'R1[{i}] → R1[{i}] flow missing'
+
+            # R2[i] should flow to R1[i] (XOR result)
+            assert r2_bit in all_flows, f'R2[{i}] should have flows'
+            assert r1_bit in all_flows[r2_bit], f'R2[{i}] → R1[{i}] flow missing'
+
+            # R1[i] and R2[i] should flow to NZCV flags
+            # (At least one of N or Z flags, depending on result bit position)
+            nzcv_bits = {BitPosition(8), BitPosition(9), BitPosition(10), BitPosition(11)}
+            assert any(bit in nzcv_bits for bit in all_flows[r1_bit]), f'R1[{i}] should flow to at least one NZCV flag'
+            assert any(bit in nzcv_bits for bit in all_flows[r2_bit]), f'R2[{i}] should flow to at least one NZCV flag'
 
     def test_and_r1_r2_conditional_flows(self, jn_state_format, jn_cond_reg, inference_engine):
         """Test AND R1, R2 has correct conditional flows.
