@@ -26,6 +26,23 @@ from taintinduce.types import CpuRegisterMap
 from .strategy import SeedVariation, Strategy
 
 
+def decode_instruction_bytes(bytestring: str, archstring: str) -> bytes:
+    """Decode instruction bytestring to bytes based on architecture.
+
+    Args:
+        bytestring: Hex string representation of instruction
+        archstring: Architecture name (X86, AMD64, ARM64, JN, etc.)
+
+    Returns:
+        Decoded bytes for the instruction
+    """
+    # For JN ISA, each hex char is a nibble (4 bits) - convert directly to bytes
+    if archstring == 'JN':
+        return bytes([int(c, 16) for c in bytestring])
+    # For other architectures, pairs of hex chars form bytes
+    return bytes.fromhex(bytestring)
+
+
 class ConditionTargetedStrategy(Strategy):
     """Strategy that generates systematic values to validate condition bits.
 
@@ -231,7 +248,7 @@ class ObservationEngine(object):
         """
 
         cpu = self.cpu
-        bytecode = bytes.fromhex(bytestring)
+        bytecode = decode_instruction_bytes(bytestring, archstring)
         seed_in, seed_out = seed_io
         seed_state = regs2bits(seed_in, state_format)
         result_state = regs2bits(seed_out, state_format)
@@ -338,8 +355,7 @@ class ObservationEngine(object):
         total_states = 2**total_bits
 
         seed_states: list[tuple[CpuRegisterMap, CpuRegisterMap]] = []
-        bytecode = bytes.fromhex(bytestring)
-
+        bytecode = decode_instruction_bytes(bytestring, archstring)
         cpu = CPUFactory.create_cpu(archstring)
 
         desc = f'Generating exhaustive seeds ({total_states} states)'
@@ -366,7 +382,7 @@ class ObservationEngine(object):
     def _gen_seed_io(
         self,
         bytestring: str,
-        archstring: str,  # noqa: ARG002
+        archstring: str,
         seed_in: CpuRegisterMap,
         num_tries: int = 255,
     ) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:
@@ -385,7 +401,7 @@ class ObservationEngine(object):
         """
 
         cpu = self.cpu
-        bytecode = bytes.fromhex(bytestring)
+        bytecode = decode_instruction_bytes(bytestring, archstring)
 
         for x in range(num_tries):
             try:
@@ -405,7 +421,7 @@ class ObservationEngine(object):
     def _gen_random_seed_io(
         self,
         bytestring: str,
-        archstring: str,  # noqa: ARG002
+        archstring: str,
         seed_variation: SeedVariation,
         num_tries: int = 255,
     ) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:
@@ -424,7 +440,7 @@ class ObservationEngine(object):
         """
 
         cpu = self.cpu
-        bytecode = bytes.fromhex(bytestring)
+        bytecode = decode_instruction_bytes(bytestring, archstring)
         regs2mod, vals2mod = seed_variation.registers, seed_variation.values
 
         for x in range(num_tries):
