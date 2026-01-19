@@ -410,11 +410,12 @@ def _build_cpu_state(register_values: dict[str, dict[int, int]], rule: TaintRule
     return input_cpu_state
 
 
-def _extract_output_register_values(output_cpu_state: CpuRegisterMap, rule: TaintRule) -> dict[str, dict[int, int]]:
+def _extract_output_register_values(output_cpu_state: CpuRegisterMap) -> dict[str, dict[int, int]]:
     """Extract output register values as bit dict."""
     output_register_values: dict[str, dict[int, int]] = {}
-    for reg in rule.format.registers:
-        reg_value = output_cpu_state[reg]
+    # Extract all registers from the CPU state (not just those in rule.format)
+    # This ensures we return values for all registers the CPU tracks
+    for reg, reg_value in output_cpu_state.items():
         output_register_values[reg.name] = {}
         for bit_idx in range(reg.bits):
             output_register_values[reg.name][bit_idx] = (reg_value >> bit_idx) & 1
@@ -431,7 +432,7 @@ def _execute_instruction(
     cpu = CPUFactory.create_cpu(rule.format.arch)
     cpu.set_cpu_state(input_cpu_state)
     _, output_cpu_state = cpu.execute(bytecode)
-    return _extract_output_register_values(output_cpu_state, rule)
+    return _extract_output_register_values(output_cpu_state)
 
 
 def _get_output_register_values(
@@ -444,7 +445,11 @@ def _get_output_register_values(
 
     if rule.bytestring:
         try:
-            bytecode = bytes.fromhex(rule.bytestring)
+            # Pad hex string to even length (e.g., "6" -> "60")
+            hex_str = rule.bytestring
+            if len(hex_str) % 2 == 1:
+                hex_str = hex_str + '0'
+            bytecode = bytes.fromhex(hex_str)
             output_register_values = _execute_instruction(register_values, bytecode, rule)
         except Exception:
             # If execution fails, try extracting from filename as fallback
@@ -452,6 +457,9 @@ def _get_output_register_values(
                 try:
                     filename = Path(rule_path).stem
                     bytestring = filename.split('_')[0]
+                    # Pad hex string to even length (e.g., "6" -> "60")
+                    if len(bytestring) % 2 == 1:
+                        bytestring = bytestring + '0'  # Append 0, not prepend
                     bytecode = bytes.fromhex(bytestring)
                     output_register_values = _execute_instruction(register_values, bytecode, rule)
                 except Exception as e:
