@@ -274,8 +274,8 @@ def get_rule_data():
     )
 
 
-@app.route('/api/simulate', methods=['POST'])
-def simulate():
+@app.route('/api/taint', methods=['POST'])
+def taint():
     """API endpoint to simulate taint propagation for a given input state."""
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400

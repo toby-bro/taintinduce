@@ -127,7 +127,7 @@ async function findMatchingConditions() {
 
   const inputStateHex = "0x" + stateValue.toString(16).toUpperCase();
 
-  const response = await fetch("/api/simulate", {
+  const response = await fetch("/api/taint", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ input_state: inputStateHex }),
@@ -153,7 +153,7 @@ async function findMatchingConditions() {
 
   results.matching_pairs.forEach((pair) => {
     const formattedCondition = formatConditionText(pair.condition_text, format);
-    
+
     // Get the actual pair data from currentRuleData to access all dataflows
     const pairData = currentRuleData.pairs[pair.pair_index];
     const dataflows = pairData.dataflow || [];
@@ -180,16 +180,20 @@ async function findMatchingConditions() {
     html += `<div style="margin-top: 10px;">
                     <strong>Dataflows (${dataflows.length} total):</strong>
                     <div style="max-height: 400px; overflow-y: auto; margin-top: 5px; border: 1px solid #e0e0e0; border-radius: 4px; padding: 8px; background: #fafafa;">`;
-    
+
     if (dataflows.length > 0) {
       dataflows.forEach((flow) => {
         // Each flow has input_bits (array) and output_bit (single bit object)
         const inputBits = flow.input_bits || [];
         const outputBit = flow.output_bit;
-        
-        const inputNames = inputBits.map(bit => formatBitPosition(bit)).join(', ') || '<span style="color: #999;">no inputs</span>';
-        const outputName = outputBit ? formatBitPosition(outputBit) : '<span style="color: #999;">no output</span>';
-        
+
+        const inputNames =
+          inputBits.map((bit) => formatBitPosition(bit)).join(", ") ||
+          '<span style="color: #999;">no inputs</span>';
+        const outputName = outputBit
+          ? formatBitPosition(outputBit)
+          : '<span style="color: #999;">no output</span>';
+
         html += `<div class="flow-item" style="padding: 4px 0; border-bottom: 1px solid #eee; font-family: monospace; font-size: 12px;">
                    <span style="color: #28a745;">${inputNames}</span> → <span style="color: #dc3545;">${outputName}</span>
                  </div>`;
@@ -197,7 +201,7 @@ async function findMatchingConditions() {
     } else {
       html += `<div style="color: #999; font-style: italic; padding: 8px;">No dataflows</div>`;
     }
-    
+
     html += `</div>
                 </div>
             </div>
