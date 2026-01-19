@@ -6,12 +6,16 @@ taint propagation rules with data-dependent conditions.
 
 from collections import defaultdict
 from typing import Optional
-from unittest.mock import Mock, patch
 
 import pytest
 
+from taintinduce.inference_engine import observation_processor
 from taintinduce.inference_engine.inference import InferenceEngine
-from taintinduce.inference_engine.logic import Espresso, EspressoException, NonOrthogonalException
+from taintinduce.inference_engine.logic import (
+    Espresso,
+    EspressoException,
+    NonOrthogonalException,
+)
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EFLAGS
 from taintinduce.rules.conditions import LogicType, TaintCondition
@@ -25,10 +29,10 @@ from taintinduce.types import BitPosition, Dataflow, MutatedInputStates, Observa
 
 
 @pytest.fixture
-def mock_espresso():
+def mock_espresso(mocker):
     """Create a mock Espresso instance."""
-    espresso = Mock(spec=Espresso)
-    espresso.minimize = Mock(return_value=frozenset([(0xFF, 0x01)]))
+    espresso = mocker.Mock(spec=Espresso)
+    espresso.minimize = mocker.Mock(return_value=frozenset([(0xFF, 0x01)]))
     return espresso
 
 
@@ -36,32 +40,32 @@ def mock_espresso():
 def inference_engine(mock_espresso):
     """Create an InferenceEngine with mocked Espresso."""
     engine = InferenceEngine()
-    engine.espresso = mock_espresso
+    engine.condition_generator.espresso = mock_espresso
     return engine
 
 
 @pytest.fixture
-def mock_register():
+def mock_register(mocker):
     """Create a mock Register."""
-    reg = Mock(spec=Register)
+    reg = mocker.Mock(spec=Register)
     reg.name = 'EAX'
     reg.bits = 32
     return reg
 
 
 @pytest.fixture
-def mock_eflags():
+def mock_eflags(mocker):
     """Create a mock EFLAGS register."""
-    eflags = Mock(spec=X86_REG_EFLAGS)
+    eflags = mocker.Mock(spec=X86_REG_EFLAGS)
     eflags.name = 'EFLAGS'
     eflags.bits = 32
     return eflags
 
 
 @pytest.fixture
-def mock_eax():
+def mock_eax(mocker):
     """Create a mock EAX register."""
-    eax = Mock(spec=X86_REG_EAX)
+    eax = mocker.Mock(spec=X86_REG_EAX)
     eax.name = 'EAX'
     eax.bits = 32
     return eax
@@ -121,8 +125,8 @@ class TestInferenceEngineInit:
     def test_init_creates_espresso(self):
         """Test that __init__ creates an Espresso instance."""
         engine = InferenceEngine()
-        assert hasattr(engine, 'espresso')
-        assert isinstance(engine.espresso, Espresso)
+        assert hasattr(engine.condition_generator, 'espresso')
+        assert isinstance(engine.condition_generator.espresso, Espresso)
 
 
 # ============================================================================
@@ -136,73 +140,83 @@ class TestInfer:
     def test_infer_with_empty_observations_raises_exception(self, inference_engine, mock_eflags):
         """Test that infer raises exception with empty observations."""
         with pytest.raises(Exception, match='No observations to infer from'):
-            inference_engine.infer([], mock_eflags)
+            inference_engine.infer([], mock_eflags, observation_engine=None, enable_refinement=False)
 
-    def test_infer_with_none_state_format_raises_exception(self, inference_engine, mock_eflags):
+    def test_infer_with_none_state_format_raises_exception(self, inference_engine, mock_eflags, mocker):
         """Test that infer raises exception when state_format is None."""
-        obs = Mock(spec=Observation)
+        obs = mocker.Mock(spec=Observation)
         obs.state_format = None
 
         with pytest.raises(Exception, match='State format is None'):
-            inference_engine.infer([obs], mock_eflags)
+            inference_engine.infer([obs], mock_eflags, observation_engine=None, enable_refinement=False)
 
-    def test_infer_returns_rule(self, inference_engine, simple_observation, mock_eflags):
+    def test_infer_returns_rule(self, inference_engine, simple_observation, mock_eflags, mocker):
         """Test that infer returns a Rule object."""
-        with patch.object(inference_engine, 'infer_flow_conditions') as mock_infer_flow:
-            # Return dict with: condition_set -> (ordered_pairs, dataflow_set)
-            mock_cond = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
-            mock_pair = ConditionDataflowPair(
-                condition=mock_cond,
-                output_bits=frozenset([BitPosition(0)]),
-            )
-            dataflow_set: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
-            dataflow_set[BitPosition(0)] = {frozenset([BitPosition(0)])}
+        mock_infer_flow = mocker.patch.object(inference_engine, 'infer_flow_conditions')
+        # Return dict with: condition_set -> (ordered_pairs, dataflow_set)
+        mock_cond = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
+        mock_pair = ConditionDataflowPair(
+            condition=mock_cond,
+            output_bits=frozenset([BitPosition(0)]),
+        )
+        dataflow_set: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
+        dataflow_set[BitPosition(0)] = {frozenset([BitPosition(0)])}
 
-            mock_dict: dict[
-                frozenset[Optional[TaintCondition]],
-                tuple[list[ConditionDataflowPair], defaultdict[BitPosition, set[frozenset[BitPosition]]]],
-            ] = {}
-            mock_dict[frozenset([mock_cond])] = ([mock_pair], dataflow_set)
-            mock_infer_flow.return_value = mock_dict
+        mock_dict: dict[
+            frozenset[Optional[TaintCondition]],
+            tuple[list[ConditionDataflowPair], defaultdict[BitPosition, set[frozenset[BitPosition]]]],
+        ] = {}
+        mock_dict[frozenset([mock_cond])] = ([mock_pair], dataflow_set)
+        mock_infer_flow.return_value = [([mock_pair], dataflow_set)]
 
-            result = inference_engine.infer([simple_observation], mock_eflags)
+        result = inference_engine.infer(
+            [simple_observation],
+            mock_eflags,
+            observation_engine=None,
+            enable_refinement=False,
+        )
 
-            assert isinstance(result, Rule)
-            assert result.state_format == simple_observation.state_format
+        assert isinstance(result, Rule)
+        assert result.state_format == simple_observation.state_format
 
-    def test_infer_calls_infer_flow_conditions(self, inference_engine, simple_observation, mock_eflags):
+    def test_infer_calls_infer_flow_conditions(self, inference_engine, simple_observation, mock_eflags, mocker):
         """Test that infer calls infer_flow_conditions with correct arguments."""
-        with patch.object(inference_engine, 'infer_flow_conditions') as mock_infer_flow:
-            # Return dict with: condition_set -> (ordered_pairs, dataflow_set)
-            mock_cond = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
-            mock_pair = ConditionDataflowPair(
-                condition=mock_cond,
-                output_bits=frozenset([BitPosition(0)]),
-            )
-            dataflow_set: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
-            dataflow_set[BitPosition(0)] = {frozenset([BitPosition(0)])}
+        mock_infer_flow = mocker.patch.object(inference_engine, 'infer_flow_conditions')
+        # Return dict with: condition_set -> (ordered_pairs, dataflow_set)
+        mock_cond = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
+        mock_pair = ConditionDataflowPair(
+            condition=mock_cond,
+            output_bits=frozenset([BitPosition(0)]),
+        )
+        dataflow_set: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
+        dataflow_set[BitPosition(0)] = {frozenset([BitPosition(0)])}
 
-            mock_dict: dict[
-                frozenset[Optional[TaintCondition]],
-                tuple[list[ConditionDataflowPair], defaultdict[BitPosition, set[frozenset[BitPosition]]]],
-            ] = {}
-            mock_dict[frozenset([mock_cond])] = ([mock_pair], dataflow_set)
-            mock_infer_flow.return_value = mock_dict
+        mock_dict: dict[
+            frozenset[Optional[TaintCondition]],
+            tuple[list[ConditionDataflowPair], defaultdict[BitPosition, set[frozenset[BitPosition]]]],
+        ] = {}
+        mock_dict[frozenset([mock_cond])] = ([mock_pair], dataflow_set)
+        mock_infer_flow.return_value = [([mock_pair], dataflow_set)]
 
-            inference_engine.infer([simple_observation], mock_eflags)
+        inference_engine.infer([simple_observation], mock_eflags, observation_engine=None, enable_refinement=False)
 
-            mock_infer_flow.assert_called_once_with(
-                [simple_observation],
-                mock_eflags,
-                simple_observation.state_format,
-                enable_refinement=False,
-                observation_engine=None,
-            )
+        mock_infer_flow.assert_called_once_with(
+            [simple_observation],
+            mock_eflags,
+            simple_observation.state_format,
+            enable_refinement=False,
+            observation_engine=None,
+        )
 
     def test_infer_merges_conditions_and_dataflows(self, inference_engine, simple_observation, mock_eflags):
         """Test that infer properly creates condition-dataflow pairs."""
         # Integration-style test to verify pairs are created correctly
-        result = inference_engine.infer([simple_observation], mock_eflags)
+        result = inference_engine.infer(
+            [simple_observation],
+            mock_eflags,
+            observation_engine=None,
+            enable_refinement=False,
+        )
 
         # Verify we have at least one condition-dataflow pair
         assert len(result.pairs) >= 1
@@ -216,15 +230,15 @@ class TestInfer:
 class TestExtractObservationDependencies:
     """Tests for extract_observation_dependencies method."""
 
-    def test_extract_single_observation(self, inference_engine, simple_observation):
+    def test_extract_single_observation(self, simple_observation):
         """Test extracting dependencies from a single observation."""
-        result = inference_engine.extract_observation_dependencies([simple_observation])
+        result = observation_processor.extract_observation_dependencies([simple_observation])
 
         assert len(result) == 1
         assert isinstance(result[0], ObservationDependency)
         assert BitPosition(0) in result[0].dataflow
 
-    def test_extract_raises_on_multiple_bit_flips(self, inference_engine, state_format):
+    def test_extract_raises_on_multiple_bit_flips(self, state_format):
         """Test that method raises exception when multiple bits are flipped."""
         seed_in = State(num_bits=64, state_value=StateValue(0x0000000012345678))
         seed_out = State(num_bits=64, state_value=StateValue(0x0000000012345678))
@@ -242,11 +256,11 @@ class TestExtractObservationDependencies:
         )
 
         with pytest.raises(Exception, match='More than one bit flipped'):
-            inference_engine.extract_observation_dependencies([obs])
+            observation_processor.extract_observation_dependencies([obs])
 
-    def test_extract_multiple_observations(self, inference_engine, simple_observation, conditional_observation):
+    def test_extract_multiple_observations(self, simple_observation, conditional_observation):
         """Test extracting dependencies from multiple observations."""
-        result = inference_engine.extract_observation_dependencies([simple_observation, conditional_observation])
+        result = observation_processor.extract_observation_dependencies([simple_observation, conditional_observation])
 
         assert len(result) == 2
         assert all(isinstance(dep, ObservationDependency) for dep in result)
@@ -260,7 +274,7 @@ class TestExtractObservationDependencies:
 class TestLinkAffectedOutputsToTheirInputStates:
     """Tests for link_affected_outputs_to_their_input_states method."""
 
-    def test_link_creates_partitions(self, inference_engine):
+    def test_link_creates_partitions(self):
         """Test that method creates correct partitions."""
         # Create mock observation dependencies
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
@@ -281,7 +295,7 @@ class TestLinkAffectedOutputsToTheirInputStates:
         obs_dep1 = ObservationDependency(dataflow=dataflow1, mutated_inputs=mutated_inputs1, original_output=state1)
         obs_dep2 = ObservationDependency(dataflow=dataflow2, mutated_inputs=mutated_inputs2, original_output=state2)
 
-        result = inference_engine.link_affected_outputs_to_their_input_states(
+        result = observation_processor.link_affected_outputs_to_their_input_states(
             [obs_dep1, obs_dep2],
             BitPosition(32),
         )
@@ -292,7 +306,7 @@ class TestLinkAffectedOutputsToTheirInputStates:
         assert state1 in result[frozenset([BitPosition(32), BitPosition(33)])]
         assert state2 in result[frozenset([BitPosition(32), BitPosition(34)])]
 
-    def test_link_filters_by_mutated_bit(self, inference_engine):
+    def test_link_filters_by_mutated_bit(self):
         """Test that method only includes observations for the specified mutated bit."""
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
 
@@ -306,7 +320,7 @@ class TestLinkAffectedOutputsToTheirInputStates:
         obs_dep1 = ObservationDependency(dataflow=dataflow1, mutated_inputs=mutated_inputs1, original_output=state1)
 
         # Only get results for bit 32
-        result = inference_engine.link_affected_outputs_to_their_input_states([obs_dep1], BitPosition(32))
+        result = observation_processor.link_affected_outputs_to_their_input_states([obs_dep1], BitPosition(32))
 
         assert len(result) == 1
         assert frozenset([BitPosition(32)]) in result
@@ -328,7 +342,7 @@ class TestGenCondition:
         agreeing = {state1}
         opposing = {state2}
 
-        result = inference_engine._gen_condition(
+        result = inference_engine.condition_generator.generate_condition(
             agreeing,
             opposing,
             state_format,
@@ -338,11 +352,11 @@ class TestGenCondition:
 
         assert result is not None
         assert isinstance(result, TaintCondition)
-        inference_engine.espresso.minimize.assert_called_once()
+        inference_engine.condition_generator.espresso.minimize.assert_called_once()
         # Check that it used 64 bits (full state)
-        assert inference_engine.espresso.minimize.call_args[0][0] == 64
+        assert inference_engine.condition_generator.espresso.minimize.call_args[0][0] == 64
 
-    def test_gen_condition_with_cond_reg_only(self, inference_engine, state_format, mock_eflags):
+    def test_gen_condition_with_cond_reg_only(self, inference_engine, state_format, mock_eflags, mocker):
         """Test condition generation with use_full_state=False."""
         state1 = State(num_bits=64, state_value=StateValue(0x0000000112345678))
         state2 = State(num_bits=64, state_value=StateValue(0x0000000287654321))
@@ -350,23 +364,23 @@ class TestGenCondition:
         agreeing = {state1}
         opposing = {state2}
 
-        with patch('taintinduce.inference_engine.inference.reg_pos', return_value=0):
-            with patch('taintinduce.inference_engine.inference.shift_espresso') as mock_shift:
-                mock_shift.return_value = frozenset([(0xFF, 0x01)])
+        mocker.patch('taintinduce.state.state_utils.reg_pos', return_value=0)
+        mock_shift = mocker.patch('taintinduce.inference_engine.condition_generator.shift_espresso')
+        mock_shift.return_value = frozenset([(0xFF, 0x01)])
 
-                result = inference_engine._gen_condition(
-                    agreeing,
-                    opposing,
-                    state_format,
-                    mock_eflags,
-                    use_full_state=False,
-                )
+        result = inference_engine.condition_generator.generate_condition(
+            agreeing,
+            opposing,
+            state_format,
+            mock_eflags,
+            use_full_state=False,
+        )
 
-                assert result is not None
-                # Check that it used 32 bits (cond_reg only)
-                assert inference_engine.espresso.minimize.call_args[0][0] == 32
-                # Check that shift_espresso was called (legacy mode)
-                mock_shift.assert_called_once()
+        assert result is not None
+        # Check that it used 32 bits (cond_reg only)
+        assert inference_engine.condition_generator.espresso.minimize.call_args[0][0] == 32
+        # Check that shift_espresso was called (legacy mode)
+        mock_shift.assert_called_once()
 
     def test_gen_condition_returns_none_on_non_orthogonal(self, inference_engine, state_format, mock_eflags):
         """Test that method returns None when partitions are not orthogonal."""
@@ -376,9 +390,9 @@ class TestGenCondition:
         agreeing = {state1}
         opposing = {state2}
 
-        inference_engine.espresso.minimize.side_effect = NonOrthogonalException('Not orthogonal')
+        inference_engine.condition_generator.espresso.minimize.side_effect = NonOrthogonalException('Not orthogonal')
 
-        result = inference_engine._gen_condition(
+        result = inference_engine.condition_generator.generate_condition(
             agreeing,
             opposing,
             state_format,
@@ -396,11 +410,11 @@ class TestGenCondition:
         agreeing = {state1}
         opposing = {state2}
 
-        inference_engine.espresso.minimize.side_effect = EspressoException(
+        inference_engine.condition_generator.espresso.minimize.side_effect = EspressoException(
             'ON-set and OFF-set are not orthogonal',
         )
 
-        result = inference_engine._gen_condition(
+        result = inference_engine.condition_generator.generate_condition(
             agreeing,
             opposing,
             state_format,
@@ -410,8 +424,7 @@ class TestGenCondition:
 
         assert result is None
 
-    @patch('taintinduce.inference_engine.inference.espresso2cond')
-    def test_gen_condition_calls_espresso2cond(self, mock_espresso2cond, inference_engine, state_format, mock_eflags):
+    def test_gen_condition_calls_espresso2cond(self, inference_engine, state_format, mock_eflags, mocker):
         """Test that method calls espresso2cond to convert result."""
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
         state2 = State(num_bits=64, state_value=StateValue(0x0000000087654321))
@@ -419,9 +432,10 @@ class TestGenCondition:
         agreeing = {state1}
         opposing = {state2}
 
+        mock_espresso2cond = mocker.patch('taintinduce.inference_engine.condition_generator.espresso2cond')
         mock_espresso2cond.return_value = TaintCondition(LogicType.DNF, frozenset())
 
-        inference_engine._gen_condition(
+        inference_engine.condition_generator.generate_condition(
             agreeing,
             opposing,
             state_format,
@@ -460,7 +474,7 @@ class TestInferConditionsForDataflows:
         assert pair.condition is None  # No condition needed for single partition
         assert BitPosition(32) in pair.output_bits
 
-    def test_multiple_partitions_generates_conditions(self, inference_engine, state_format, mock_eflags):
+    def test_multiple_partitions_generates_conditions(self, inference_engine, state_format, mock_eflags, mocker):
         """Test that multiple partitions generate conditions."""
         # Create observation dependencies with different behaviors
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
@@ -487,18 +501,18 @@ class TestInferConditionsForDataflows:
             frozenset([BitPosition(32)]),
         }
 
-        with patch.object(inference_engine, '_gen_condition') as mock_gen_cond:
-            mock_gen_cond.return_value = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
+        mock_gen_cond = mocker.patch.object(inference_engine.condition_generator, 'generate_condition')
+        mock_gen_cond.return_value = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
 
-            pairs = inference_engine.infer_conditions_for_dataflows(
-                mock_eflags,
-                state_format,
-                [obs_dep1, obs_dep2],
-                possible_flows,
-                BitPosition(32),
-            )
+        pairs = inference_engine.infer_conditions_for_dataflows(
+            mock_eflags,
+            state_format,
+            [obs_dep1, obs_dep2],
+            possible_flows,
+            BitPosition(32),
+        )
 
-            assert len(pairs) >= 1  # Should have at least one pair
+        assert len(pairs) >= 1  # Should have at least one pair
 
     def test_raises_on_zero_partitions(self, inference_engine, state_format, mock_eflags):
         """Test that method raises exception when no possible flows exist."""
@@ -530,19 +544,22 @@ class TestInferFlowConditions:
         simple_observation,
         state_format,
         mock_eflags,
+        mocker,
     ):
         """Test that method calls extract_observation_dependencies."""
-        with patch.object(inference_engine, 'extract_observation_dependencies') as mock_extract:
-            mock_extract.return_value = []
+        mock_extract = mocker.patch(
+            'taintinduce.inference_engine.observation_processor.extract_observation_dependencies',
+        )
+        mock_extract.return_value = []
 
-            with patch.object(inference_engine, 'infer_conditions_for_dataflows') as mock_infer_cond:
-                mock_infer_cond.return_value = (set(), set())
+        mock_infer_cond = mocker.patch.object(inference_engine, 'infer_conditions_for_dataflows')
+        mock_infer_cond.return_value = []
 
-                inference_engine.infer_flow_conditions([simple_observation], mock_eflags, state_format)
+        inference_engine.infer_flow_conditions([simple_observation], mock_eflags, state_format)
 
-                mock_extract.assert_called_once_with([simple_observation])
+        mock_extract.assert_called_once_with([simple_observation])
 
-    def test_infer_flow_conditions_processes_all_input_bits(self, inference_engine, state_format, mock_eflags):
+    def test_infer_flow_conditions_processes_all_input_bits(self, inference_engine, state_format, mock_eflags, mocker):
         """Test that method processes all mutated input bits."""
         # Create observation dependencies with multiple input bits
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
@@ -557,17 +574,20 @@ class TestInferFlowConditions:
 
         obs_dep1 = ObservationDependency(dataflow=dataflow1, mutated_inputs=mutated_inputs1, original_output=state1)
 
-        with patch.object(inference_engine, 'extract_observation_dependencies', return_value=[obs_dep1]):
-            with patch.object(inference_engine, 'infer_conditions_for_dataflows') as mock_infer_cond:
-                # Return list of ConditionDataflowPair objects
-                mock_infer_cond.return_value = [
-                    ConditionDataflowPair(condition=None, output_bits=frozenset([BitPosition(32)])),
-                ]
+        mocker.patch(
+            'taintinduce.inference_engine.observation_processor.extract_observation_dependencies',
+            return_value=[obs_dep1],
+        )
+        mock_infer_cond = mocker.patch.object(inference_engine, 'infer_conditions_for_dataflows')
+        # Return list of ConditionDataflowPair objects
+        mock_infer_cond.return_value = [
+            ConditionDataflowPair(condition=None, output_bits=frozenset([BitPosition(32)])),
+        ]
 
-                inference_engine.infer_flow_conditions([Mock()], mock_eflags, state_format)
+        inference_engine.infer_flow_conditions([mocker.Mock()], mock_eflags, state_format)
 
-                # Should be called for both bits 32 and 33
-                assert mock_infer_cond.call_count == 2
+        # Should be called for both bits 32 and 33
+        assert mock_infer_cond.call_count == 2
 
 
 # ============================================================================
@@ -600,17 +620,19 @@ class TestInferenceEngineIntegration:
         mock_eflags = state_format[0]
 
         # This should work without exceptions
-        result = engine.infer([obs], mock_eflags)
+        result = engine.infer([obs], mock_eflags, observation_engine=None, enable_refinement=False)
 
         assert isinstance(result, Rule)
         assert result.state_format == state_format
         assert len(result.pairs) > 0
 
-    @patch('taintinduce.inference_engine.inference.Espresso')
-    def test_data_dependent_condition_and_instruction(self, mock_espresso_class, state_format):
+    def test_data_dependent_condition_and_instruction(self, state_format, mocker):
         """Test inference for data-dependent instruction like AND."""
-        mock_espresso_instance = Mock()
-        mock_espresso_instance.minimize = Mock(return_value=frozenset([(0xFFFFFFFF00000000, 0x0000000000000000)]))
+        mock_espresso_instance = mocker.Mock()
+        mock_espresso_instance.minimize = mocker.Mock(
+            return_value=frozenset([(0xFFFFFFFF00000000, 0x0000000000000000)]),
+        )
+        mock_espresso_class = mocker.patch('taintinduce.inference_engine.condition_generator.Espresso')
         mock_espresso_class.return_value = mock_espresso_instance
 
         engine = InferenceEngine()
@@ -647,7 +669,7 @@ class TestInferenceEngineIntegration:
 
         mock_eflags = state_format[0]
 
-        result = engine.infer([obs1, obs2], mock_eflags)
+        result = engine.infer([obs1, obs2], mock_eflags, observation_engine=None, enable_refinement=False)
 
         assert isinstance(result, Rule)
         # Should find conditional behavior
