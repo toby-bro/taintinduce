@@ -5,7 +5,6 @@ taint propagation rules with data-dependent conditions.
 """
 
 from collections import defaultdict
-from typing import Optional
 
 import pytest
 
@@ -153,21 +152,15 @@ class TestInfer:
     def test_infer_returns_rule(self, inference_engine, simple_observation, mock_eflags, mocker):
         """Test that infer returns a Rule object."""
         mock_infer_flow = mocker.patch.object(inference_engine, 'infer_flow_conditions')
-        # Return dict with: condition_set -> (ordered_pairs, dataflow_set)
+        # Return dict mapping input bits to their condition-dataflow pairs
         mock_cond = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
         mock_pair = ConditionDataflowPair(
             condition=mock_cond,
             output_bits=frozenset([BitPosition(0)]),
         )
-        dataflow_set: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
-        dataflow_set[BitPosition(0)] = {frozenset([BitPosition(0)])}
 
-        mock_dict: dict[
-            frozenset[Optional[TaintCondition]],
-            tuple[list[ConditionDataflowPair], defaultdict[BitPosition, set[frozenset[BitPosition]]]],
-        ] = {}
-        mock_dict[frozenset([mock_cond])] = ([mock_pair], dataflow_set)
-        mock_infer_flow.return_value = [([mock_pair], dataflow_set)]
+        # infer_flow_conditions now returns dict[BitPosition, list[ConditionDataflowPair]]
+        mock_infer_flow.return_value = {BitPosition(0): [mock_pair]}
 
         result = inference_engine.infer(
             [simple_observation],
@@ -182,21 +175,15 @@ class TestInfer:
     def test_infer_calls_infer_flow_conditions(self, inference_engine, simple_observation, mock_eflags, mocker):
         """Test that infer calls infer_flow_conditions with correct arguments."""
         mock_infer_flow = mocker.patch.object(inference_engine, 'infer_flow_conditions')
-        # Return dict with: condition_set -> (ordered_pairs, dataflow_set)
+        # Return dict mapping input bits to their condition-dataflow pairs
         mock_cond = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
         mock_pair = ConditionDataflowPair(
             condition=mock_cond,
             output_bits=frozenset([BitPosition(0)]),
         )
-        dataflow_set: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
-        dataflow_set[BitPosition(0)] = {frozenset([BitPosition(0)])}
 
-        mock_dict: dict[
-            frozenset[Optional[TaintCondition]],
-            tuple[list[ConditionDataflowPair], defaultdict[BitPosition, set[frozenset[BitPosition]]]],
-        ] = {}
-        mock_dict[frozenset([mock_cond])] = ([mock_pair], dataflow_set)
-        mock_infer_flow.return_value = [([mock_pair], dataflow_set)]
+        # infer_flow_conditions now returns dict[BitPosition, list[ConditionDataflowPair]]
+        mock_infer_flow.return_value = {BitPosition(0): [mock_pair]}
 
         inference_engine.infer([simple_observation], mock_eflags, observation_engine=None, enable_refinement=False)
 
