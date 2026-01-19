@@ -83,12 +83,9 @@ class Disassembler(object):
             else:
                 reg_set = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZVC()]
 
-            # Pad bytestring with leading zero if it's only one character
-            padded_bytestring = bytestring if len(bytestring) > 1 else bytestring + '0'
-
             self.insn_info = InsnInfo(
                 archstring=arch_str,
-                bytestring=padded_bytestring,
+                bytestring=bytestring,
                 state_format=reg_set,
                 cond_reg=self.arch.cond_reg,
             )

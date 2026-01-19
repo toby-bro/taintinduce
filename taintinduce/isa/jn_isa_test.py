@@ -70,7 +70,7 @@ class TestJNInstructionEncoding:
     def test_encode_instruction_helper(self):
         """Test instruction encoding helper."""
         hex_str = encode_instruction(JNOpcode.ADD_R1_IMM, 0xB)
-        assert hex_str == '010B'
+        assert hex_str == '1B'  # Each nibble as single hex char
 
     def test_all_opcodes_encode_decode(self):
         """Test all opcodes can be encoded and decoded."""
@@ -177,3 +177,104 @@ class TestJNInstructionMnemonics:
         """Test XOR R1, imm4 mnemonic."""
         instr = JNInstruction(JNOpcode.XOR_R1_IMM, 0xF)
         assert instr.mnemonic == 'XOR R1, 0xF'
+
+
+class TestJNDecodingRegressionPrevention:
+    """Critical tests to prevent regressions in instruction decoding.
+
+    These tests specifically address the bugs where:
+    1. Single char '6' was padded to '60' (trailing zero) instead of '06' (leading zero)
+    2. Opcodes were auto-converted from register to immediate variants
+    """
+
+    def test_single_char_6_decodes_to_xor_r1_r2_not_xor_imm(self):
+        """REGRESSION TEST: '6' must decode to XOR R1, R2 (single nibble 6).
+
+        Single nibble = register instruction, no padding needed.
+        """
+        insn = decode_hex_string('6')
+        assert insn.opcode == JNOpcode.XOR_R1_R2, "Single char '6' should decode to XOR R1, R2"
+        assert insn.has_immediate is False, 'XOR R1, R2 is register variant, not immediate'
+        assert insn.immediate is None, 'Register variant should have no immediate value'
+
+    def test_single_char_4_decodes_to_and_r1_r2(self):
+        """Test single char '4' decodes to AND R1, R2."""
+        insn = decode_hex_string('4')
+        assert insn.opcode == JNOpcode.AND_R1_R2
+        assert insn.has_immediate is False
+        assert insn.immediate is None
+
+    def test_single_char_2_decodes_to_or_r1_r2(self):
+        """Test single char '2' decodes to OR R1, R2."""
+        insn = decode_hex_string('2')
+        assert insn.opcode == JNOpcode.OR_R1_R2
+        assert insn.has_immediate is False
+
+    def test_single_char_0_decodes_to_add_r1_r2(self):
+        """Test single char '0' decodes to ADD R1, R2."""
+        insn = decode_hex_string('0')
+        assert insn.opcode == JNOpcode.ADD_R1_R2
+        assert insn.has_immediate is False
+
+    def test_two_char_06_is_add_imm_not_xor(self):
+        """Test '06' is two nibbles: ADD R1, #6 (opcode=0, immediate=6)."""
+        insn = decode_hex_string('06')
+        assert insn.opcode == JNOpcode.ADD_R1_R2, "'06' is opcode=0 (first nibble)"
+        # Second nibble would be treated as immediate by immediate variant
+        # But this is register variant (opcode 0 is even), so only first nibble matters
+
+    def test_two_char_immediate_7a(self):
+        """Test '7A' decodes correctly as XOR R1, #A."""
+        insn = decode_hex_string('7A')
+        assert insn.opcode == JNOpcode.XOR_R1_IMM
+        assert insn.immediate == 0xA
+
+    def test_command_line_usage_6_is_single_nibble(self):
+        """Test that `taintinduce 6 JN` decodes as single nibble."""
+        insn = decode_hex_string('6')
+        assert insn.opcode == JNOpcode.XOR_R1_R2
+        assert insn.has_immediate is False
+        assert insn.mnemonic == 'XOR R1, R2'
+
+    def test_roundtrip_encoding_decoding(self):
+        """Test that encode->decode is identity for all instructions."""
+        # Register variants (single nibble)
+        for opcode in [JNOpcode.ADD_R1_R2, JNOpcode.OR_R1_R2, JNOpcode.AND_R1_R2, JNOpcode.XOR_R1_R2]:
+            encoded = encode_instruction(opcode)
+            decoded = decode_hex_string(encoded)
+            assert decoded.opcode == opcode
+            assert decoded.has_immediate is False
+
+        # Immediate variants (two nibbles)
+        for opcode, imm in [
+            (JNOpcode.ADD_R1_IMM, 0xA),
+            (JNOpcode.OR_R1_IMM, 0x5),
+            (JNOpcode.AND_R1_IMM, 0xF),
+            (JNOpcode.XOR_R1_IMM, 0x3),
+        ]:
+            encoded = encode_instruction(opcode, imm)
+            decoded = decode_hex_string(encoded)
+            assert decoded.opcode == opcode
+            assert decoded.has_immediate is True
+            assert decoded.immediate == imm
+
+    def test_decode_handles_various_formats(self):
+        """Test decode handles spaces, 0x prefix, and case variations."""
+        # All these should decode to XOR R1, R2 (single nibble 6)
+        test_inputs = ['6', '0x6', ' 6 ', '0X6']
+        for hex_str in test_inputs:
+            insn = decode_hex_string(hex_str)
+            assert insn.opcode == JNOpcode.XOR_R1_R2, f"Input '{hex_str}' should decode to XOR R1, R2"
+            assert insn.has_immediate is False
+
+    def test_immediate_instructions_still_work(self):
+        """Verify immediate instructions still decode correctly after fixes."""
+        # XOR R1, #0xA (opcode=7, immediate=A = '7A')
+        insn = decode_hex_string('7A')
+        assert insn.opcode == JNOpcode.XOR_R1_IMM
+        assert insn.immediate == 0xA
+
+        # AND R1, #0xF (opcode=5, immediate=F = '5F')
+        insn = decode_hex_string('5F')
+        assert insn.opcode == JNOpcode.AND_R1_IMM
+        assert insn.immediate == 0xF

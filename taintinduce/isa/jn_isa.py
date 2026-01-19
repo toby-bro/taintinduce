@@ -142,29 +142,22 @@ def decode_hex_string(hex_str: str) -> JNInstruction:
     """Decode a hex string to a JN instruction.
 
     Args:
-        hex_str: Hex string like '1A' for 'ADD R1, 0xA'
-                If 2 chars provided with even opcode (0,2,4,6), automatically
-                converts to immediate variant (1,3,5,7) to match user intent.
-                Each character represents a nibble (4 bits)
+        hex_str: Hex string where each character is a nibble (4 bits).
+                '6' = XOR R1, R2 (single nibble opcode)
+                '7A' = XOR R1, #0xA (opcode=7, immediate=A)
+                No padding - length determines if immediate or register variant.
 
     Returns:
         Decoded JNInstruction
     """
-    # Remove any spaces or 0x prefix
-    hex_str = hex_str.replace(' ', '').replace('0x', '').upper()
+    # Remove any spaces or 0x/0X prefix (case insensitive)
+    hex_str = hex_str.replace(' ', '')
+    # Handle both 0x and 0X prefixes
+    if hex_str.lower().startswith('0x'):
+        hex_str = hex_str[2:]
 
-    # Convert each hex digit to a byte
-    data_list = [int(c, 16) for c in hex_str]
-
-    # If we have 2 hex chars and the opcode is even (register variant), and the second is not 0,
-    # convert to odd (immediate variant) to match user intent and print a warning.
-    if len(data_list) == 2 and (data_list[0] & 1) == 0 and (data_list[1] * data_list[0] != 0):
-        logger.warning(
-            f'Interpreting instruction {hex_str} as immediate variant instead of register variant.',
-        )
-        data_list[0] |= 1  # Convert even opcode to odd (e.g., 0->1, 2->3, 4->5, 6->7)
-
-    data = bytes(data_list)
+    # Each hex char is a nibble - convert to bytes where each byte holds one nibble value
+    data = bytes([int(c, 16) for c in hex_str])
     return JNInstruction.from_bytes(data)
 
 
@@ -176,7 +169,9 @@ def encode_instruction(opcode: JNOpcode, immediate: Optional[int] = None) -> str
         immediate: Optional immediate value (for imm instructions)
 
     Returns:
-        Hex string representation
+        Hex string representation where each hex char is a nibble
     """
     instr = JNInstruction(opcode, immediate)
-    return instr.to_bytes().hex().upper()
+    bytecode = instr.to_bytes()
+    # Each byte holds a nibble value (0-15), output as single hex char
+    return ''.join(f'{b:X}' for b in bytecode)
