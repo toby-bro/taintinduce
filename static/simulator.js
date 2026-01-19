@@ -200,6 +200,10 @@ function toggleBitValue(registerName, bitIdx) {
   updateHexFromBits();
   // Auto-trigger simulation
   runDetailedSimulation();
+  // Update condition matcher
+  if (window.findMatchingConditions) {
+    window.findMatchingConditions();
+  }
 }
 
 function toggleBitTaint(registerName, bitIdx) {
@@ -375,6 +379,10 @@ function clearRegister(registerName) {
   updateHexFromBits();
   // Auto-trigger simulation
   runDetailedSimulation();
+  // Update condition matcher
+  if (window.findMatchingConditions) {
+    window.findMatchingConditions();
+  }
 }
 
 function setRegisterHex(registerName, hexValue) {
@@ -406,6 +414,10 @@ function setRegisterHex(registerName, hexValue) {
     updateHexFromBits();
     // Auto-trigger simulation
     runDetailedSimulation();
+    // Update condition matcher
+    if (window.findMatchingConditions) {
+      window.findMatchingConditions();
+    }
   } catch (e) {
     alert("Invalid value: " + hexValue);
   }
@@ -487,6 +499,10 @@ function updateBitsFromHex() {
     });
     // Auto-trigger simulation
     runDetailedSimulation();
+    // Update condition matcher
+    if (window.findMatchingConditions) {
+      window.findMatchingConditions();
+    }
   } catch (e) {
     // Invalid input, ignore silently (user is still typing)
     // console.error("Error parsing hex value:", e);
@@ -685,6 +701,10 @@ function handleKeyPress(event) {
       updateHexFromBits();
       // Auto-trigger simulation
       runDetailedSimulation();
+      // Update condition matcher
+      if (window.findMatchingConditions) {
+        window.findMatchingConditions();
+      }
       // Auto-advance to next bit
       moveToNextBit();
     }

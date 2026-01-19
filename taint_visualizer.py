@@ -280,32 +280,11 @@ def simulate():
         # Format results
         results = []
         for match in matching_pairs:
-            pair = current_rule.pairs[match['pair_index']]
-
-            # Get sample flows
-            sample_flows = []
-            if isinstance(pair.output_bits, dict):
-                for input_bit, output_bits in list(pair.output_bits.items())[:5]:
-                    outputs_str = ', '.join(map(str, sorted(output_bits)[:10]))
-                    if len(output_bits) > 10:
-                        outputs_str += f', ... +{len(output_bits) - 10} more'
-                    sample_flows.append(
-                        {
-                            'input': input_bit,
-                            'outputs': outputs_str,
-                        },
-                    )
-                num_flows = len(pair.output_bits)
-            else:
-                num_flows = 0
-
             results.append(
                 {
                     'pair_index': match['pair_index'],
                     'condition_text': format_condition_human_readable(match['condition']),
                     'is_unconditional': match['is_unconditional'],
-                    'sample_flows': sample_flows,
-                    'num_flows': num_flows,
                 },
             )
 
