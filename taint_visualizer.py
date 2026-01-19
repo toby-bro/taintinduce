@@ -31,7 +31,7 @@ from taintinduce.state.state import check_ones
 from taintinduce.types import CpuRegisterMap
 
 # Import visualizer helper modules
-from visualizer.taint_simulator import (
+from taintinduce.visualizer.taint_simulator import (
     build_state_from_bits,
     extract_bits_from_state,
     get_flag_info,
