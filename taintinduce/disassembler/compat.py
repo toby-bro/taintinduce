@@ -16,6 +16,7 @@ from capstone import (
 
 from taintinduce.disassembler.exceptions import ParseInsnException
 from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex_string
+from taintinduce.observation_engine.observation import encode_instruction_bytes
 
 
 class JNInsnWrapper:
@@ -42,7 +43,7 @@ class SquirrelDisassemblerJN:
         """Disassemble JN bytecode and return wrapped instruction object."""
         # Convert bytes to hex string if needed
         if isinstance(bytecode, bytes):
-            bytecode = bytecode.hex()
+            bytecode = encode_instruction_bytes(bytecode, 'JN')
 
         try:
             jn_insn = decode_jn_hex_string(str(bytecode))

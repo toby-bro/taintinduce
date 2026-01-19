@@ -43,6 +43,23 @@ def decode_instruction_bytes(bytestring: str, archstring: str) -> bytes:
     return bytes.fromhex(bytestring)
 
 
+def encode_instruction_bytes(bytecode: bytes, archstring: str) -> str:
+    """Encode instruction bytes to hex string based on architecture.
+
+    Args:
+        bytecode: Instruction bytes
+        archstring: Architecture name (X86, AMD64, ARM64, JN, etc.)
+
+    Returns:
+        Hex string representation of the instruction
+    """
+    # For JN ISA, each byte holds a nibble value (0-15), convert to single hex chars
+    if archstring == 'JN':
+        return ''.join(f'{b:X}' for b in bytecode)
+    # For other architectures, use standard hex encoding
+    return bytecode.hex()
+
+
 class ConditionTargetedStrategy(Strategy):
     """Strategy that generates systematic values to validate condition bits.
 
