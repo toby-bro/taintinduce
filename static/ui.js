@@ -64,11 +64,21 @@ function updateAllDisplays(data) {
     return;
   }
 
+  // Reset graph state to ensure clean state when loading new file
+  if (typeof resetGraphState === "function") {
+    resetGraphState();
+  }
+
+  // Reset simulator state to clear tainted bits and other state
+  if (typeof resetSimulatorState === "function") {
+    resetSimulatorState();
+  }
+
   // Update overview statistics using the correct element IDs
   document.getElementById("rule-file").textContent =
     data.filename || "Uploaded Rule";
   document.getElementById("arch").textContent = data.format?.arch || "N/A";
-  
+
   // Add instruction display
   if (data.instruction) {
     const instrEl = document.getElementById("instruction");
@@ -76,7 +86,7 @@ function updateAllDisplays(data) {
       instrEl.innerHTML = `<strong>${data.instruction.bytestring}</strong><br><span style="color: #667eea; font-family: monospace;">${data.instruction.asm}</span>`;
     }
   }
-  
+
   document.getElementById("num-regs").textContent =
     data.format?.registers?.length || 0;
   document.getElementById("num-mem").textContent = data.format?.mem_slots || 0;
@@ -105,9 +115,20 @@ function updateAllDisplays(data) {
     document.getElementById("pairSelect").value = "ALL";
     renderGraph();
   }
-  
+
   // Initialize simulator with register inputs
-  if (typeof initializeSimulator === 'function') {
+  if (typeof initializeSimulator === "function") {
     initializeSimulator();
+  }
+
+  // Clear condition matcher results from previous rule
+  const matchingPairsContainer = document.getElementById("matching-pairs");
+  if (matchingPairsContainer) {
+    matchingPairsContainer.innerHTML = "";
+  }
+
+  const simulationResults = document.getElementById("simulation-results");
+  if (simulationResults) {
+    simulationResults.classList.remove("show");
   }
 }

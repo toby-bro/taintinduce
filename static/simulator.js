@@ -6,6 +6,21 @@ let currentInputMode = "bits";
 let isEditMode = false; // false = taint mode, true = edit mode
 let focusedCell = null; // Currently focused cell for keyboard input
 
+function resetSimulatorState() {
+  // Clear all simulator state when loading a new rule
+  taintedBitsSet.clear();
+  currentInputMode = "bits";
+  isEditMode = false;
+  focusedCell = null;
+
+  // Clear any highlighted tainted outputs
+  document.querySelectorAll(".tainted-output").forEach((el) => {
+    el.classList.remove("tainted-output");
+  });
+
+  console.log("Simulator state reset");
+}
+
 function switchInputMode(mode) {
   currentInputMode = mode;
 

@@ -20,16 +20,16 @@ async function handleRuleFileUpload(event) {
   statusEl.style.color = "#ffc107";
 
   try {
-    // Read the file content as text and parse as JSON
+    // Read the file content as text - DO NOT parse it in JavaScript
+    // to avoid losing precision on large integers
     const fileContent = await file.text();
-    const jsonData = JSON.parse(fileContent);
 
     const response = await fetch("/api/upload-rule", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "text/plain",
       },
-      body: JSON.stringify(jsonData),
+      body: fileContent,
     });
 
     if (!response.ok) {
@@ -52,18 +52,12 @@ async function handleRuleFileUpload(event) {
     const data = await ruleResponse.json();
 
     // Update the global state and UI
-    currentRuleData = data;
+    // Note: updateAllDisplays will handle setting currentRuleData, resetting state,
+    // and calling populatePairSelector() and renderGraph()
     updateAllDisplays(data);
 
     statusEl.textContent = `✓ Loaded: ${file.name}`;
     statusEl.style.color = "#28a745";
-
-    // Auto-select ALL pairs and render graph
-    populatePairSelector();
-    if (data.pairs && data.pairs.length > 0) {
-      document.getElementById("pairSelect").value = "ALL";
-      renderGraph();
-    }
 
     setTimeout(() => {
       statusEl.textContent = "";

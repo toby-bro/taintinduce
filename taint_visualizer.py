@@ -186,6 +186,25 @@ def get_rule_data():
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
 
+    # print(f'📤 Backend: Building response for {current_rule.format.arch} with {len(current_rule.pairs)} pairs')
+
+    ## Debug: Check if any pair has the problematic EAX[1]->EAX[1] flow
+    # for idx, pair in enumerate(current_rule.pairs):
+    #    if isinstance(pair.output_bits, dict):
+    #        for input_bit, output_bits in pair.output_bits.items():
+    #            in_info = bitpos_to_reg_bit(input_bit, current_rule.format.registers)
+    #            for out_bit in output_bits:
+    #                out_info = bitpos_to_reg_bit(out_bit, current_rule.format.registers)
+    #                # Check for EAX[1] -> EAX[1]
+    #                if (in_info.get('name') == 'EAX' and in_info.get('bit') == 1 and
+    #                    out_info.get('name') == 'EAX' and out_info.get('bit') == 1):
+    #                    print(f'   🔍 Found EAX[1]->EAX[1] in pair {idx}:')
+    #                    print(f'      Condition object: {pair.condition}')
+    #                    print(f'      Condition type: {type(pair.condition)}')
+    #                    if pair.condition:
+    #                        print(f'      Condition ops: {pair.condition.condition_ops}')
+    #                        print(f'      Formatted: {format_condition_human_readable(pair.condition)[:200]}')
+
     # Build pairs data
     pairs_data = []
     for idx, pair in enumerate(current_rule.pairs):
@@ -333,14 +352,16 @@ def upload_rule():
     global current_rule, rule_file_path  # noqa: PLW0603
 
     try:
-        # Get the JSON data from the request
-        data = request.get_json()
+        # Get the raw JSON text from the request (not parsed by JavaScript)
+        # This preserves large integer precision
+        json_text = request.get_data(as_text=True)
 
-        if not data:
+        if not json_text:
             return jsonify({'error': 'No JSON data provided'}), 400
 
-        # Deserialize using TaintInduceDecoder
-        rule = json.loads(json.dumps(data), cls=TaintInduceDecoder)
+        # Deserialize using TaintInduceDecoder directly from JSON string
+        decoder = TaintInduceDecoder()
+        rule = decoder.decode(json_text)
 
         if not isinstance(rule, TaintRule):
             return jsonify({'error': 'Uploaded data is not a valid TaintRule'}), 400

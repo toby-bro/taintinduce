@@ -6,6 +6,22 @@ let graphEdgesByFrom = new Map();
 let graphEdgesByTo = new Map();
 let graphHighlightedElements = [];
 
+function resetGraphState() {
+  // Clear all graph-related state when loading a new rule
+  graphNodeMap.clear();
+  graphEdgesByFrom.clear();
+  graphEdgesByTo.clear();
+  graphHighlightedElements = [];
+
+  // Remove any selection state from the UI
+  const scrollWrapper = document.querySelector(".graph-scroll-wrapper");
+  if (scrollWrapper) {
+    scrollWrapper.classList.remove("has-selection");
+  }
+
+  console.log("Graph state reset");
+}
+
 function renderGraph() {
   if (!currentRuleData) return;
 
@@ -799,7 +815,11 @@ function renderFlowGraph(pair, format) {
 
   // Build lookup maps once for O(1) click performance
   console.log("Building lookup maps for fast interaction...");
-  graphNodeMap = new Map();
+  // Clear previous maps to avoid stale data from previous renders
+  graphNodeMap.clear();
+  graphEdgesByFrom.clear();
+  graphEdgesByTo.clear();
+
   document.querySelectorAll(".bit-node.input").forEach((node) => {
     const nodeId = node.getAttribute("data-node-id");
     graphNodeMap.set("input:" + nodeId, node);
@@ -809,8 +829,7 @@ function renderFlowGraph(pair, format) {
     graphNodeMap.set("output:" + nodeId, node);
   });
 
-  graphEdgesByFrom = new Map();
-  graphEdgesByTo = new Map();
+  // Maps already cleared above, now populate them
   document.querySelectorAll(".flow-line").forEach((edge) => {
     const from = edge.getAttribute("data-from");
     const to = edge.getAttribute("data-to");

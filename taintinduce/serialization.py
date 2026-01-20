@@ -94,6 +94,10 @@ class TaintInduceEncoder(json.JSONEncoder):
             return result
         # if isinstance(obj, int):
         #     return {'_int': obj}
+        # Wrap large integers (beyond JavaScript safe integer range) as strings to preserve precision
+        # JavaScript MAX_SAFE_INTEGER is 2^53 - 1 = 9007199254740991
+        if isinstance(obj, int) and (obj > 9007199254740991 or obj < -9007199254740991):
+            return {'_bigint': str(obj)}
         # if isinstance(obj, str):
         #     return {'_str': obj}
         # if isinstance(obj, bool):
@@ -140,6 +144,10 @@ class TaintInduceDecoder(json.JSONDecoder):
             raise ValueError(f'Warning: Could not deserialize {type_name}') from e
 
     def object_hook(self, dct: dict[str, Any]) -> Any:
+        # Handle big integers that were serialized as strings
+        if '_bigint' in dct:
+            return int(dct['_bigint'])
+
         # Handle list (may have _type field)
         if '_list' in dct:
             if dct.get('_type'):
