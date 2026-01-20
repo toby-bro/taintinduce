@@ -1,4 +1,3 @@
-import pdb
 import random
 from binascii import unhexlify
 from typing import Any, Optional, Sequence
@@ -33,7 +32,10 @@ def filter_address(address: int, size: int, state: list[Any]) -> bool:
     if state[2] is not None:
         # the previous address check resulted in a cross page access
         if not is_overlap(address, address + size, state[0], state[1]):
-            pdb.set_trace()
+            raise Exception(
+                f'Address range mismatch: {address:#x}-{address+size:#x} '
+                f'not overlapping with {state[0]:#x}-{state[1]:#x}',
+            )
         # we'll remove the current accessed set from the intended access set
         current = set(range(address, address + size))
         state[2].difference_update(current)
@@ -313,8 +315,9 @@ class UnicornCPU(CPU):
 
         for x_idx in range(len(temp_mem_addr[:-1])):
             if temp_mem_addr[x_idx][1] > temp_mem_addr[x_idx + 1][0]:
-                pdb.set_trace()
-                raise Exception
+                raise Exception(
+                    f'Memory address overlap detected: {temp_mem_addr[x_idx]} and {temp_mem_addr[x_idx + 1]}',
+                )
             if temp_mem_addr[x_idx][1] == temp_mem_addr[x_idx + 1][0]:
                 chunk1_addr = temp_mem_addr[x_idx][0]
                 chunk1_access = mem_access[chunk1_addr][0]
@@ -451,7 +454,7 @@ class UnicornCPU(CPU):
         elif reg in self.mem_addrs:
             self.mem_addrs[reg] = value
         else:
-            pdb.set_trace()
+            raise Exception(f'Unknown register: {reg.name}!')
 
     def write_regs(self, regs: Sequence[Register], values: Sequence[int] | int) -> None:
         seq_values: Sequence[int]
@@ -484,8 +487,7 @@ class UnicornCPU(CPU):
         elif reg in self.mem_addrs:
             value = self.mem_addrs[reg]
         else:
-            pdb.set_trace()
-            raise Exception('Register not found!')
+            raise Exception(f'Register not found: {reg.name}!')
 
         return value
 

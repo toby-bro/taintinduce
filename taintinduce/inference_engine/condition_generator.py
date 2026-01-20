@@ -1,7 +1,6 @@
 """Condition generation and refinement logic."""
 
 import logging
-import pdb
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional
 
@@ -118,8 +117,8 @@ class ConditionGenerator:
         except EspressoException as e:
             if 'ON-set and OFF-set are not orthogonal' in str(e):
                 return None
-            pdb.set_trace()
-            raise e
+            # Re-raise with more context
+            raise EspressoException(f'Espresso error during condition generation: {e}') from e
 
         # dnf_condition: set of (mask, value) tuples representing DNF formula
         # Each tuple is a CNF clause: (input & mask == value)

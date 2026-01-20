@@ -103,6 +103,7 @@ def _gen_observation_worker(
 def _gen_random_seed_io_worker(
     bytestring: str,
     archstring: str,
+    state_format: list[Register],
     seed_variation: SeedVariation,
     num_tries: int = 255,
 ) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:
@@ -113,6 +114,7 @@ def _gen_random_seed_io_worker(
     Args:
         bytestring: Hex string representation of instruction
         archstring: Architecture name
+        state_format: List of registers defining state format
         seed_variation: The seed variation with registers and values to set
         num_tries: Maximum number of execution attempts
 
@@ -120,6 +122,8 @@ def _gen_random_seed_io_worker(
         Tuple of (input_state, output_state) or None if failed
     """
     cpu = CPUFactory.create_cpu(archstring)
+    mem_regs = {x for x in state_format if 'MEM' in x.name}
+    cpu.set_memregs(mem_regs)
     bytecode = decode_instruction_bytes(bytestring, archstring)
     regs2mod, vals2mod = seed_variation.registers, seed_variation.values
 
@@ -510,6 +514,7 @@ class ObservationEngine(object):
                     _gen_random_seed_io_worker,
                     bytestring,
                     archstring,
+                    state_format,
                     seed_variation,
                 )
                 for seed_variation in all_seed_variations
@@ -685,6 +690,7 @@ class ObservationEngine(object):
                     _gen_random_seed_io_worker,
                     self.bytestring,
                     self.archstring,
+                    self.state_format,
                     seed_variation,
                 )
                 for seed_variation in seed_variations
