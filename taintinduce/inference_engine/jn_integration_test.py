@@ -1568,3 +1568,37 @@ class TestJNSubInstruction:
             f'SUB R1, R2 should explain 100% of observations, but only explains {coverage:.1%} '
             f'({explained}/{total}). Unexplained behaviors suggest inference issues.'
         )
+
+
+@pytest.mark.parametrize(
+    ('opcode', 'immediate'),
+    [
+        (JNOpcode.ADD_R1_R2, None),  # 0
+        (JNOpcode.ADD_R1_IMM, 0xA),  # 1A
+        (JNOpcode.OR_R1_R2, None),  # 2
+        (JNOpcode.OR_R1_IMM, 0x3),  # 3
+        (JNOpcode.AND_R1_R2, None),  # 4
+        (JNOpcode.AND_R1_IMM, 0xF),  # 5F
+        (JNOpcode.XOR_R1_R2, None),  # 6
+        (JNOpcode.XOR_R1_IMM, 0xA),  # 7A
+        (JNOpcode.SUB_R1_R2, None),  # 8
+        (JNOpcode.SUB_R1_IMM, 0x5),  # 9A
+    ],
+)
+def test_R2_is_always_unconditionnal(jn_instruction_data, opcode, immediate):
+    """Test that R2's bits are unconditionnally R2 input bits in all non immediate instructions."""
+    # Use cached data
+    data = jn_instruction_data[(opcode, immediate)]
+    rule = data['rule']
+    observations = data['observations']
+
+    # Check that R2 bits (4-7) are always in input_bits of some pair
+    if immediate is not None:
+        for obs in observations:
+            reg_names = [r.name for r in obs.state_format]
+            assert 'R2' not in reg_names, f'{opcode.name} should not include R2'
+            return
+    for pair in rule.pairs:
+        for r2_bit in range(4, 8):
+            if r2_bit in pair.output_bits:
+                assert pair.condition is None or len(pair.condition.condition_ops) == 0
