@@ -5,7 +5,11 @@ explain the observations used to generate them.
 """
 
 import logging
+import os
+from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
+
+from tqdm import tqdm
 
 from taintinduce.rules.conditions import TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, Rule
@@ -101,7 +105,53 @@ def validate_condition(
     return True
 
 
-def validate_rule_explains_observations(  # noqa: C901
+def _validate_observation_dependency_worker(
+    obs_dep: ObservationDependency,
+    rule_pairs: list[ConditionDataflowPair],
+) -> tuple[int, int, list[str]]:
+    """Worker function to validate a single observation dependency.
+
+    Args:
+        obs_dep: Single observation dependency to validate
+        rule_pairs: List of condition-dataflow pairs from the rule
+
+    Returns:
+        Tuple of (explained_count, total_count, unexplained_descriptions)
+    """
+    total = 0
+    explained = 0
+    unexplained: list[str] = []
+
+    for input_bit, output_bits in obs_dep.dataflow.items():
+        total += 1
+        input_state = obs_dep.mutated_inputs.get_input_state(input_bit)
+
+        # Collect all outputs from pairs that match this input_bit and satisfy the condition
+        explained_outputs: set[BitPosition] = set()
+        for pair in rule_pairs:
+            if not check_condition_satisfied(pair.condition, input_state):
+                continue
+
+            # Check if this pair has outputs for this input_bit
+            if isinstance(pair.output_bits, dict) and input_bit in pair.output_bits:
+                explained_outputs.update(pair.output_bits[input_bit])
+            elif not isinstance(pair.output_bits, dict):
+                # Fallback for old format
+                explained_outputs.update(pair.output_bits)
+
+        # Check if the union of all explained outputs matches the observed outputs
+        if frozenset(explained_outputs) == output_bits:
+            explained += 1
+        else:
+            unexplained.append(
+                f'Input bit {input_bit} -> {output_bits} (state=0x{input_state.state_value:x}), '
+                f'explained: {frozenset(explained_outputs)}',
+            )
+
+    return explained, total, unexplained
+
+
+def validate_rule_explains_observations(
     rule: Rule,
     observation_dependencies: list[ObservationDependency],
 ) -> tuple[int, int]:
@@ -118,32 +168,24 @@ def validate_rule_explains_observations(  # noqa: C901
     explained_behaviors = 0
     unexplained: list[str] = []
 
-    for obs_dep in observation_dependencies:
-        for input_bit, output_bits in obs_dep.dataflow.items():
-            total_behaviors += 1
-            input_state = obs_dep.mutated_inputs.get_input_state(input_bit)
+    # Parallelize validation of observation dependencies
+    max_workers = os.cpu_count() or 4
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(
+                _validate_observation_dependency_worker,
+                obs_dep,
+                rule.pairs,
+            )
+            for obs_dep in observation_dependencies
+        ]
 
-            # Collect all outputs from pairs that match this input_bit and satisfy the condition
-            explained_outputs: set[BitPosition] = set()
-            for pair in rule.pairs:
-                if not check_condition_satisfied(pair.condition, input_state):
-                    continue
-
-                # Check if this pair has outputs for this input_bit
-                if isinstance(pair.output_bits, dict) and input_bit in pair.output_bits:
-                    explained_outputs.update(pair.output_bits[input_bit])
-                elif not isinstance(pair.output_bits, dict):
-                    # Fallback for old format
-                    explained_outputs.update(pair.output_bits)
-
-            # Check if the union of all explained outputs matches the observed outputs
-            if frozenset(explained_outputs) == output_bits:
-                explained_behaviors += 1
-            else:
-                unexplained.append(
-                    f'Input bit {input_bit} -> {output_bits} (state=0x{input_state.state_value:x}), '
-                    f'explained: {frozenset(explained_outputs)}',
-                )
+        # Collect results from all workers
+        for future in tqdm(futures, desc='Validating rule'):
+            explained, total, unexplained_items = future.result()
+            explained_behaviors += explained
+            total_behaviors += total
+            unexplained.extend(unexplained_items)
 
     # Log results
     coverage = (explained_behaviors / total_behaviors * 100) if total_behaviors > 0 else 0

@@ -3,6 +3,7 @@
 import argparse
 import binascii
 import json
+import logging
 import os
 import sys
 from typing import Optional
@@ -82,6 +83,28 @@ def taintinduce_infer(archstring: str, bytestring: str) -> tuple[InsnInfo, list[
     return insninfo, obs_list, taintrule
 
 
+def _configure_logging(verbosity: int) -> None:
+    """Configure logging based on verbosity level.
+
+    Args:
+        verbosity: 0=errors only, 1=warnings+errors, 2=info+warnings+errors, 3+=debug+info+warnings+errors
+    """
+    if verbosity == 0:
+        log_level = logging.ERROR
+    elif verbosity == 1:
+        log_level = logging.WARNING
+    elif verbosity == 2:
+        log_level = logging.INFO
+    else:
+        log_level = logging.DEBUG
+
+    logging.basicConfig(
+        format='%(levelname)s - %(message)s',
+        level=log_level,
+        force=True,
+    )
+
+
 def main() -> None:
     # we don't have ARM32, MIPS YET
     parser = argparse.ArgumentParser()
@@ -94,8 +117,16 @@ def main() -> None:
     )
     parser.add_argument('--output-dir', type=str, default='output', help='Output directory.')
     parser.add_argument('--skip-gen', default=False, action='store_true', help='Skip generation of observation')
+    parser.add_argument(
+        '-v',
+        '--verbose',
+        action='count',
+        default=0,
+        help='Increase verbosity: -v for warnings, -vv for info, -vvv for debug',
+    )
 
     args = parser.parse_args()
+    _configure_logging(args.verbose)
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)

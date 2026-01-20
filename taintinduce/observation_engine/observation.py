@@ -1,3 +1,5 @@
+import os
+from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 
 from tqdm import tqdm
@@ -41,6 +43,137 @@ def decode_instruction_bytes(bytestring: str, archstring: str) -> bytes:
         return bytes([int(c, 16) for c in bytestring])
     # For other architectures, pairs of hex chars form bytes
     return bytes.fromhex(bytestring)
+
+
+def _gen_observation_worker(
+    bytestring: str,
+    archstring: str,
+    state_format: list[Register],
+    seed_io: tuple[CpuRegisterMap, CpuRegisterMap],
+) -> Observation:
+    """Worker function for parallel observation generation.
+
+    This function creates its own CPU instance to ensure thread safety.
+    Each worker process will have its own Unicorn instance.
+
+    Args:
+        bytestring: Hex string representation of instruction
+        archstring: Architecture name
+        state_format: List of registers defining state format
+        seed_io: Tuple of (seed_in, seed_out) CPU states
+
+    Returns:
+        Observation object for this seed
+    """
+    # Create a fresh CPU instance for this worker
+    cpu = CPUFactory.create_cpu(archstring)
+    mem_regs = {x for x in state_format if 'MEM' in x.name}
+    cpu.set_memregs(mem_regs)
+
+    bytecode = decode_instruction_bytes(bytestring, archstring)
+    seed_in, seed_out = seed_io
+    seed_state = regs2bits(seed_in, state_format)
+    result_state = regs2bits(seed_out, state_format)
+    state_list: list[tuple[State, State]] = []
+
+    # Perform bit-flip observations
+    for reg in state_format:
+        if 'WRITE' in reg.name or 'ADDR' in reg.name:
+            continue
+        for x in range(reg.bits):
+            cpu.set_cpu_state(seed_in)
+            pos_val = 1 << x
+            mutate_val = seed_in[reg] ^ pos_val
+            cpu.write_reg(reg, mutate_val)
+            try:
+                sb, sa = cpu.execute(bytecode)
+            except UcError:
+                continue
+            except OutOfRangeException:
+                continue
+            state_before = regs2bits(sb, state_format)
+            state_after = regs2bits(sa, state_format)
+            if not seed_state.diff(state_before):
+                continue
+            state_list.append((state_before, state_after))
+
+    return Observation((seed_state, result_state), frozenset(state_list), bytestring, archstring, state_format)
+
+
+def _gen_random_seed_io_worker(
+    bytestring: str,
+    archstring: str,
+    seed_variation: SeedVariation,
+    num_tries: int = 255,
+) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:
+    """Worker function for parallel random seed IO generation.
+
+    Creates its own CPU instance for thread safety.
+
+    Args:
+        bytestring: Hex string representation of instruction
+        archstring: Architecture name
+        seed_variation: The seed variation with registers and values to set
+        num_tries: Maximum number of execution attempts
+
+    Returns:
+        Tuple of (input_state, output_state) or None if failed
+    """
+    cpu = CPUFactory.create_cpu(archstring)
+    bytecode = decode_instruction_bytes(bytestring, archstring)
+    regs2mod, vals2mod = seed_variation.registers, seed_variation.values
+
+    for x in range(num_tries):
+        try:
+            cpu.randomize_regs()
+            cpu.write_regs(regs2mod, vals2mod)
+            sb, sa = cpu.execute(bytecode)
+            return sb, sa
+        except (UcError, OutOfRangeException):
+            if x == num_tries - 1:
+                return None
+            continue
+    return None
+
+
+def _gen_exhaustive_seed_worker(
+    bytestring: str,
+    archstring: str,
+    state_format: list[Register],
+    state_val: int,
+) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:
+    """Worker function for parallel exhaustive seed generation.
+
+    Creates its own CPU instance for thread safety.
+
+    Args:
+        bytestring: Hex string representation of instruction
+        archstring: Architecture name
+        state_format: List of registers defining state format
+        state_val: Integer representing the state value to test
+
+    Returns:
+        Tuple of (input_state, output_state) or None if failed
+    """
+    cpu = CPUFactory.create_cpu(archstring)
+    bytecode = decode_instruction_bytes(bytestring, archstring)
+
+    # Convert state value to register values
+    input_state = CpuRegisterMap()
+    bit_offset = 0
+
+    for reg in state_format:
+        reg_value = (state_val >> bit_offset) & ((1 << reg.bits) - 1)
+        input_state[reg] = reg_value
+        bit_offset += reg.bits
+
+    # Execute instruction to get output state
+    cpu.set_cpu_state(input_state)
+    try:
+        _, output_state = cpu.execute(bytecode)
+        return (input_state, output_state)
+    except (UcError, OutOfRangeException):
+        return None
 
 
 def encode_instruction_bytes(bytecode: bytes, archstring: str) -> str:
@@ -241,8 +374,26 @@ class ObservationEngine(object):
 
         observations: list[Observation] = []
         seed_ios = self._gen_seeds(bytestring, archstring, state_format)
-        for seed_io in tqdm(seed_ios):
-            observations.append(self._gen_observation(bytestring, archstring, state_format, seed_io))
+
+        # Parallelize observation generation using ProcessPoolExecutor
+        max_workers = os.cpu_count() or 4
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            futures = [
+                executor.submit(
+                    _gen_observation_worker,
+                    bytestring,
+                    archstring,
+                    state_format,
+                    seed_io,
+                )
+                for seed_io in seed_ios
+            ]
+
+            # Collect results with progress bar
+            for future in tqdm(futures, desc='Generating observations'):
+                observations.append(future.result())
+
         return observations
 
     def _gen_observation(
@@ -333,22 +484,43 @@ class ObservationEngine(object):
                 ZeroWalk(),
                 BitFill(),
                 IEEE754Extended(10),
+                # Flag-targeted strategies for X86/AMD64
+                # FlagTargetedArithmetic(),
+                # ParityFocused(),
+                # SignAndZeroFocused(),
+                # AllBitsDependency(),
+                # ComplementaryPairs(),
             ]
 
         seed_states: list[tuple[CpuRegisterMap, CpuRegisterMap]] = []
 
         # TODO: HACK to speed up, we'll ignore write and addr
         temp_state_format = [x for x in state_format if ('WRITE' not in x.name and 'ADDR' not in x.name)]
+
+        # Collect all seed variations from all strategies first
+        all_seed_variations = []
         for strategy in strategies:
-            for seed_variation in tqdm(strategy.generator(temp_state_format)):
-                seed_io = self._gen_random_seed_io(bytestring, archstring, seed_variation)
-                # check if its successful or not, if not debug print
+            all_seed_variations.extend(list(strategy.generator(temp_state_format)))
+
+        # Parallelize seed generation
+        max_workers = os.cpu_count() or 4
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(
+                    _gen_random_seed_io_worker,
+                    bytestring,
+                    archstring,
+                    seed_variation,
+                )
+                for seed_variation in all_seed_variations
+            ]
+
+            for future in tqdm(futures, desc='Generating strategy seeds'):
+                seed_io = future.result()
                 if seed_io:
                     seed_states.append(seed_io)
-                else:
-                    if self.DEBUG_LOG:
-                        print('MAX_TRIES-{}-{}-{}-{}'.format(bytestring, archstring, state_format, seed_variation))
-                    continue
+                elif self.DEBUG_LOG:
+                    print('MAX_TRIES-{}-{}-{}'.format(bytestring, archstring, state_format))
 
         return seed_states
 
@@ -372,27 +544,27 @@ class ObservationEngine(object):
         total_states = 2**total_bits
 
         seed_states: list[tuple[CpuRegisterMap, CpuRegisterMap]] = []
-        bytecode = decode_instruction_bytes(bytestring, archstring)
-        cpu = CPUFactory.create_cpu(archstring)
 
+        # Parallelize exhaustive seed generation
+        max_workers = os.cpu_count() or 4
         desc = f'Generating exhaustive seeds ({total_states} states)'
-        for state_val in tqdm(range(total_states), desc=desc):
-            # Convert state value to register values
-            input_state = CpuRegisterMap()
-            bit_offset = 0
 
-            for reg in state_format:
-                reg_value = (state_val >> bit_offset) & ((1 << reg.bits) - 1)
-                input_state[reg] = reg_value
-                bit_offset += reg.bits
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(
+                    _gen_exhaustive_seed_worker,
+                    bytestring,
+                    archstring,
+                    state_format,
+                    state_val,
+                )
+                for state_val in range(total_states)
+            ]
 
-            # Execute instruction to get output state
-            cpu.set_cpu_state(input_state)
-            try:
-                _, output_state = cpu.execute(bytecode)
-                seed_states.append((input_state, output_state))
-            except (UcError, OutOfRangeException):
-                continue
+            for future in tqdm(futures, desc=desc):
+                result = future.result()
+                if result:
+                    seed_states.append(result)
 
         return seed_states
 
@@ -500,26 +672,47 @@ class ObservationEngine(object):
         # Filter state_format to exclude memory-related registers
         temp_state_format = [x for x in self.state_format if 'WRITE' not in x.name and 'ADDR' not in x.name]
 
-        seed_ios = []
-        for seed_variation in tqdm(
-            targeted_strategy.generator(temp_state_format),
-            desc='Generating refinement seeds',
-        ):
-            seed_io = self._gen_random_seed_io(
-                self.bytestring,
-                self.archstring,
-                seed_variation,
-            )
-            if seed_io:
-                seed_ios.append(seed_io)
-                if len(seed_ios) >= num_refinement_samples:
-                    break
+        # Collect seed variations up to the required number
+        seed_variations = list(targeted_strategy.generator(temp_state_format))
+        seed_variations = seed_variations[: num_refinement_samples * 2]  # Generate extra in case some fail
 
-        # Generate observations from these targeted seeds
-        refinement_observations = []
-        for seed_io in tqdm(seed_ios, desc='Generating refinement observations'):
-            obs = self._gen_observation(self.bytestring, self.archstring, self.state_format, seed_io)
-            refinement_observations.append(obs)
+        # Parallelize refinement seed generation
+        max_workers = os.cpu_count() or 4
+        seed_ios = []
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(
+                    _gen_random_seed_io_worker,
+                    self.bytestring,
+                    self.archstring,
+                    seed_variation,
+                )
+                for seed_variation in seed_variations
+            ]
+
+            for seed_future in tqdm(futures, desc='Generating refinement seeds'):
+                seed_io = seed_future.result()
+                if seed_io:
+                    seed_ios.append(seed_io)
+                    if len(seed_ios) >= num_refinement_samples:
+                        break
+
+        # Generate observations from these targeted seeds in parallel
+        max_workers = os.cpu_count() or 4
+        refinement_observations: list[Observation] = []
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            observation_futures = [
+                executor.submit(
+                    _gen_observation_worker,
+                    self.bytestring,
+                    self.archstring,
+                    self.state_format,
+                    seed_io,
+                )
+                for seed_io in seed_ios
+            ]
+            for obs_future in tqdm(observation_futures, desc='Generating refinement observations'):
+                refinement_observations.append(obs_future.result())
 
         return refinement_observations
 
@@ -533,10 +726,21 @@ class ObservationEngine(object):
         if len(seed_ios) >= num_refinement_samples:
             seed_ios = seed_ios[:num_refinement_samples]
 
-        # Generate observations from these targeted seeds
-        refinement_observations = []
-        for seed_io in tqdm(seed_ios, desc='Generating refinement observations'):
-            obs = self._gen_observation(self.bytestring, self.archstring, self.state_format, seed_io)
-            refinement_observations.append(obs)
+        # Generate observations from these targeted seeds in parallel
+        max_workers = os.cpu_count() or 4
+        refinement_observations: list[Observation] = []
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            observation_futures = [
+                executor.submit(
+                    _gen_observation_worker,
+                    self.bytestring,
+                    self.archstring,
+                    self.state_format,
+                    seed_io,
+                )
+                for seed_io in seed_ios
+            ]
+            for obs_future in tqdm(observation_futures, desc='Generating refinement observations'):
+                refinement_observations.append(obs_future.result())
 
         return refinement_observations

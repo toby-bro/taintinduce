@@ -41,9 +41,7 @@ The algorithm uses ESPRESSO logic minimizer to find boolean formulas that
 separate different taint propagation behaviors based on input state.
 """
 
-logging.basicConfig(format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def _log_unconditional_warnings(condition: TaintCondition | None, dataflow: Dataflow) -> None:
@@ -148,12 +146,12 @@ def infer(
     explained, total = validation.validate_rule_explains_observations(rule, observation_dependencies)
 
     if explained < total:
-        logger.warning(
+        print(
             f'Rule validation incomplete: {explained}/{total} behaviors explained '
             f'({explained/total*100:.1f}%). Some observations may not be fully captured by conditions.',
         )
     else:
-        logger.info(f'Rule validation successful: all {total} observation behaviors explained.')
+        print(f'Rule validation successful: all {total} observation behaviors explained.')
 
     return rule
 
