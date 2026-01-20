@@ -17,7 +17,7 @@ US, Feb 2019.
 
 ## Disclaimer
 
-### og disclaimer
+### original disclaimer
 
 > We are currently in the process of rewriting the prototype to better serve our
 > goal of providing an online taint service for different architectures.
@@ -57,6 +57,22 @@ This taintinduce++ has the same features than the og taintinduce except that:
 
 ```sh
 uv run python -m taintinduce.taintinduce 2303 X86
+```
+
+Instructions are written in hex. If you are not fluent in assembly here are two ressources
+
+- [Felix Coutier's](https://www.felixcloutier.com/x86) x86 reference.
+- a bash script adaptble to your needs: here it is used to write the crucial `bswap esi`
+
+```sh
+tt=$(mktemp) && cat > ${tt}.s << 'EOF'
+.intel_syntax noprefix
+.global _start
+_start:
+    bswap esi
+EOF
+as --32 ${tt}.s -o ${tt}.o && objdump -d -M intel ${tt}.o | grep bswap
+rm ${tt}.s ${tt}.o ${tt}
 ```
 
 ### To visualize the rules and observations in CLI
