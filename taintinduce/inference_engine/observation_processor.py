@@ -1,4 +1,5 @@
 """Observation processing utilities for inference engine."""
+
 import logging
 from collections import defaultdict
 
@@ -24,9 +25,11 @@ def extract_observation_dependencies(
         obs_mutate_in = MutatedInputStates()
         seed_in, seed_out = observation.seed_io
         for mutate_in, mutate_out in observation.mutated_ios:
-            bitflip_pos = next(iter(seed_in.diff(mutate_in)))
             if len(seed_in.diff(mutate_in)) != 1:
                 raise Exception('More than one bit flipped in mutated input state!')
+            bitflip_pos = next(iter(seed_in.diff(mutate_in)))
+            if bitflip_pos in obs_dep.keys():
+                raise Exception(f'Duplicate bit flip position detected: {bitflip_pos}')
             bitchanges_pos = seed_out.diff(mutate_out)
             obs_dep[bitflip_pos] = bitchanges_pos
             obs_mutate_in[bitflip_pos] = mutate_in
@@ -45,11 +48,12 @@ def link_affected_outputs_to_their_input_states(
 
     # for each observation, get the dep behavior, and add the seed to it
     for observation in observation_dependencies:
-        dataflow = observation.dataflow
-        mutated_input_states = observation.mutated_inputs
-        if mutated_input_bit in dataflow.inputs() and mutated_input_bit in mutated_input_states.mutated_bits():
-            partitions[dataflow.get_modified_outputs(mutated_input_bit)].add(
-                mutated_input_states.get_input_state(mutated_input_bit),
+        if (
+            mutated_input_bit in observation.dataflow.inputs()
+            and mutated_input_bit in observation.mutated_inputs.mutated_bits()
+        ):
+            partitions[observation.dataflow.get_modified_outputs(mutated_input_bit)].add(
+                observation.mutated_inputs.get_input_state(mutated_input_bit),
             )
 
     return partitions

@@ -31,7 +31,7 @@ Known Issues:
 import pytest
 
 from taintinduce.cpu.jn_cpu import JNCpu
-from taintinduce.inference_engine.inference import InferenceEngine
+from taintinduce.inference_engine.inference import infer
 from taintinduce.inference_engine.observation_processor import extract_observation_dependencies
 from taintinduce.inference_engine.validation import validate_rule_explains_observations
 from taintinduce.isa.jn_isa import JNOpcode, encode_instruction
@@ -71,12 +71,6 @@ def jn_state_format_immediate():
 def jn_cond_reg():
     """JN condition register (NZCV)."""
     return JN_REG_NZCV()
-
-
-@pytest.fixture
-def inference_engine():
-    """Create an inference engine."""
-    return InferenceEngine()
 
 
 # =============================================================================
@@ -152,7 +146,6 @@ def jn_instruction_data():
     state_format_short = [JN_REG_R1(), JN_REG_NZCV()]
 
     cond_reg = JN_REG_NZCV()
-    engine = InferenceEngine()
 
     class LazyCache:
         def __init__(self):
@@ -171,7 +164,7 @@ def jn_instruction_data():
                 obs_deps = extract_observation_dependencies(observations)
 
                 # Infer rule
-                rule = engine.infer(observations, cond_reg, obs_engine, enable_refinement=False)
+                rule = infer(observations, cond_reg, obs_engine, enable_refinement=False)
 
                 self._cache[key] = {
                     'observations': observations,
@@ -461,23 +454,14 @@ def test_full_inference(
     immediate,
     jn_state_format,
     jn_state_format_immediate,
-    jn_cond_reg,
-    inference_engine,
     jn_instruction_data,
 ):
     """Test full inference pipeline for all JN instructions."""
-    bytestring = encode_instruction(opcode, immediate)
     state_format = jn_state_format_immediate if immediate is not None else jn_state_format
 
     # Use cached data for register instructions to avoid recomputation
-    if immediate is None and (opcode, immediate) in jn_instruction_data:
-        data = jn_instruction_data[(opcode, immediate)]
-        rule = data['rule']
-        obs_engine = data['obs_engine']
-    else:
-        obs_engine = ObservationEngine(bytestring, 'JN', state_format)
-        observations = obs_engine.observe_insn()
-        rule = inference_engine.infer(observations, jn_cond_reg, obs_engine, enable_refinement=False)
+    data = jn_instruction_data[(opcode, immediate)]
+    rule = data['rule']
 
     # Basic checks
     assert len(rule.pairs) > 0, f'Rule should have condition-dataflow pairs for {opcode.name}'
@@ -509,10 +493,6 @@ def test_full_inference(
 def test_rule_explains_all_observations(
     opcode,
     immediate,
-    jn_state_format,
-    jn_state_format_immediate,
-    jn_cond_reg,
-    inference_engine,
     jn_instruction_data,
 ):
     """Test that inferred rule explains 100% of observations.
@@ -520,20 +500,11 @@ def test_rule_explains_all_observations(
     This verifies that the inference engine produces a complete rule
     that explains ALL observed behavior for each instruction.
     """
-    bytestring = encode_instruction(opcode, immediate)
-    state_format = jn_state_format_immediate if immediate is not None else jn_state_format
 
     # Use cached data for register instructions to avoid recomputation
-    if immediate is None and (opcode, immediate) in jn_instruction_data:
-        data = jn_instruction_data[(opcode, immediate)]
-        rule = data['rule']
-        obs_deps = data['obs_deps']
-    else:
-        obs_engine = ObservationEngine(bytestring, 'JN', state_format)
-        observations = obs_engine.observe_insn()
-        rule = inference_engine.infer(observations, jn_cond_reg, obs_engine, enable_refinement=False)
-        # Validate that rule explains all observations
-        obs_deps = extract_observation_dependencies(observations)
+    data = jn_instruction_data[(opcode, immediate)]
+    rule = data['rule']
+    obs_deps = data['obs_deps']
     explained, total = validate_rule_explains_observations(rule, obs_deps)
 
     # Assert that all behaviors are explained
@@ -556,10 +527,6 @@ def test_condition_inference(
     opcode,
     immediate,
     should_be_unconditional,
-    jn_state_format,
-    jn_state_format_immediate,
-    jn_cond_reg,
-    inference_engine,
     jn_instruction_data,
 ):
     """Test that conditions are inferred correctly for each instruction.
@@ -567,17 +534,10 @@ def test_condition_inference(
     Unconditional instructions (ADD, XOR) should have condition=None or empty conditions.
     Conditional instructions (AND, OR) should have conditions or multiple pairs.
     """
-    bytestring = encode_instruction(opcode, immediate)
-    state_format = jn_state_format_immediate if immediate is not None else jn_state_format
 
     # Use cached data for register instructions to avoid recomputation
-    if immediate is None and (opcode, immediate) in jn_instruction_data:
-        data = jn_instruction_data[(opcode, immediate)]
-        rule = data['rule']
-    else:
-        obs_engine = ObservationEngine(bytestring, 'JN', state_format)
-        observations = obs_engine.observe_insn()
-        rule = inference_engine.infer(observations, jn_cond_reg, obs_engine, enable_refinement=False)
+    data = jn_instruction_data[(opcode, immediate)]
+    rule = data['rule']
 
     # Check for unconditional flows
     unconditional_count = sum(
@@ -1129,15 +1089,8 @@ def test_inferred_rules_capture_taint_blocking(
     state_format = [JN_REG_R1(), JN_REG_NZCV()] if use_immediate else [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
 
     # Use cached data for register instructions to avoid recomputation
-    if not use_immediate and (opcode, immediate) in jn_instruction_data:
-        data = jn_instruction_data[(opcode, immediate)]
-        internal_rule = data['rule']
-    else:
-        # Generate observations and infer rule
-        obs_engine = ObservationEngine(bytestring, 'JN', state_format)
-        observations = obs_engine.observe_insn()
-        inference_engine = InferenceEngine()
-        internal_rule = inference_engine.infer(observations, JN_REG_NZCV(), obs_engine, enable_refinement=False)
+    data = jn_instruction_data[(opcode, immediate)]
+    internal_rule = data['rule']
 
     # Convert to TaintRule for simulation
     taint_rule = internal_rule.convert2squirrel('JN', bytestring)
@@ -1344,7 +1297,7 @@ class TestJNNZCVFlags:
         nzcv = output[JN_REG_NZCV()]
         assert nzcv & 1 == 1, 'V flag (bit 0) should be set'
 
-    def test_nzcv_taint_from_specific_bits(self, jn_state_format, jn_cond_reg, inference_engine):
+    def test_nzcv_taint_from_specific_bits(self, jn_state_format, jn_cond_reg):
         """Test that specific NZCV flag bits get taint from expected sources.
 
         For ADD R1, R2:
@@ -1357,14 +1310,14 @@ class TestJNNZCVFlags:
         obs_engine = ObservationEngine(bytestring, 'JN', jn_state_format)
         observations = obs_engine.observe_insn()
 
-        rule = inference_engine.infer(observations, jn_cond_reg, obs_engine, enable_refinement=False)
+        rule = infer(observations, jn_cond_reg, obs_engine, enable_refinement=False)
 
         # Verify that all R1 and R2 bits can affect NZCV
         for input_reg_bit in range(8):  # R1[0-3] and R2[0-3]
             nzcv_affected = set()
             for pair in rule.pairs:
                 if isinstance(pair.output_bits, dict) and input_reg_bit in pair.output_bits:
-                    outputs = pair.output_bits[input_reg_bit]
+                    outputs = pair.output_bits[BitPosition(input_reg_bit)]
                     for out_bit in outputs:
                         if 8 <= out_bit <= 11:
                             nzcv_affected.add(out_bit)

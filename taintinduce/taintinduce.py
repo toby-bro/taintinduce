@@ -7,12 +7,12 @@ import os
 import sys
 from typing import Optional
 
-import taintinduce.inference_engine.inference as inference_engine
 import taintinduce.observation_engine.observation as observation_engine
 from taintinduce.cpu.cpu import CPUFactory
 from taintinduce.disassembler.insn_info import Disassembler, InsnInfo
-from taintinduce.isa.register import CondRegister, Register
-from taintinduce.rules.rules import Rule, TaintRule
+from taintinduce.inference_engine.inference import infer
+from taintinduce.isa.register import Register
+from taintinduce.rules.rules import TaintRule
 
 # Replaced squirrel imports with our own serialization
 from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder
@@ -72,16 +72,6 @@ def gen_obs(
 ) -> tuple[list[Observation], observation_engine.ObservationEngine]:
     obs_engine = observation_engine.ObservationEngine(bytestring, archstring, state_format)
     return obs_engine.observe_insn(), obs_engine
-
-
-def infer(
-    observations: list[Observation],
-    cond_reg: CondRegister,
-    obs_engine: observation_engine.ObservationEngine | None = None,
-    enable_refinement: bool = True,
-) -> Rule:
-    infer_engine = inference_engine.InferenceEngine()
-    return infer_engine.infer(observations, cond_reg, obs_engine, enable_refinement)
 
 
 def taintinduce_infer(archstring: str, bytestring: str) -> tuple[InsnInfo, list[Observation], TaintRule]:
