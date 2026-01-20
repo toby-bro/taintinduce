@@ -53,11 +53,13 @@ def check_dataflow_matches(
         True if the dataflow matches, False otherwise
     """
     if isinstance(pair.output_bits, dict):
-        if input_bit in pair.output_bits:
-            return output_bits == pair.output_bits[input_bit]
-    else:
-        return output_bits == pair.output_bits
-    return False
+        # pair.output_bits is a Dataflow dict: {input_bit: output_bits_set}
+        if input_bit not in pair.output_bits:
+            return False
+        return output_bits == pair.output_bits[input_bit]
+
+    # Fallback: pair.output_bits is a frozenset (shouldn't happen with new implementation)
+    return output_bits == pair.output_bits
 
 
 def validate_condition(
@@ -121,21 +123,26 @@ def validate_rule_explains_observations(
             total_behaviors += 1
             input_state = obs_dep.mutated_inputs.get_input_state(input_bit)
 
-            # Try to find a matching condition-dataflow pair
-            found_match = False
+            # Collect all outputs from pairs that match this input_bit and satisfy the condition
+            explained_outputs: set[BitPosition] = set()
             for pair in rule.pairs:
                 if not check_condition_satisfied(pair.condition, input_state):
                     continue
 
-                if check_dataflow_matches(pair, input_bit, output_bits):
-                    found_match = True
-                    break
+                # Check if this pair has outputs for this input_bit
+                if isinstance(pair.output_bits, dict) and input_bit in pair.output_bits:
+                    explained_outputs.update(pair.output_bits[input_bit])
+                elif not isinstance(pair.output_bits, dict):
+                    # Fallback for old format
+                    explained_outputs.update(pair.output_bits)
 
-            if found_match:
+            # Check if the union of all explained outputs matches the observed outputs
+            if frozenset(explained_outputs) == output_bits:
                 explained_behaviors += 1
             else:
                 unexplained.append(
-                    f'Input bit {input_bit} -> {output_bits} (state=0x{input_state.state_value:x})',
+                    f'Input bit {input_bit} -> {output_bits} (state=0x{input_state.state_value:x}), '
+                    f'explained: {frozenset(explained_outputs)}',
                 )
 
     # Log results

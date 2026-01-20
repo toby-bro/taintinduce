@@ -1,21 +1,23 @@
 """Partition handling functions for dataflow inference."""
 
 import logging
+from collections import defaultdict
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from taintinduce.observation_engine.observation import ObservationEngine
 
 from taintinduce.isa.register import CondRegister, Register
-from taintinduce.rules.conditions import TaintCondition
+from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair
-from taintinduce.state.state import Observation, State
+from taintinduce.state.state import Observation
 from taintinduce.types import (
     BitPosition,
     ObservationDependency,
+    StateValue,
 )
 
-from . import condition_generator, observation_processor
+from . import condition_generator, unitary_flow_processor
 
 logger = logging.getLogger(__name__)
 
@@ -36,123 +38,165 @@ def handle_single_partition(
     return [ConditionDataflowPair(condition=None, output_bits=output_bits)]
 
 
-def process_output_partition(
-    output_set: frozenset[BitPosition],
-    partitions: dict[frozenset[BitPosition], set[State]],
-    state_format: list[Register],
-    cond_reg: CondRegister,
+def handle_multiple_partitions_output_centric(
     mutated_input_bit: BitPosition,
-    enable_refinement: bool,
-    observation_engine: Optional['ObservationEngine'],
-    all_observations: Optional[list[Observation]],
-) -> tuple[Optional[TaintCondition], frozenset[BitPosition]]:
-    """Process a single output partition and infer its condition."""
-    agreeing_partition: set[State] = set()
-    disagreeing_partition: set[State] = set()
-    for alternative_modified_output_set, input_states in partitions.items():
-        if output_set != alternative_modified_output_set:
-            disagreeing_partition.update(input_states)
-        else:
-            agreeing_partition.update(input_states)
+    observation_dependencies: list[ObservationDependency],
+) -> list[ConditionDataflowPair]:
+    """Handle multiple partitions using output-bit-centric approach.
 
-    condition_gen = condition_generator.ConditionGenerator()
+    This function generates conditions for each output bit independently,
+    considering only the relevant input bits for that specific output bit.
+    This prevents conditions on secondary effects (like flags) from contaminating
+    primary effects (like R2 -> R1 propagation).
 
-    # use_full_state=True: generates conditions on all input registers (data-dependent)
-    # This captures conditions like "if ebx=0, no taint in AND eax,ebx"
-    # For arithmetic operations, this may overfit if observations are sparse
-    mycond = condition_gen.generate_condition(
-        agreeing_partition,
-        disagreeing_partition,
-        state_format,
-        cond_reg,
-        use_full_state=True,
-    )
+    Args:
+        mutated_input_bit: The input bit we're analyzing
+        observation_dependencies: All observation dependencies
+        state_format: Register format
+        cond_reg: Condition register
+        enable_refinement: Whether to enable refinement
+        observation_engine: Optional observation engine for refinement
+        all_observations: Optional observations for refinement
 
-    # Debug: Log partition sizes to help identify overfitting
-    logger.debug(
-        f'  Partition sizes: agreeing={len(agreeing_partition)}, disagreeing={len(disagreeing_partition)}',
-    )
-    if mycond:
-        logger.debug(f'  Found condition for output set {output_set}: {mycond}')
+    Returns:
+        List of ConditionDataflowPair objects
+    """
+    # Step 1: Get all output bits affected by this input bit
+    affected_output_bits: set[BitPosition] = set()
+    for obs_dep in observation_dependencies:
+        if mutated_input_bit in obs_dep.dataflow:
+            affected_output_bits.update(obs_dep.dataflow[mutated_input_bit])
 
-        # Refinement pass: validate this specific condition
-        if enable_refinement and observation_engine is not None and all_observations is not None:
-            refined_cond = condition_gen.refine_condition(
-                mycond,
-                mutated_input_bit,
-                output_set,
-                observation_engine,
-                all_observations,
-                state_format,
-                cond_reg,
+    if not affected_output_bits:
+        return [ConditionDataflowPair(condition=None, output_bits=frozenset())]
+
+    # Step 2: For each output bit, determine all input bits that affect it
+    output_to_all_inputs = unitary_flow_processor.group_unitary_flows_by_output(observation_dependencies)
+
+    # Step 3: Generate conditions for each output bit independently
+    # We'll group results by condition to merge later
+    condition_to_outputs: dict[tuple[Optional[object], Optional[object]], set[BitPosition]] = defaultdict(set)
+
+    for output_bit in affected_output_bits:
+        # Get all input bits that can affect this output bit (not just mutated_input_bit)
+        relevant_input_bits = output_to_all_inputs.get(output_bit, set())
+
+        if not relevant_input_bits:
+            # No input affects this output? Skip
+            continue
+
+        logger.debug(
+            f'Processing output bit {output_bit}: mutated_input_bit={mutated_input_bit}, '
+            f'relevant_input_bits={sorted(relevant_input_bits)}',
+        )
+
+        # Step 4: Collect states that do/don't trigger propagation from mutated_input_bit to output_bit
+        propagating_states, non_propagating_states = unitary_flow_processor.collect_states_for_unitary_flow(
+            observation_dependencies,
+            mutated_input_bit,
+            output_bit,
+        )
+
+        logger.debug(
+            f'  Counts: propagating={len(propagating_states)}, non_propagating={len(non_propagating_states)}',
+        )
+
+        # If no variation in behavior, it's unconditional
+        if not non_propagating_states or not propagating_states:
+            # Unconditional flow from mutated_input_bit to output_bit
+            logger.debug(
+                f'  Output bit {output_bit}: unconditional flow (propagating={len(propagating_states)}, '
+                f'non_propagating={len(non_propagating_states)})',
             )
-            if refined_cond != mycond:
-                logger.info(f'  REFINED: {mycond} -> {refined_cond}')
-                mycond = refined_cond
-            else:
-                logger.info(f'  UNCHANGED: {mycond}')
+            condition_key: tuple[Optional[object], Optional[object]] = (None, None)
+            condition_to_outputs[condition_key].add(output_bit)
+            continue
 
-    return mycond, output_set
+        # Step 5: Create simplified states with only relevant input bits
+        # The relevant bits are ALL input bits that affect this output bit
+        relevant_bit_positions = frozenset(relevant_input_bits)
+        num_relevant_bits = len(relevant_bit_positions)
+
+        # Extract simplified states
+        simplified_propagating: set[StateValue] = {
+            unitary_flow_processor.extract_relevant_bits_from_state(state, relevant_bit_positions)
+            for state in propagating_states
+        }
+        simplified_non_propagating: set[StateValue] = {
+            unitary_flow_processor.extract_relevant_bits_from_state(state, relevant_bit_positions)
+            for state in non_propagating_states
+        }
+
+        # Step 6: Generate condition on simplified bits
+        condition_gen = condition_generator.ConditionGenerator()
+
+        try:
+            # Use espresso directly on simplified bit space
+            partitions = {1: simplified_propagating, 0: simplified_non_propagating}
+            dnf_condition = condition_gen.espresso.minimize(num_relevant_bits, 1, 'fr', partitions)
+
+            # Step 7: Transpose condition back to original bit positions
+            transposed_ops = unitary_flow_processor.transpose_condition_bits(
+                dnf_condition,
+                relevant_bit_positions,
+            )
+
+            logger.debug(
+                f'  Condition: simplified={dnf_condition}, '
+                f'relevant_bits={sorted(relevant_bit_positions)}, '
+                f'transposed={transposed_ops}',
+            )
+
+            # Create condition object
+            cond = TaintCondition(LogicType.DNF, transposed_ops)
+            condition_key = (cond.condition_type, cond.condition_ops)
+            condition_to_outputs[condition_key].add(output_bit)
+
+        except Exception as e:
+            # If condition generation fails, treat as unconditional
+            logger.debug(
+                f'Failed to generate condition for input bit {mutated_input_bit} -> output bit {output_bit}: {e}',
+            )
+            condition_key = (None, None)
+            condition_to_outputs[condition_key].add(output_bit)
+
+    # Step 8: Build ConditionDataflowPair list from grouped results
+    condition_dataflow_pairs: list[ConditionDataflowPair] = []
+
+    for condition_key, output_bits_set in condition_to_outputs.items():
+        cond_type, cond_ops = condition_key
+
+        condition: Optional[TaintCondition]
+        if cond_type is None:
+            condition = None
+        else:
+            # cond_type and cond_ops are not None here
+            condition = TaintCondition(cond_type, cond_ops)  # type: ignore[arg-type]
+
+        output_bits = frozenset(output_bits_set)
+        condition_dataflow_pairs.append(ConditionDataflowPair(condition=condition, output_bits=output_bits))
+
+    return condition_dataflow_pairs
 
 
 def handle_multiple_partitions(
     mutated_input_bit: BitPosition,
     observation_dependencies: list[ObservationDependency],
-    state_format: list[Register],
-    cond_reg: CondRegister,
-    enable_refinement: bool,
-    observation_engine: Optional['ObservationEngine'],
-    all_observations: Optional[list[Observation]],
+    _state_format: list[Register],
+    _cond_reg: CondRegister,
+    _enable_refinement: bool,
+    _observation_engine: Optional['ObservationEngine'],
+    _all_observations: Optional[list[Observation]],
 ) -> list[ConditionDataflowPair]:
-    """Handle case with multiple partitions (conditional dataflow)."""
-    condition_dataflow_pairs: list[ConditionDataflowPair] = []
-    no_cond_dataflow_set: set[frozenset[BitPosition]] = set()
+    """Handle case with multiple partitions (conditional dataflow).
 
-    # Generate the two sets...
-    # Iterate across all observations and extract the behavior for the partitions...
-    partitions = observation_processor.link_affected_outputs_to_their_input_states(
-        observation_dependencies,
+    Uses the new output-bit-centric approach to prevent cross-contamination
+    of conditions between unrelated flows.
+
+    Note: Some parameters are unused in the new implementation but kept
+    for interface compatibility.
+    """
+    return handle_multiple_partitions_output_centric(
         mutated_input_bit,
+        observation_dependencies,
     )
-
-    # ZL: The current heuristic is to always select the smaller partition first since
-    # it lowers the chances of the DNF exploding.
-    ordered_output_sets = sorted(partitions.keys(), key=lambda x: len(partitions[x]), reverse=True)
-
-    for output_set in ordered_output_sets:
-        mycond, output_bits = process_output_partition(
-            output_set,
-            partitions,
-            state_format,
-            cond_reg,
-            mutated_input_bit,
-            enable_refinement,
-            observation_engine,
-            all_observations,
-        )
-
-        if mycond:
-            condition_dataflow_pairs.append(
-                ConditionDataflowPair(condition=mycond, output_bits=output_bits),
-            )
-        else:
-            if len(output_set) > 1:
-                logger.info(
-                    f'No condition for input bit {mutated_input_bit} -> {len(output_set)} output bits (partition)',
-                )
-            no_cond_dataflow_set.add(output_set)
-
-    # Default/fallthrough case: remaining behavior with no condition
-    remaining_behavior: frozenset[BitPosition] = frozenset()
-    if len(no_cond_dataflow_set) > 0:
-        for behavior in no_cond_dataflow_set:
-            remaining_behavior = remaining_behavior.union(behavior)
-        logger.info(
-            f'No condition for input bit {mutated_input_bit} -> '
-            f'{len(remaining_behavior)} output bits (fallthrough)',
-        )
-        condition_dataflow_pairs.append(
-            ConditionDataflowPair(condition=None, output_bits=remaining_behavior),
-        )
-
-    return condition_dataflow_pairs

@@ -46,15 +46,6 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def _create_condition_from_key(cond_key: tuple[object, object]) -> TaintCondition | None:
-    """Create TaintCondition from a condition key tuple."""
-    cond_type, cond_ops = cond_key
-    if cond_type is None:
-        return None
-    # Type narrowing: if cond_type is not None, treat as TaintCondition parameters
-    return TaintCondition(cond_type, cond_ops)  # type: ignore[arg-type]
-
-
 def _log_unconditional_warnings(condition: TaintCondition | None, dataflow: Dataflow) -> None:
     """Log warnings for unconditional 1-to-many flows."""
     is_empty = condition is None or (condition.condition_ops is not None and len(condition.condition_ops) == 0)
@@ -68,62 +59,43 @@ def _log_unconditional_warnings(condition: TaintCondition | None, dataflow: Data
             )
 
 
-def _build_full_dataflows(
+def _build_dataflows_from_unitary_conditions(
     per_bit_conditions: dict[BitPosition, list[ConditionDataflowPair]],
 ) -> list[ConditionDataflowPair]:
-    """Build list of ConditionDataflowPair objects with full dataflows.
+    """Build list of ConditionDataflowPair objects from per-input-bit conditions.
+
+    Each input bit's condition-dataflow pairs are converted to proper Dataflow objects.
+    No grouping across input bits - each condition applies only to the specific
+    input bits it was generated for.
 
     Args:
         per_bit_conditions: Maps each input bit to its condition-dataflow pairs
 
     Returns:
-        List of ConditionDataflowPair objects where each condition is properly
-        associated with its corresponding dataflows (not incorrectly reused)
+        List of ConditionDataflowPair objects with Dataflow dicts
     """
-    # Group conditions by their actual condition object to merge identical conditions
-    # Key: (condition_type, condition_ops) tuple or (None, None) for unconditional
-    # Value: Dataflow accumulating all input bits that share this exact condition
-    condition_to_dataflow: dict[tuple[object, object], Dataflow] = {}
+    result: list[ConditionDataflowPair] = []
 
     # Process each input bit's conditions
     for input_bit, pairs in per_bit_conditions.items():
         for pair in pairs:
-            # Create a hashable key for this condition
-            cond_key: tuple[object, object]
-            if pair.condition is None:
-                cond_key = (None, None)
-            else:
-                cond_key = (pair.condition.condition_type, pair.condition.condition_ops)
-
-            # Get or create dataflow for this condition
-            if cond_key not in condition_to_dataflow:
-                condition_to_dataflow[cond_key] = Dataflow()
-
-            dataflow = condition_to_dataflow[cond_key]
-
-            # Add this input bit's output to the dataflow
+            # Convert frozenset output_bits to Dataflow for this input bit
             if isinstance(pair.output_bits, frozenset):
+                dataflow = Dataflow()
                 dataflow[input_bit] = pair.output_bits
-            elif isinstance(pair.output_bits, dict) and input_bit in pair.output_bits:
-                # Should not happen with the new logic, but handle defensively
-                logger.warning(f'Unexpected dict output_bits for input bit {input_bit}')
-                dataflow[input_bit] = pair.output_bits[input_bit]
 
-    # Convert back to list of ConditionDataflowPair objects
-    condition_dataflow_pairs_full: list[ConditionDataflowPair] = []
+                # Log warnings for unconditional 1-to-many flows
+                _log_unconditional_warnings(pair.condition, dataflow)
 
-    for cond_key, dataflow in condition_to_dataflow.items():
-        # Build condition object
-        condition = _create_condition_from_key(cond_key)
+                result.append(
+                    ConditionDataflowPair(condition=pair.condition, output_bits=dataflow),
+                )
+            elif isinstance(pair.output_bits, dict):
+                # Already a Dataflow
+                _log_unconditional_warnings(pair.condition, pair.output_bits)
+                result.append(pair)
 
-        # Log warnings for unconditional 1-to-many flows
-        _log_unconditional_warnings(condition, dataflow)
-
-        condition_dataflow_pairs_full.append(
-            ConditionDataflowPair(condition=condition, output_bits=dataflow),
-        )
-
-    return condition_dataflow_pairs_full
+    return result
 
 
 def infer(
@@ -165,11 +137,11 @@ def infer(
     if len(per_bit_conditions) == 0:
         raise Exception('No conditions inferred!')
 
-    # Build list of ConditionDataflowPair objects with full dataflows
-    # Each input bit's conditions are kept separate and not incorrectly grouped
-    condition_dataflow_pairs_full = _build_full_dataflows(per_bit_conditions)
+    # Build list of ConditionDataflowPair objects from unitary flow conditions
+    # Each condition applies only to the specific input bits it was generated for
+    condition_dataflow_pairs = _build_dataflows_from_unitary_conditions(per_bit_conditions)
 
-    rule = Rule(state_format, pairs=condition_dataflow_pairs_full)
+    rule = Rule(state_format, pairs=condition_dataflow_pairs)
 
     # Validate that the generated rule explains all observations
     observation_dependencies = observation_processor.extract_observation_dependencies(observations)

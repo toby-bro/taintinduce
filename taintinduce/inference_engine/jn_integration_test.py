@@ -1497,67 +1497,87 @@ class TestJNSubInstruction:
 
 @pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_R2_is_always_unconditionnal(jn_instruction_data, opcode, immediate):
-    """Test that R2's bits are unconditionnally R2 input bits in all non immediate instructions."""
+    """Test that R2's bits are unconditionally propagated to themselves (R2[i] -> R2[i])."""
     # Use cached data
     data = jn_instruction_data[(opcode, immediate)]
     rule = data['rule']
     observations = data['observations']
 
-    # Check that R2 bits (4-7) are always in input_bits of some pair
+    # Check that R2 bits (4-7) unconditionally propagate to themselves
     if immediate is not None:
         for obs in observations:
             reg_names = [r.name for r in obs.state_format]
             assert 'R2' not in reg_names, f'{opcode.name} should not include R2'
             return
+
+    # For each R2 bit as input, check if it propagates to itself unconditionally
     for pair in rule.pairs:
-        for r2_bit in range(4, 8):
-            if r2_bit in pair.output_bits:
-                assert pair.condition is None or len(pair.condition.condition_ops) == 0
+        for r2_input_bit in range(4, 8):
+            if r2_input_bit in pair.output_bits:
+                # This pair has r2_input_bit as input
+                outputs = pair.output_bits[r2_input_bit]
+                # Check if it propagates to itself (R2[i] -> R2[i])
+                if r2_input_bit in outputs:
+                    # R2[i] -> R2[i] should be unconditional
+                    assert pair.condition is None or len(pair.condition.condition_ops) == 0, (
+                        f'{opcode.name}: R2 bit {r2_input_bit} -> {r2_input_bit} should be unconditional, '
+                        f'but has condition {pair.condition}'
+                    )
 
 
 def test_or_R1_condition(jn_instruction_data):
-    """Test that OR R1, R2 has correct condition for R1 output bits."""
+    """Test that OR R1, R2 has correct condition for R1 input bits affecting R1 output bits."""
     # Use cached data
     data = jn_instruction_data[(JNOpcode.OR_R1_R2, None)]
     rule = data['rule']
 
-    # Check that R1 output bits (0-3) have correct condition
+    # Check that R1 input bits (0-3) have correct condition when affecting R1 output bits
     for pair in rule.pairs:
         for input_bit, outputs in pair.output_bits.items():
-            for output_bit in outputs:
-                if 0 <= output_bit <= 3:  # R1 output bits
-                    assert pair.condition is not None
-                    expected_condition = TaintCondition(
-                        LogicType.DNF,
-                        frozenset([(1 << (input_bit + 4), 0)]),
-                        None,
-                    )
+            # Only check R1 input bits (0-3)
+            if 0 <= input_bit <= 3:
+                for output_bit in outputs:
+                    if 0 <= output_bit <= 3:  # R1 output bits
+                        # For OR: R1[i] affects R1[i] when R2[i] = 0
+                        # R2[i] is at bit position (input_bit + 4)
+                        assert pair.condition is not None
+                        r2_bit = input_bit + 4
+                        expected_condition = TaintCondition(
+                            LogicType.DNF,
+                            frozenset([(1 << r2_bit, 0)]),
+                            None,
+                        )
 
-                    assert pair.condition == expected_condition, (
-                        f'OR R1, R2: Output bit {output_bit} has incorrect condition. '
-                        f'Expected {expected_condition}, got {pair.condition}'
-                    )
+                        assert pair.condition == expected_condition, (
+                            f'OR R1, R2: Input bit {input_bit} -> Output bit {output_bit} has incorrect condition. '
+                            f'Expected {expected_condition}, got {pair.condition}'
+                        )
 
 
 def test_and_R1_condition(jn_instruction_data):
-    """Test that OR R1, R2 has correct condition for R1 output bits."""
+    """Test that AND R1, R2 has correct condition for R1 input bits affecting R1 output bits."""
     # Use cached data
-    data = jn_instruction_data[(JNOpcode.OR_R1_R2, None)]
+    data = jn_instruction_data[(JNOpcode.AND_R1_R2, None)]
     rule = data['rule']
 
-    # Check that R1 output bits (0-3) have correct condition
+    # Check that R1 input bits (0-3) have correct condition when affecting R1 output bits
     for pair in rule.pairs:
         for input_bit, outputs in pair.output_bits.items():
-            for output_bit in outputs:
-                if 0 <= output_bit <= 3:  # R1 output bits
-                    assert pair.condition is not None
-                    expected_condition = TaintCondition(
-                        LogicType.DNF,
-                        frozenset([(1 << (input_bit + 4), 1 << (input_bit + 4))]),
-                        None,
-                    )
+            # Only check R1 input bits (0-3)
+            if 0 <= input_bit <= 3:
+                for output_bit in outputs:
+                    if 0 <= output_bit <= 3:  # R1 output bits
+                        # For AND: R1[i] affects R1[i] when R2[i] = 1
+                        # R2[i] is at bit position (input_bit + 4)
+                        assert pair.condition is not None
+                        r2_bit = input_bit + 4
+                        expected_condition = TaintCondition(
+                            LogicType.DNF,
+                            frozenset([(1 << r2_bit, 1 << r2_bit)]),
+                            None,
+                        )
 
-                    assert pair.condition == expected_condition, (
-                        f'OR R1, R2: Output bit {output_bit} has incorrect condition. '
-                        f'Expected {expected_condition}, got {pair.condition}'
-                    )
+                        assert pair.condition == expected_condition, (
+                            f'AND R1, R2: Input bit {input_bit} -> Output bit {output_bit} has incorrect condition. '
+                            f'Expected {expected_condition}, got {pair.condition}'
+                        )

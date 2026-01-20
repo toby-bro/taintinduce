@@ -4,7 +4,7 @@ This module contains all type aliases used throughout the codebase
 to make complex type signatures more readable.
 """
 
-from typing import TYPE_CHECKING, NewType
+from typing import TYPE_CHECKING, NamedTuple, NewType
 
 from taintinduce.isa.register import Register
 
@@ -16,6 +16,14 @@ if TYPE_CHECKING:
 # CPU state representation as register-value mapping
 class CpuRegisterMap(dict[Register, int]):
     """Maps CPU registers to their integer values."""
+
+
+# Unitary flow: single input bit -> single output bit
+class UnitaryFlow(NamedTuple):
+    """Represents a single input bit affecting a single output bit."""
+
+    input_bit: 'BitPosition'
+    output_bit: 'BitPosition'
 
 
 # Taint dataflow types
