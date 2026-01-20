@@ -42,6 +42,7 @@ from taintinduce.observation_engine.observation import (
     decode_instruction_bytes,
     encode_instruction_bytes,
 )
+from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.types import BitPosition, CpuRegisterMap
 from taintinduce.visualizer.taint_simulator import simulate_taint_propagation
 
@@ -1512,3 +1513,51 @@ def test_R2_is_always_unconditionnal(jn_instruction_data, opcode, immediate):
         for r2_bit in range(4, 8):
             if r2_bit in pair.output_bits:
                 assert pair.condition is None or len(pair.condition.condition_ops) == 0
+
+
+def test_or_R1_condition(jn_instruction_data):
+    """Test that OR R1, R2 has correct condition for R1 output bits."""
+    # Use cached data
+    data = jn_instruction_data[(JNOpcode.OR_R1_R2, None)]
+    rule = data['rule']
+
+    # Check that R1 output bits (0-3) have correct condition
+    for pair in rule.pairs:
+        for input_bit, outputs in pair.output_bits.items():
+            for output_bit in outputs:
+                if 0 <= output_bit <= 3:  # R1 output bits
+                    assert pair.condition is not None
+                    expected_condition = TaintCondition(
+                        LogicType.DNF,
+                        frozenset([(1 << (input_bit + 4), 0)]),
+                        None,
+                    )
+
+                    assert pair.condition == expected_condition, (
+                        f'OR R1, R2: Output bit {output_bit} has incorrect condition. '
+                        f'Expected {expected_condition}, got {pair.condition}'
+                    )
+
+
+def test_and_R1_condition(jn_instruction_data):
+    """Test that OR R1, R2 has correct condition for R1 output bits."""
+    # Use cached data
+    data = jn_instruction_data[(JNOpcode.OR_R1_R2, None)]
+    rule = data['rule']
+
+    # Check that R1 output bits (0-3) have correct condition
+    for pair in rule.pairs:
+        for input_bit, outputs in pair.output_bits.items():
+            for output_bit in outputs:
+                if 0 <= output_bit <= 3:  # R1 output bits
+                    assert pair.condition is not None
+                    expected_condition = TaintCondition(
+                        LogicType.DNF,
+                        frozenset([(1 << (input_bit + 4), 1 << (input_bit + 4))]),
+                        None,
+                    )
+
+                    assert pair.condition == expected_condition, (
+                        f'OR R1, R2: Output bit {output_bit} has incorrect condition. '
+                        f'Expected {expected_condition}, got {pair.condition}'
+                    )
