@@ -80,6 +80,44 @@ def inference_engine():
 
 
 # =============================================================================
+# Parametrize constants for reuse across tests
+# =============================================================================
+
+
+# All 10 JN instructions including SUB
+ALL_JN_INSTRUCTIONS = [
+    (JNOpcode.ADD_R1_R2, None),  # 0
+    (JNOpcode.ADD_R1_IMM, 0xA),  # 1A
+    (JNOpcode.OR_R1_R2, None),  # 2
+    (JNOpcode.OR_R1_IMM, 0x3),  # 3
+    (JNOpcode.AND_R1_R2, None),  # 4
+    (JNOpcode.AND_R1_IMM, 0xF),  # 5F
+    (JNOpcode.XOR_R1_R2, None),  # 6
+    (JNOpcode.XOR_R1_IMM, 0xA),  # 7A
+    (JNOpcode.SUB_R1_R2, None),  # 8
+    (JNOpcode.SUB_R1_IMM, 0x5),  # 9A
+]
+
+# Only register instructions (no immediate variants)
+REGISTER_INSTRUCTIONS = [i for i in ALL_JN_INSTRUCTIONS if i[1] is None]
+IMMEDIATE_INSTRUCTIONS = [i for i in ALL_JN_INSTRUCTIONS if i[1] is not None]
+
+# Instructions with unconditional flag for condition inference tests
+INSTRUCTIONS_WITH_CONDITIONALITY = [
+    (JNOpcode.ADD_R1_R2, None, False),  # 0 - ADD is conditional
+    (JNOpcode.ADD_R1_IMM, 0xA, True),  # 1A - ADD is unconditional
+    (JNOpcode.OR_R1_R2, None, False),  # 2 - OR is conditional
+    (JNOpcode.OR_R1_IMM, 0xA, True),  # 3A - OR is unconditional
+    (JNOpcode.AND_R1_R2, None, False),  # 4 - AND is conditional
+    (JNOpcode.AND_R1_IMM, 0xA, True),  # 5A - AND is unconditional
+    (JNOpcode.XOR_R1_R2, None, True),  # 6 - XOR is unconditional
+    (JNOpcode.XOR_R1_IMM, 0xA, True),  # 7A - XOR is unconditional
+    (JNOpcode.SUB_R1_R2, None, False),  # 8 - SUB is conditional
+    (JNOpcode.SUB_R1_IMM, 0x5, True),  # 9A - SUB is unconditional
+]
+
+
+# =============================================================================
 # Cached Observations and Rules (computed once per instruction)
 # =============================================================================
 
@@ -155,21 +193,7 @@ def jn_instruction_data():
 # =============================================================================
 
 
-@pytest.mark.parametrize(
-    ('opcode', 'immediate'),
-    [
-        (JNOpcode.ADD_R1_R2, None),  # 0
-        (JNOpcode.ADD_R1_IMM, 0xA),  # 1A
-        (JNOpcode.OR_R1_R2, None),  # 2
-        (JNOpcode.OR_R1_IMM, 0x3),  # 3
-        (JNOpcode.AND_R1_R2, None),  # 4
-        (JNOpcode.AND_R1_IMM, 0xF),  # 5F
-        (JNOpcode.XOR_R1_R2, None),  # 6
-        (JNOpcode.XOR_R1_IMM, 0xA),  # 7A
-        (JNOpcode.SUB_R1_R2, None),  # 8
-        (JNOpcode.SUB_R1_IMM, 0x5),  # 9A
-    ],
-)
+@pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_decode_roundtrip(opcode, immediate):
     """Test that decode_jn_hex(decode_instruction_bytes(...)) is a round trip.
 
@@ -200,19 +224,7 @@ def test_decode_roundtrip(opcode, immediate):
 # =============================================================================
 
 
-@pytest.mark.parametrize(
-    ('opcode', 'immediate'),
-    [
-        (JNOpcode.ADD_R1_R2, None),  # 0
-        (JNOpcode.ADD_R1_IMM, 0xA),  # 1A
-        (JNOpcode.OR_R1_R2, None),  # 2
-        (JNOpcode.OR_R1_IMM, 0x3),  # 3A (immediate value 0xA in hex string)
-        (JNOpcode.AND_R1_R2, None),  # 4
-        (JNOpcode.AND_R1_IMM, 0xF),  # 5A
-        (JNOpcode.XOR_R1_R2, None),  # 6
-        (JNOpcode.XOR_R1_IMM, 0xA),  # 7A
-    ],
-)
+@pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_observation_generation(
     opcode,
     immediate,
@@ -443,19 +455,7 @@ class TestJNDataflowCompleteness:
 # =============================================================================
 
 
-@pytest.mark.parametrize(
-    ('opcode', 'immediate'),
-    [
-        (JNOpcode.ADD_R1_R2, None),  # 0
-        (JNOpcode.ADD_R1_IMM, 0xA),  # 1A
-        (JNOpcode.OR_R1_R2, None),  # 2
-        (JNOpcode.OR_R1_IMM, 0x3),  # 3A
-        (JNOpcode.AND_R1_R2, None),  # 4
-        (JNOpcode.AND_R1_IMM, 0xF),  # 5A
-        (JNOpcode.XOR_R1_R2, None),  # 6
-        (JNOpcode.XOR_R1_IMM, 0xA),  # 7A
-    ],
-)
+@pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_full_inference(
     opcode,
     immediate,
@@ -505,19 +505,7 @@ def test_full_inference(
 # =============================================================================
 
 
-@pytest.mark.parametrize(
-    ('opcode', 'immediate'),
-    [
-        (JNOpcode.ADD_R1_R2, None),  # 0
-        (JNOpcode.ADD_R1_IMM, 0xA),  # 1A
-        (JNOpcode.OR_R1_R2, None),  # 2
-        (JNOpcode.OR_R1_IMM, 0x3),  # 3A
-        (JNOpcode.AND_R1_R2, None),  # 4
-        (JNOpcode.AND_R1_IMM, 0xF),  # 5A
-        (JNOpcode.XOR_R1_R2, None),  # 6
-        (JNOpcode.XOR_R1_IMM, 0xA),  # 7A
-    ],
-)
+@pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_rule_explains_all_observations(
     opcode,
     immediate,
@@ -562,16 +550,7 @@ def test_rule_explains_all_observations(
 
 @pytest.mark.parametrize(
     ('opcode', 'immediate', 'should_be_unconditional'),
-    [
-        (JNOpcode.ADD_R1_R2, None, False),  # 0 - ADD is conditional
-        (JNOpcode.ADD_R1_IMM, 0xA, True),  # 1A - ADD is unconditional
-        (JNOpcode.OR_R1_R2, None, False),  # 2 - OR is conditional
-        (JNOpcode.OR_R1_IMM, 0xA, True),  # 3A - OR is unconditional
-        (JNOpcode.AND_R1_R2, None, False),  # 4 - AND is conditional
-        (JNOpcode.AND_R1_IMM, 0xA, True),  # 5A - AND is unconditional
-        (JNOpcode.XOR_R1_R2, None, True),  # 6 - XOR is unconditional
-        (JNOpcode.XOR_R1_IMM, 0xA, True),  # 7A - XOR is unconditional
-    ],
+    INSTRUCTIONS_WITH_CONDITIONALITY,
 )
 def test_condition_inference(
     opcode,
@@ -908,15 +887,7 @@ class TestJNConcreteValueValidation:
 class TestJNImmediateInstructions:
     """Test that immediate instructions use correct state format."""
 
-    @pytest.mark.parametrize(
-        ('opcode', 'immediate'),
-        [
-            (JNOpcode.ADD_R1_IMM, 0x5),
-            (JNOpcode.OR_R1_IMM, 0x3),
-            (JNOpcode.AND_R1_IMM, 0xF),
-            (JNOpcode.XOR_R1_IMM, 0xA),
-        ],
-    )
+    @pytest.mark.parametrize(('opcode', 'immediate'), IMMEDIATE_INSTRUCTIONS)
     def test_immediate_instructions_exclude_r2(self, opcode, immediate, jn_instruction_data):
         """Test that all immediate instructions exclude R2 from state format."""
         bytestring = encode_instruction(opcode, immediate)
@@ -1570,21 +1541,7 @@ class TestJNSubInstruction:
         )
 
 
-@pytest.mark.parametrize(
-    ('opcode', 'immediate'),
-    [
-        (JNOpcode.ADD_R1_R2, None),  # 0
-        (JNOpcode.ADD_R1_IMM, 0xA),  # 1A
-        (JNOpcode.OR_R1_R2, None),  # 2
-        (JNOpcode.OR_R1_IMM, 0x3),  # 3
-        (JNOpcode.AND_R1_R2, None),  # 4
-        (JNOpcode.AND_R1_IMM, 0xF),  # 5F
-        (JNOpcode.XOR_R1_R2, None),  # 6
-        (JNOpcode.XOR_R1_IMM, 0xA),  # 7A
-        (JNOpcode.SUB_R1_R2, None),  # 8
-        (JNOpcode.SUB_R1_IMM, 0x5),  # 9A
-    ],
-)
+@pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_R2_is_always_unconditionnal(jn_instruction_data, opcode, immediate):
     """Test that R2's bits are unconditionnally R2 input bits in all non immediate instructions."""
     # Use cached data
