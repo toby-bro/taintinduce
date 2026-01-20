@@ -101,7 +101,7 @@ def validate_condition(
     return True
 
 
-def validate_rule_explains_observations(
+def validate_rule_explains_observations(  # noqa: C901
     rule: Rule,
     observation_dependencies: list[ObservationDependency],
 ) -> tuple[int, int]:
