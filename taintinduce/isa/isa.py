@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 from taintinduce.serialization import SerializableMixin
 
@@ -37,5 +38,5 @@ class ISA(ABC, SerializableMixin):
         Must be implemented by subclasses."""
 
     @abstractmethod
-    def create_full_reg(self, name: str, bits: int = 0, structure: list[int] = []) -> Register:  # noqa: B006
+    def create_full_reg(self, name: str, bits: int = 0, structure: Optional[list[int]] = None) -> Register:
         """Create a full register with given parameters. Must be implemented by subclasses."""

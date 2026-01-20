@@ -43,7 +43,7 @@ class ConditionGenerator:
         condition_bits: set[int] = set()
         for cond in conditions:
             if cond.condition_ops:
-                for mask, value in cond.condition_ops:  # noqa: B007
+                for mask, _ in cond.condition_ops:
                     # Extract which bits are checked by this clause
                     for bit_pos in range(64):  # Assume max 64-bit state
                         if mask & (1 << bit_pos):

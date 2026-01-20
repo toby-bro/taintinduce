@@ -1,3 +1,5 @@
+from typing import Optional
+
 from capstone import CS_ARCH_X86, CS_MODE_64
 from keystone.keystone_const import KS_ARCH_X86, KS_MODE_64
 from unicorn import UC_ARCH_X86, UC_MODE_64
@@ -227,7 +229,9 @@ class AMD64(ISA):
         name = name.replace(')', '')
         return (getattr(x86_registers, f'X86_{name}')(), getattr(x86_registers, f'X86_{name}_ADDR64')())
 
-    def create_full_reg(self, name: str, bits: int = 0, structure: list[int] = []) -> Register:  # noqa: B006
+    def create_full_reg(self, name: str, bits: int = 0, structure: Optional[list[int]] = None) -> Register:
+        if structure is None:
+            structure = []
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')

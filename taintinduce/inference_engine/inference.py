@@ -120,7 +120,7 @@ def infer(
     if len(observations) == 0:
         raise Exception('No observations to infer from!')
 
-    # zl: we have the state_format in observation, assert that all observations in obs_list have the same state_format  # noqa: E501
+    # zl: we have the state_format in observation, assert that all observations in obs_list have the same state_format
     state_format = observations[0].state_format
     if state_format is None:
         raise Exception('State format is None!')
@@ -241,7 +241,6 @@ def infer_conditions_for_dataflows(
     if num_partitions == 0:
         raise Exception(f'No possible flows for mutated input bit {mutated_input_bit}')
 
-    # ZL: TODO: Hack for cond_reg, do a check if state_format contains the cond_reg, if no, then skip condition inference  # noqa: E501
     if num_partitions == 1:
         # no conditional dataflow - single behavior for all inputs
         return partition_handler.handle_single_partition(mutated_input_bit, possible_flows)

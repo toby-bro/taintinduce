@@ -1,3 +1,5 @@
+from typing import Optional
+
 from capstone import CS_ARCH_ARM64, CS_MODE_ARM
 from keystone.keystone_const import KS_ARCH_ARM64, KS_MODE_LITTLE_ENDIAN
 from unicorn import UC_ARCH_ARM64, UC_MODE_ARM
@@ -462,7 +464,9 @@ class ARM64(ISA):
         name = name.replace(')', '')
         return (getattr(arm64_registers, f'ARM64_{name}')(), getattr(arm64_registers, f'ARM64_{name}_ADDR64')())
 
-    def op2reg(self, name: str, size: int, structure: list[int] = []) -> Register:  # noqa: B006
+    def op2reg(self, name: str, size: int, structure: Optional[list[int]] = None) -> Register:
+        if structure is None:
+            structure = []
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
@@ -475,7 +479,9 @@ class ARM64(ISA):
         reg.structure = structure
         return reg
 
-    def create_full_reg(self, name: str, bits: int = 0, structure: list[int] = []) -> Register:  # noqa: B006
+    def create_full_reg(self, name: str, bits: int = 0, structure: Optional[list[int]] = None) -> Register:
+        if structure is None:
+            structure = []
         name = name.upper()
         name = name.replace('(', '')
         name = name.replace(')', '')
