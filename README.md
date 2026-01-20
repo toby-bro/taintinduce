@@ -1,7 +1,8 @@
-# taintinduce
+# taintinduce++
 
-TaintInduce is a project which aims to automate the creation of taint
-propagation rules for unknown instruction sets.
+> TaintInduce is a project which aims to automate the creation of taint propagation rules for unknown instruction sets.
+
+The same applies to taintinduce++ which tries to do it more correctly and faster, whilst keeping many of the brilliant ideas introduced by taintinduce.
 
 ## References
 
@@ -16,39 +17,81 @@ US, Feb 2019.
 
 ## Disclaimer
 
-### Initial disclaimer
+### og disclaimer
 
-We are currently in the process of rewriting the prototype to better serve our
-goal of providing an online taint service for different architectures.
-For people who are interested in the implementation used in the paper, feel free
-to contact us.
+> We are currently in the process of rewriting the prototype to better serve our
+> goal of providing an online taint service for different architectures.
+> For people who are interested in the implementation used in the paper, feel free
+> to contact us.
 
 ### New disclaimer
 
-This project has been quite a bit reorganized to be able to run properly in 2025.
+This project has been a tiny bit reorganized to be able to run properly in 2025.
 
 Problems encountered:
 
 - Squirrelflowdb which does not exist on the PyPi -> Rewrote the serialization and deserialisation
 - Initially released for Python 3.6 -> Migrated it to 3.12 with type checking and linting
-- Fixed a bug on ARM and memory which was not implemented
+- Fixed _bugs_ on ARM/AMD64/X86 and memory which was not implemented
 - Migrated to use `uv` to run the project
 - peekaboo did not compile so added a patch to make it run
 
-## Requirements
+## Requirements (aka uv)
 
-### Python3.12
+For simplicity's sake this project uses [uv](https://docs.astral.sh/uv) for all the python wrangling, it looks after all the dependencies...
 
-- capstone
-- keystone
-- unicorn
-- tqdm
+## Features
 
-## Usage
+This taintinduce++ has the same features than the og taintinduce except that:
+
+- the condition inference has been revamped to try and generate correct conditions on all dataflows, and do it fast.
+- It fixes dead dependencies such as squirrel-framework...
+- It adds a web based visualizer that can be run locally.
+- It "fully"(kof kof) supports memory operations (wip)
+- Fully supports X86, AMD64, ARM64 and ...
+- It adds a very simple, tiny ISA called JN (just nibbles) that enabled debugging and fixing the inference with very simple operations and flags of 4 bits (aka nibbles)
+
+## Basic usage
+
+### To run taintinduce on a simple instruction
+
+```sh
+uv run python -m taintinduce.taintinduce 2303 X86
+```
+
+### To visualize the rules and observations in CLI
+
+```sh
+uv run python read_taint_output.py output/0402_X86_rule.json
+# for observations...
+uv run python read_taint_output.py output/01C3_X86_obs.json --observations --limit 3
+```
+
+### GUI viewing of the rules
+
+To view and play with the generated rules:
+
+```sh
+uv run python taint_visualizer.py output/0BC3_X86_rule.json
+# then firefox localhost:5000
+```
+
+A simple flask webapp has been made to enable easier debugging or rules, it has a
+
+- simulator: to put custom inputs and taints and see the propagation for a given instruction
+- graph viewer: to see the relations between all bits
+- condition viewer...
+- another useless tab that I did not delete yet in case I use it again
+
+## Using a tracer ?
+
+I "fixed" this in the first iterations on the project (for backwards compatibility compared to the original project but did not test it since most of the big changes to the codebase have been made, all I can say is that there is a commit for which it worked...)
 
 ### If you want to run the tracer
 
 You need to install [dynamorio](https://github.com/DynamoRIO/dynamorio)
+
+Moreover to compile pypeekaboo in 2025 you need to apply a basic patch (all is described in the following instructions)
 
 ```sh
 git submodule update --init --recursive  # clone peekaboo
@@ -72,12 +115,6 @@ make
 ./trace.sh -o trace_cat -- cat /etc/passwd
 ```
 
-### To run taintinduce on a simple instruction
-
-```sh
-uv run python -m taintinduce.taintinduce 2303 X86
-```
-
 ### To run it on a trace
 
 - Adjust `-j` for the number of threads you want to use (default 1)
@@ -94,4 +131,42 @@ At the moment the checks which are enforced are
 ```sh
 uv run ruff check .
 uv run mypy .
+uv run pytest
+```
+
+## JN
+
+`JN` or "Just Nibbles" is a very simple ISA that was written to debug and test all the parts of the inference algorithm without being scared of running into obscure undocumented unicorn / capstone / keystone... or qemu bugs (on undocumented flags behaviour for instance).
+
+It has two 4-bit registers `R1`, and `R2` and a nibble-sized flag register `NZCV` whose exact meaning is left to the reader. These were to be able to check that simple correlations between registers' bits can be established, as well as side effects that concern all the bits of the registers.
+
+Our hope is that if that taintinduce++ manages to infer all the rules for this simple ISA correctly, then it will manage to do so for AMD64 (_kof kof_).
+
+JN has 10 instructions organized as 5 operations with 2 addressing modes each:
+
+### Arithmetic
+
+| Opcode | Mnemonic       | Description            | Example             |
+| ------ | -------------- | ---------------------- | ------------------- |
+| 0x0    | `ADD R1, R2`   | R1 = R1 + R2 (mod 16)  | `0`                 |
+| 0x1    | `ADD R1, #imm` | R1 = R1 + imm (mod 16) | `1A` (ADD R1, #0xA) |
+| 0x8    | `SUB R1, R2`   | R1 = R1 - R2           | `8`                 |
+| 0x9    | `SUB R1, #imm` | R1 = R1 - imm          | `95` (SUB R1, #0x5) |
+
+### Logical Operations
+
+| Opcode | Mnemonic       | Description    | Example             |
+| ------ | -------------- | -------------- | ------------------- |
+| 0x2    | `OR R1, R2`    | R1 = R1 \| R2  | `2`                 |
+| 0x3    | `OR R1, #imm`  | R1 = R1 \| imm | `3F` (OR R1, #0xF)  |
+| 0x4    | `AND R1, R2`   | R1 = R1 & R2   | `4`                 |
+| 0x5    | `AND R1, #imm` | R1 = R1 & imm  | `58` (AND R1, #0x8) |
+| 0x6    | `XOR R1, R2`   | R1 = R1 ^ R2   | `6`                 |
+| 0x7    | `XOR R1, #imm` | R1 = R1 ^ imm  | `7C` (XOR R1, #0xC) |
+
+Those can be tested very easily with taintinduce:
+
+```sh
+uv run python -m taintinduce.taintinduce 9A JN
+uv run python -m taintinduce.taintinduce 4 JN
 ```
