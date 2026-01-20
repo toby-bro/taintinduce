@@ -86,17 +86,17 @@ def inference_engine():
 
 @pytest.fixture(scope='module')
 def jn_instruction_data():
-    """Compute observations and rules for all JN instructions once per test module.
+    """Compute observations and rules for JN instructions lazily on-demand.
 
-    This fixture uses pytest's module-level caching to avoid recomputing observations
-    and inference for each test. Observations are generated once when the fixture is
-    first accessed, then reused across all tests in the module.
+    This fixture uses pytest's module-level caching with lazy evaluation.
+    Data is only computed when first accessed for a specific instruction,
+    then cached for subsequent uses.
 
     Performance impact:
     - Without caching: Each test regenerates observations (~2-3s per instruction)
-    - With caching: Observations computed once (~18s total), tests use cached data
+    - With lazy caching: Each instruction computed once when needed, cached thereafter
 
-    Returns a dict mapping (opcode, immediate) -> {
+    Returns a dict-like object that computes on access: (opcode, immediate) -> {
         'observations': list of observations,
         'obs_engine': ObservationEngine instance,
         'rule': inferred Rule,
@@ -110,41 +110,44 @@ def jn_instruction_data():
             observations = data['observations']
             # ... use the cached data
     """
-    state_format = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
+    state_format_long = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
+    state_format_short = [JN_REG_R1(), JN_REG_NZCV()]
+
     cond_reg = JN_REG_NZCV()
     engine = InferenceEngine()
 
-    instructions = [
-        (JNOpcode.ADD_R1_R2, None),
-        (JNOpcode.ADD_R1_IMM, 0xA),
-        (JNOpcode.OR_R1_R2, None),
-        (JNOpcode.OR_R1_IMM, 0x3),
-        (JNOpcode.AND_R1_R2, None),
-        (JNOpcode.AND_R1_IMM, 0xF),
-        (JNOpcode.XOR_R1_R2, None),
-        (JNOpcode.XOR_R1_IMM, 0xA),
-        (JNOpcode.SUB_R1_R2, None),
-        (JNOpcode.SUB_R1_IMM, 0x5),
-    ]
+    class LazyCache:
+        def __init__(self):
+            self._cache = {}
 
-    cache = {}
-    for opcode, immediate in instructions:
-        bytestring = encode_instruction(opcode, immediate)
-        obs_engine = ObservationEngine(bytestring, 'JN', state_format)
-        observations = obs_engine.observe_insn()
-        obs_deps = extract_observation_dependencies(observations)
+        def __getitem__(self, key):
+            if key not in self._cache:
+                opcode, immediate = key
+                bytestring = encode_instruction(opcode, immediate)
+                if immediate is None:
+                    state_format = state_format_long
+                else:
+                    state_format = state_format_short
+                obs_engine = ObservationEngine(bytestring, 'JN', state_format)
+                observations = obs_engine.observe_insn()
+                obs_deps = extract_observation_dependencies(observations)
 
-        # Infer rule
-        rule = engine.infer(observations, cond_reg, obs_engine, enable_refinement=False)
+                # Infer rule
+                rule = engine.infer(observations, cond_reg, obs_engine, enable_refinement=False)
 
-        cache[(opcode, immediate)] = {
-            'observations': observations,
-            'obs_engine': obs_engine,
-            'rule': rule,
-            'obs_deps': obs_deps,
-        }
+                self._cache[key] = {
+                    'observations': observations,
+                    'obs_engine': obs_engine,
+                    'rule': rule,
+                    'obs_deps': obs_deps,
+                }
 
-    return cache
+            return self._cache[key]
+
+        def __contains__(self, key):
+            return True  # Always return True since we can compute on-demand
+
+    return LazyCache()
 
 
 # =============================================================================
@@ -912,22 +915,25 @@ class TestJNImmediateInstructions:
             (JNOpcode.XOR_R1_IMM, 0xA),
         ],
     )
-    def test_immediate_instructions_exclude_r2(self, opcode, immediate):
+    def test_immediate_instructions_exclude_r2(self, opcode, immediate, jn_instruction_data):
         """Test that all immediate instructions exclude R2 from state format."""
         bytestring = encode_instruction(opcode, immediate)
 
-        # Create state format without R2
-        state_format = [JN_REG_R1(), JN_REG_NZCV()]
-
-        obs_engine = ObservationEngine(bytestring, 'JN', state_format)
-        observations = obs_engine.observe_insn()
+        # Use cached data if available
+        if (opcode, immediate) in jn_instruction_data:
+            observations = jn_instruction_data[(opcode, immediate)]['observations']
+        else:
+            # Create state format without R2
+            state_format = [JN_REG_R1(), JN_REG_NZCV()]
+            obs_engine = ObservationEngine(bytestring, 'JN', state_format)
+            observations = obs_engine.observe_insn()
 
         # Verify no R2 in state format
         for obs in observations:
             reg_names = [r.name for r in obs.state_format]
             assert 'R2' not in reg_names, f'{opcode.name} should not include R2'
 
-    def test_immediate_instruction_observation_count(self):
+    def test_immediate_instruction_observation_count(self, jn_instruction_data):
         """Test that immediate instructions generate correct number of observations.
 
         Immediate: 8 bits (R1=4, NZCV=4) = 256 states
@@ -939,11 +945,8 @@ class TestJNImmediateInstructions:
         obs_engine_imm = ObservationEngine(bytestring_imm, 'JN', state_format_imm)
         observations_imm = obs_engine_imm.observe_insn()
 
-        # Register instruction
-        bytestring_reg = encode_instruction(JNOpcode.ADD_R1_R2)
-        state_format_reg = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
-        obs_engine_reg = ObservationEngine(bytestring_reg, 'JN', state_format_reg)
-        observations_reg = obs_engine_reg.observe_insn()
+        # Register instruction - use cached data
+        observations_reg = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]['observations']
 
         # Immediate should have fewer observations (256 vs 4096)
         assert len(observations_imm) < len(
