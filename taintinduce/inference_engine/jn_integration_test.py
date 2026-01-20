@@ -166,6 +166,8 @@ def jn_instruction_data():
         (JNOpcode.AND_R1_IMM, 0xF),  # 5F
         (JNOpcode.XOR_R1_R2, None),  # 6
         (JNOpcode.XOR_R1_IMM, 0xA),  # 7A
+        (JNOpcode.SUB_R1_R2, None),  # 8
+        (JNOpcode.SUB_R1_IMM, 0x5),  # 9A
     ],
 )
 def test_decode_roundtrip(opcode, immediate):
