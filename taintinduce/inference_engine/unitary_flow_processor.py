@@ -28,7 +28,7 @@ def extract_unitary_flows(dataflow: Dataflow) -> set[UnitaryFlow]:
 
 def group_unitary_flows_by_output(
     observation_dependencies: list[ObservationDependency],
-) -> dict[BitPosition, set[BitPosition]]:
+) -> dict[BitPosition, frozenset[BitPosition]]:
     """Group all input bits that affect each output bit across all observations.
 
     Args:
@@ -44,7 +44,7 @@ def group_unitary_flows_by_output(
         for flow in unitary_flows:
             output_to_inputs[flow.output_bit].add(flow.input_bit)
 
-    return output_to_inputs
+    return {k: frozenset(v) for k, v in output_to_inputs.items()}
 
 
 def collect_states_for_unitary_flow(

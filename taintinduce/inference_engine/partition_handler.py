@@ -120,11 +120,13 @@ def handle_multiple_partitions_output_centric(
 
     for output_bit in affected_output_bits:
         # Get all input bits that can affect this output bit (not just mutated_input_bit)
-        relevant_input_bits = output_to_all_inputs.get(output_bit, set())
+        relevant_input_bits = output_to_all_inputs.get(output_bit, frozenset())
 
         if not relevant_input_bits:
             # No input affects this output? Skip
-            continue
+            raise RuntimeError(
+                f'No input bits found affecting output bit {output_bit} for mutated input bit {mutated_input_bit}',
+            )
 
         # Find output bit references from subset flows
         output_bit_refs = find_output_bit_refs_from_subsets(
