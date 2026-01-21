@@ -24,7 +24,7 @@ from flask import Flask, jsonify, request, send_file
 from taintinduce.cpu.cpu import CPUFactory
 from taintinduce.disassembler.compat import SquirrelDisassemblerZydis
 from taintinduce.isa.register import Register
-from taintinduce.rules.conditions import LogicType, TaintCondition
+from taintinduce.rules.conditions import LogicType, OutputBitRef, TaintCondition
 from taintinduce.rules.rules import TaintRule
 from taintinduce.serialization import TaintInduceDecoder
 from taintinduce.state.state import check_ones
@@ -83,6 +83,30 @@ def get_matching_pairs(rule: TaintRule, input_state_value: int) -> list[dict['st
     return matching_pairs
 
 
+def _format_dnf_clauses(condition_ops: frozenset[tuple[int, int]]) -> str:
+    """Format DNF clauses as human-readable text."""
+    clauses = []
+    for bitmask, value in condition_ops:
+        bitmask_int = int(bitmask)
+        value_int = int(value)
+        bit_positions = sorted(check_ones(bitmask_int))
+
+        bits_str = ', '.join(
+            [f'bit[{pos}]={(value_int >> pos) & 1}' for pos in bit_positions],
+        )
+        if len(bit_positions) == 1:
+            clauses.append(bits_str)
+        else:
+            clauses.append(f'({bits_str})')
+    return ' OR '.join(clauses)
+
+
+def _format_output_bit_refs(output_bit_refs: frozenset[OutputBitRef]) -> str:
+    """Format output bit references as human-readable text."""
+    output_refs = [f'output[{ref.output_bit}]' for ref in output_bit_refs]
+    return ' AND '.join(output_refs)
+
+
 def format_condition_human_readable(condition: TaintCondition | None) -> str:
     """Format condition as human-readable text."""
     if condition is None:
@@ -94,36 +118,17 @@ def format_condition_human_readable(condition: TaintCondition | None) -> str:
 
     parts = []
 
-    if condition.condition_type == LogicType.DNF:
-        if condition.condition_ops:
-            clauses = []
-            for bitmask, value in condition.condition_ops:
-                # Ensure bitmask and value are integers (may be floats from JSON)
-                bitmask_int = int(bitmask)
-                value_int = int(value)
-                bit_positions = sorted(check_ones(bitmask_int))
-                if len(bit_positions) == 1:
-                    bit_val = (value_int >> bit_positions[0]) & 1
-                    clauses.append(f'bit[{bit_positions[0]}]={bit_val}')
-                else:
-                    # Multiple bits in this clause
-                    bits_str = ', '.join(
-                        [f'bit[{pos}]={(value_int >> pos) & 1}' for pos in bit_positions],
-                    )
-                    clauses.append(f'({bits_str})')
-            parts.append(' OR '.join(clauses))
+    # Add DNF clauses if present
+    if condition.condition_type == LogicType.DNF and condition.condition_ops:
+        parts.append(_format_dnf_clauses(condition.condition_ops))
 
     # Add output bit references if present
     if hasattr(condition, 'output_bit_refs') and condition.output_bit_refs:
-        output_refs = []
-        for output_ref in condition.output_bit_refs:
-            output_refs.append(f'output[{output_ref.output_bit}]')
-        if output_refs:
-            output_str = ' AND '.join(output_refs)
-            if parts:
-                parts.append(f' AND ({output_str})')
-            else:
-                parts.append(output_str)
+        output_str = _format_output_bit_refs(condition.output_bit_refs)
+        if parts:
+            parts.append(f' AND ({output_str})')
+        else:
+            parts.append(output_str)
 
     return ''.join(parts) if parts else 'UNCONDITIONAL'
 

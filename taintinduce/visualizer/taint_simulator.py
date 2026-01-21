@@ -10,18 +10,32 @@ from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, TaintRule, TaintRuleFormat
 
 
-def evaluate_condition(condition: TaintCondition | None, state_value: int) -> bool:
+def evaluate_condition(
+    condition: TaintCondition | None,
+    state_value: int,
+    tainted_output_bits: set[int] | None = None,
+) -> bool:
     """Evaluate a condition against a specific state value.
 
     Args:
         condition: TaintCondition to evaluate (None means unconditional)
         state_value: Integer representing the input state
+        tainted_output_bits: Set of tainted output bit positions (for evaluating output_bit_refs)
 
     Returns:
         True if condition matches, False otherwise
     """
     if condition is None:
         return True  # Unconditional always matches
+
+    # Check output_bit_refs first - all referenced output bits must be tainted
+    if hasattr(condition, 'output_bit_refs') and condition.output_bit_refs:
+        if tainted_output_bits is None:
+            return False  # Cannot evaluate output_bit_refs without tainted output state
+
+        for output_ref in condition.output_bit_refs:
+            if output_ref.output_bit not in tainted_output_bits:
+                return False  # Required output bit is not tainted
 
     if condition.condition_ops is None or len(condition.condition_ops) == 0:
         return True
@@ -158,13 +172,15 @@ def _process_dataflow_for_pair(
 
             # Record dataflow
             input_reg, input_bit = _global_bit_to_reg_bit(input_bit_pos, rule_format)
-            all_dataflows.append({
-                'input_register': input_reg,
-                'input_bit': input_bit,
-                'output_register': reg_name,
-                'output_bit': bit_idx,
-                'pair_index': pair_idx,
-            })
+            all_dataflows.append(
+                {
+                    'input_register': input_reg,
+                    'input_bit': input_bit,
+                    'output_register': reg_name,
+                    'output_bit': bit_idx,
+                    'pair_index': pair_idx,
+                }
+            )
 
 
 def simulate_taint_propagation(
@@ -193,9 +209,13 @@ def simulate_taint_propagation(
     # Convert tainted_bits to global bit positions
     tainted_positions = _convert_tainted_bits_to_positions(tainted_bits, rule.format)
 
-    # Evaluate each pair
+    # Track tainted output bit positions for evaluating output_bit_refs
+    tainted_output_positions: set[int] = set()
+
+    # Evaluate each pair - process sequentially to build up tainted outputs
     for pair_idx, pair in enumerate(rule.pairs):
-        if evaluate_condition(pair.condition, input_state):
+        # Evaluate condition with current tainted output positions
+        if evaluate_condition(pair.condition, input_state, tainted_output_positions):
             matching_pairs.append(pair_idx)
 
             # Apply dataflow for this pair
@@ -206,6 +226,12 @@ def simulate_taint_propagation(
                 rule.format,
                 tainted_outputs,
                 all_dataflows,
+            )
+
+            # Update tainted output positions after processing this pair
+            tainted_output_positions = _convert_tainted_bits_to_positions(
+                tainted_outputs,
+                rule.format,
             )
 
     return {

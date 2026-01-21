@@ -4,28 +4,53 @@ function formatConditionText(conditionText, format) {
   // Replace bit[N] references with register names
   if (!conditionText || !format) return conditionText;
 
-  // Match patterns like "bit[39] = 0" or "bit[7]==1"
-  return conditionText.replace(/bit\[(\d+)\]/g, (match, bitPos) => {
+  // First replace bit[N] references with register names
+  let formatted = conditionText.replace(/bit\[(\d+)\]/g, (match, bitPos) => {
     const regName = globalBitToRegister(parseInt(bitPos), format);
     return regName || match;
   });
+
+  // Then replace output[N] references with register names (output bits)
+  formatted = formatted.replace(/output\[(\d+)\]/g, (match, bitPos) => {
+    const regName = globalBitToRegister(parseInt(bitPos), format);
+    return regName ? `${regName} (output)` : match;
+  });
+
+  return formatted;
 }
 
 function parseDNFCondition(conditionText, format) {
   // Parse DNF condition into structured data for visual rendering
-  // Returns: [{ registerName, bits: {bitNum: value (0/1/null for don't care)} }, ...]
+  // Returns: { clauses: [{ registerName, bits: {bitNum: value (0/1/null for don't care)} }, ...], outputRefs: [bitPos, ...] }
 
   if (!conditionText || conditionText.includes("UNCONDITIONAL")) {
     return null;
   }
 
-  // Extract OR clauses from "DNF: (clause1) OR (clause2) OR ..."
+  // Extract output bit references if present (at the end after AND)
+  const outputRefs = [];
+  const outputRefsMatch = conditionText.match(
+    /AND \((output\[\d+\](?:\s+AND\s+output\[\d+\])*)\)/,
+  );
+  if (outputRefsMatch) {
+    const outputRefsText = outputRefsMatch[1];
+    const outputRegex = /output\[(\d+)\]/g;
+    let match;
+    while ((match = outputRegex.exec(outputRefsText)) !== null) {
+      outputRefs.push(parseInt(match[1]));
+    }
+    // Remove the output refs part from the condition text for DNF parsing
+    conditionText = conditionText.replace(
+      / AND \(output\[\d+\](?:\s+AND\s+output\[\d+\])*\)/,
+      "",
+    );
+  }
+
+  // Extract OR clauses from "DNF: (clause1) OR (clause2) OR ..." or just plain clauses
   const dnfMatch = conditionText.match(/DNF:\s*(.+)/);
-  if (!dnfMatch) return null;
+  const clausesText = dnfMatch ? dnfMatch[1] : conditionText;
 
-  const clausesText = dnfMatch[1];
-
-  // Split by ') OR (' to get individual clauses
+  // Split by ' OR ' to get individual clauses
   const clauses = [];
   let depth = 0;
   let currentClause = "";
@@ -35,20 +60,20 @@ function parseDNFCondition(conditionText, format) {
     if (char === "(") depth++;
     if (char === ")") depth--;
 
-    if (depth === 0 && clausesText.substring(i, i + 5) === ") OR ") {
-      clauses.push(currentClause + ")");
+    if (depth === 0 && clausesText.substring(i, i + 4) === " OR ") {
+      clauses.push(currentClause);
       currentClause = "";
-      i += 4; // Skip ' OR '
+      i += 3; // Skip ' OR'
       continue;
     }
     currentClause += char;
   }
-  if (currentClause) clauses.push(currentClause);
+  if (currentClause.trim()) clauses.push(currentClause);
 
   // Parse each clause
-  return clauses.map((clause) => {
+  const parsedClauses = clauses.map((clause) => {
     // Remove outer parentheses
-    clause = clause.replace(/^\(/, "").replace(/\)$/, "");
+    clause = clause.replace(/^\(/, "").replace(/\)$/, "").trim();
 
     // Extract all conditions - can be either "EFLAGS[4:AF]=1" format or "bit[39]=1" format
     const registerBits = {};
@@ -87,15 +112,20 @@ function parseDNFCondition(conditionText, format) {
 
     return registerBits;
   });
+
+  return { clauses: parsedClauses, outputRefs };
 }
 
 function renderBitmaskView(conditionText, format) {
   // Render visual bitmask representation of DNF condition
-  const clauses = parseDNFCondition(conditionText, format);
+  const parsed = parseDNFCondition(conditionText, format);
 
-  if (!clauses) {
+  if (!parsed) {
     return '<div style="padding: 10px; color: #666;">No condition constraints (UNCONDITIONAL)</div>';
   }
+
+  const clauses = parsed.clauses;
+  const outputRefs = parsed.outputRefs || [];
 
   // Get all registers from format to show consistently
   const allRegisters = format.registers.map((r) => ({
@@ -104,6 +134,36 @@ function renderBitmaskView(conditionText, format) {
   }));
 
   let html = '<div class="bitmask-view">';
+
+  // Show output bit references if present
+  if (outputRefs.length > 0) {
+    html += `<div style="
+      margin-bottom: 15px;
+      padding: 12px;
+      background: #fff3cd;
+      border-radius: 6px;
+      border: 2px solid #ffc107;
+    ">`;
+    html += `<div style="font-weight: bold; margin-bottom: 8px; color: #856404; font-size: 13px;">
+      🔗 Requires Output Bits to be Tainted
+    </div>`;
+    html += `<div style="display: flex; gap: 8px; flex-wrap: wrap;">`;
+
+    outputRefs.forEach((bitPos) => {
+      const regName = globalBitToRegister(bitPos, format) || `bit[${bitPos}]`;
+      html += `<div style="
+        padding: 6px 12px;
+        background: white;
+        border: 2px solid #ffc107;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #856404;
+      ">${regName}</div>`;
+    });
+
+    html += `</div></div>`;
+  }
 
   clauses.forEach((clause, clauseIdx) => {
     html += `<div class="bitmask-clause" style="margin-bottom: 15px; padding: 12px; background: white; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">`;
