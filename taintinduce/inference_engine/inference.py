@@ -3,7 +3,6 @@ import logging
 import os
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
 
 from tqdm import tqdm
 
@@ -229,7 +228,7 @@ def infer_conditions_for_dataflows(
     observation_dependencies: list[ObservationDependency],
     possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
     mutated_input_bit: BitPosition,
-    completed_conditional_flows: Optional[dict[frozenset[BitPosition], set[BitPosition]]] = None,
+    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
 ) -> list[ConditionDataflowPair]:
     """Infer conditions and their associated dataflows for a mutated input bit.
 
@@ -248,5 +247,5 @@ def infer_conditions_for_dataflows(
     return partition_handler.handle_multiple_partitions_output_centric(
         mutated_input_bit,
         observation_dependencies,
-        completed_conditional_flows or {},
+        completed_conditional_flows,
     )
