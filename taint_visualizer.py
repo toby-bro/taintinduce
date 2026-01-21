@@ -89,31 +89,43 @@ def format_condition_human_readable(condition: TaintCondition | None) -> str:
         return 'UNCONDITIONAL (always applies)'
 
     if condition.condition_ops is None or len(condition.condition_ops) == 0:
-        return 'UNCONDITIONAL (no conditions)'
+        if not hasattr(condition, 'output_bit_refs') or condition.output_bit_refs is None:
+            return 'UNCONDITIONAL (no conditions)'
+
+    parts = []
 
     if condition.condition_type == LogicType.DNF:
-        clauses = []
-        for bitmask, value in condition.condition_ops:
-            # Ensure bitmask and value are integers (may be floats from JSON)
-            bitmask_int = int(bitmask)
-            value_int = int(value)
-            bit_positions = sorted(check_ones(bitmask_int))
-            value_bits = check_ones(value_int)
-
-            bit_desc = []
-            for bit_pos in bit_positions:  # Show all bits
-                if bit_pos in value_bits:
-                    bit_desc.append(f'bit[{bit_pos}]=1')
+        if condition.condition_ops:
+            clauses = []
+            for bitmask, value in condition.condition_ops:
+                # Ensure bitmask and value are integers (may be floats from JSON)
+                bitmask_int = int(bitmask)
+                value_int = int(value)
+                bit_positions = sorted(check_ones(bitmask_int))
+                if len(bit_positions) == 1:
+                    bit_val = (value_int >> bit_positions[0]) & 1
+                    clauses.append(f'bit[{bit_positions[0]}]={bit_val}')
                 else:
-                    bit_desc.append(f'bit[{bit_pos}]=0')
+                    # Multiple bits in this clause
+                    bits_str = ', '.join(
+                        [f'bit[{pos}]={(value_int >> pos) & 1}' for pos in bit_positions],
+                    )
+                    clauses.append(f'({bits_str})')
+            parts.append(' OR '.join(clauses))
 
-            clause = '(' + ' AND '.join(bit_desc) + ')'
-            clauses.append(clause)
+    # Add output bit references if present
+    if hasattr(condition, 'output_bit_refs') and condition.output_bit_refs:
+        output_refs = []
+        for output_ref in condition.output_bit_refs:
+            output_refs.append(f'output[{output_ref.output_bit}]')
+        if output_refs:
+            output_str = ' AND '.join(output_refs)
+            if parts:
+                parts.append(f' AND ({output_str})')
+            else:
+                parts.append(output_str)
 
-        # Show all clauses
-        return 'DNF: ' + ' OR '.join(clauses)
-
-    return f'{condition.condition_type.name}: {len(condition.condition_ops)} conditions'
+    return ''.join(parts) if parts else 'UNCONDITIONAL'
 
 
 def generate_test_cases(rule: TaintRule) -> list[dict[str, Any]]:

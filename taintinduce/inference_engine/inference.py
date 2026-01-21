@@ -182,12 +182,24 @@ def infer_flow_conditions(
     # Store conditions per input bit - no grouping to avoid condition misattribution
     per_bit_conditions: dict[BitPosition, list[ConditionDataflowPair]] = {}
 
+    # Sort input bits by their dataflow complexity (smallest first)
+    # This ensures we process simpler flows before complex ones
+    sorted_input_bits = sorted(
+        possible_flows.keys(),
+        key=lambda bit: min(len(flow) for flow in possible_flows[bit]),
+    )
+    logger.debug(f'Processing {len(sorted_input_bits)} input bits in order of dataflow complexity')
+
+    # Track completed conditional flows: maps input bits to their output bits
+    # This will be passed to handle_multiple_partitions for superset detection
+    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]] = {}
+
     # Parallelize condition inference across input bits
     max_workers = os.cpu_count() or 1
     logger.debug(f'Using {max_workers} workers for parallel condition inference')
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all tasks
+        # Submit all tasks in sorted order
         future_to_bit = {
             executor.submit(
                 infer_conditions_for_dataflows,
@@ -199,8 +211,9 @@ def infer_flow_conditions(
                 enable_refinement,
                 observation_engine,
                 observations,
+                completed_conditional_flows,
             ): mutated_input_bit
-            for mutated_input_bit in possible_flows
+            for mutated_input_bit in sorted_input_bits
         }
 
         # Collect results as they complete with progress bar
@@ -211,6 +224,19 @@ def infer_flow_conditions(
                     condition_dataflow_pairs = future.result()
                     # Store this input bit's conditions directly - no grouping
                     per_bit_conditions[mutated_input_bit] = condition_dataflow_pairs
+
+                    # Track completed conditional flows for superset detection
+                    # Only include flows with conditions (conditional flows)
+                    for pair in condition_dataflow_pairs:
+                        if pair.condition is not None and pair.output_bits:
+                            # Get all input bits that affect these outputs
+                            input_bits: set[BitPosition] = {mutated_input_bit}
+                            for obs_dep in observation_dependencies:
+                                for input_bit, output_bits in obs_dep.dataflow.items():
+                                    if any(ob in pair.output_bits for ob in output_bits):
+                                        input_bits.add(input_bit)
+                            completed_conditional_flows[frozenset(input_bits)] = set(pair.output_bits)
+
                     pbar.update(1)
                 except Exception as e:
                     logger.error(f'Failed to infer conditions for bit {mutated_input_bit}: {e}')
@@ -228,6 +254,7 @@ def infer_conditions_for_dataflows(
     enable_refinement: bool = False,
     observation_engine: Optional['ObservationEngine'] = None,
     all_observations: Optional[list[Observation]] = None,
+    completed_conditional_flows: Optional[dict[frozenset[BitPosition], set[BitPosition]]] = None,
 ) -> list[ConditionDataflowPair]:
     """Infer conditions and their associated dataflows for a mutated input bit.
 
@@ -248,6 +275,7 @@ def infer_conditions_for_dataflows(
         observation_dependencies,
         state_format,
         cond_reg,
+        completed_conditional_flows or {},
         enable_refinement,
         observation_engine,
         all_observations,

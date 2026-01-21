@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from taintinduce.observation_engine.observation import ObservationEngine
 
 from taintinduce.isa.register import CondRegister, Register
-from taintinduce.rules.conditions import LogicType, TaintCondition
+from taintinduce.rules.conditions import LogicType, OutputBitRef, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair
 from taintinduce.state.state import Observation
 from taintinduce.types import (
@@ -20,6 +20,51 @@ from taintinduce.types import (
 from . import condition_generator, unitary_flow_processor
 
 logger = logging.getLogger(__name__)
+
+
+def find_output_bit_refs_from_subsets(
+    current_input_bits: frozenset[BitPosition],
+    all_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+) -> Optional[frozenset[OutputBitRef]]:
+    """Find output bits from smaller conditional flows whose inputs are a subset.
+
+    When a dataflow uses input bits that are a superset of another conditional flow's
+    inputs, we should include the output bits from that smaller flow in our condition.
+    This helps with operations like ADD where carry propagation causes many inputs
+    to affect an output bit.
+
+    Args:
+        current_input_bits: Input bits for the current flow being processed
+        all_conditional_flows: Map from input bit sets to their output bits
+                              (only conditional flows with actual conditions)
+
+    Returns:
+        Frozenset of OutputBitRef objects if subsets found, None otherwise
+    """
+    output_refs: set[OutputBitRef] = set()
+
+    for other_input_bits, other_output_bits in all_conditional_flows.items():
+        # Skip self
+        if other_input_bits == current_input_bits:
+            continue
+
+        # Check if current inputs are a superset of other inputs
+        if current_input_bits >= other_input_bits and len(current_input_bits) > len(other_input_bits):
+            logger.debug(
+                f'Found subset flow: {sorted(other_input_bits)} ⊂ {sorted(current_input_bits)}',
+            )
+            # Include all output bits from the smaller flow
+            for output_bit in other_output_bits:
+                output_refs.add(OutputBitRef(output_bit))
+
+    if output_refs:
+        logger.info(
+            f'Including {len(output_refs)} output bit refs from subset flows: '
+            f'{sorted([ref.output_bit for ref in output_refs])}',
+        )
+        return frozenset(output_refs)
+
+    return None
 
 
 def handle_single_partition(
@@ -41,6 +86,7 @@ def handle_single_partition(
 def handle_multiple_partitions_output_centric(
     mutated_input_bit: BitPosition,
     observation_dependencies: list[ObservationDependency],
+    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
 ) -> list[ConditionDataflowPair]:
     """Handle multiple partitions using output-bit-centric approach.
 
@@ -52,11 +98,8 @@ def handle_multiple_partitions_output_centric(
     Args:
         mutated_input_bit: The input bit we're analyzing
         observation_dependencies: All observation dependencies
-        state_format: Register format
-        cond_reg: Condition register
-        enable_refinement: Whether to enable refinement
-        observation_engine: Optional observation engine for refinement
-        all_observations: Optional observations for refinement
+        completed_conditional_flows: Maps input bit sets to their output bits for
+            previously processed conditional flows (used for superset detection)
 
     Returns:
         List of ConditionDataflowPair objects
@@ -75,7 +118,10 @@ def handle_multiple_partitions_output_centric(
 
     # Step 3: Generate conditions for each output bit independently
     # We'll group results by condition to merge later
-    condition_to_outputs: dict[tuple[Optional[object], Optional[object]], set[BitPosition]] = defaultdict(set)
+    condition_to_outputs: dict[
+        tuple[Optional[object], Optional[object], Optional[object]],
+        set[BitPosition],
+    ] = defaultdict(set)
 
     for output_bit in affected_output_bits:
         # Get all input bits that can affect this output bit (not just mutated_input_bit)
@@ -85,9 +131,16 @@ def handle_multiple_partitions_output_centric(
             # No input affects this output? Skip
             continue
 
+        # Find output bit references from subset flows
+        output_bit_refs = find_output_bit_refs_from_subsets(
+            frozenset(relevant_input_bits),
+            completed_conditional_flows,
+        )
+
         logger.debug(
             f'Processing output bit {output_bit}: mutated_input_bit={mutated_input_bit}, '
-            f'relevant_input_bits={sorted(relevant_input_bits)}',
+            f'relevant_input_bits={sorted(relevant_input_bits)}, '
+            f'output_bit_refs={output_bit_refs}',
         )
 
         # Step 4: Collect states that do/don't trigger propagation from mutated_input_bit to output_bit
@@ -108,7 +161,7 @@ def handle_multiple_partitions_output_centric(
                 f'  Output bit {output_bit}: unconditional flow (propagating={len(propagating_states)}, '
                 f'non_propagating={len(non_propagating_states)})',
             )
-            condition_key: tuple[Optional[object], Optional[object]] = (None, None)
+            condition_key: tuple[Optional[object], Optional[object], Optional[object]] = (None, None, None)
             condition_to_outputs[condition_key].add(output_bit)
             continue
 
@@ -147,9 +200,9 @@ def handle_multiple_partitions_output_centric(
                 f'transposed={transposed_ops}',
             )
 
-            # Create condition object
-            cond = TaintCondition(LogicType.DNF, transposed_ops)
-            condition_key = (cond.condition_type, cond.condition_ops)
+            # Create condition object with output bit references
+            cond = TaintCondition(LogicType.DNF, transposed_ops, output_bit_refs)
+            condition_key = (cond.condition_type, cond.condition_ops, cond.output_bit_refs)
             condition_to_outputs[condition_key].add(output_bit)
 
         except Exception as e:
@@ -157,21 +210,21 @@ def handle_multiple_partitions_output_centric(
             logger.debug(
                 f'Failed to generate condition for input bit {mutated_input_bit} -> output bit {output_bit}: {e}',
             )
-            condition_key = (None, None)
+            condition_key = (None, None, None)
             condition_to_outputs[condition_key].add(output_bit)
 
     # Step 8: Build ConditionDataflowPair list from grouped results
     condition_dataflow_pairs: list[ConditionDataflowPair] = []
 
     for condition_key, output_bits_set in condition_to_outputs.items():
-        cond_type, cond_ops = condition_key
+        cond_type, cond_ops, output_refs = condition_key
 
         condition: Optional[TaintCondition]
         if cond_type is None:
             condition = None
         else:
             # cond_type and cond_ops are not None here
-            condition = TaintCondition(cond_type, cond_ops)  # type: ignore[arg-type]
+            condition = TaintCondition(cond_type, cond_ops, output_refs)  # type: ignore[arg-type]
 
         output_bits = frozenset(output_bits_set)
         condition_dataflow_pairs.append(ConditionDataflowPair(condition=condition, output_bits=output_bits))
@@ -184,6 +237,7 @@ def handle_multiple_partitions(
     observation_dependencies: list[ObservationDependency],
     _state_format: list[Register],
     _cond_reg: CondRegister,
+    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
     _enable_refinement: bool,
     _observation_engine: Optional['ObservationEngine'],
     _all_observations: Optional[list[Observation]],
@@ -199,4 +253,5 @@ def handle_multiple_partitions(
     return handle_multiple_partitions_output_centric(
         mutated_input_bit,
         observation_dependencies,
+        completed_conditional_flows,
     )
