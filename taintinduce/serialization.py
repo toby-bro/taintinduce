@@ -143,7 +143,7 @@ class TaintInduceDecoder(json.JSONDecoder):
             # Fall back to dict if class not found
             raise ValueError(f'Warning: Could not deserialize {type_name}') from e
 
-    def object_hook(self, dct: dict[str, Any]) -> Any:
+    def object_hook(self, dct: dict[str, Any]) -> Any:  # noqa: C901
         # Handle big integers that were serialized as strings
         if '_bigint' in dct:
             return int(dct['_bigint'])

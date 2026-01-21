@@ -12,7 +12,7 @@ from typing import Optional
 from tqdm import tqdm
 
 from taintinduce.rules.conditions import TaintCondition
-from taintinduce.rules.rules import ConditionDataflowPair, Rule
+from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
 from taintinduce.state.state import State
 from taintinduce.types import BitPosition, ObservationDependency
 
@@ -152,7 +152,7 @@ def _validate_observation_dependency_worker(
 
 
 def validate_rule_explains_observations(
-    rule: Rule,
+    rule: GlobalRule,
     observation_dependencies: list[ObservationDependency],
 ) -> tuple[int, int]:
     """Validate that the generated rule explains all observations.

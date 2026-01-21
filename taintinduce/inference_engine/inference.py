@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 from taintinduce.rules.conditions import TaintCondition
-from taintinduce.rules.rules import ConditionDataflowPair, Rule
+from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
 from taintinduce.state.state import Observation
 from taintinduce.types import (
     BitPosition,
@@ -93,7 +93,7 @@ def _build_dataflows_from_unitary_conditions(
 
 def infer(
     observations: list[Observation],
-) -> Rule:
+) -> GlobalRule:
     """Infers the dataflow of the instruction using the obesrvations.
 
     Args:
@@ -127,7 +127,7 @@ def infer(
     # Each condition applies only to the specific input bits it was generated for
     condition_dataflow_pairs = _build_dataflows_from_unitary_conditions(per_bit_conditions)
 
-    rule = Rule(state_format, pairs=condition_dataflow_pairs)
+    rule = GlobalRule(state_format, pairs=condition_dataflow_pairs)
 
     # Validate that the generated rule explains all observations
     observation_dependencies = observation_processor.extract_observation_dependencies(observations)

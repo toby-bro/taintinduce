@@ -174,7 +174,7 @@ def reg2memslot(reg: Register) -> MemorySlot:
     return MemorySlot.get_mem(mem_slot, mem_access, mem_size, mem_type)
 
 
-class Rule(SerializableMixin):
+class GlobalRule(SerializableMixin):
     """Internal representation of how data is propagated within a blackbox function.
 
     Attributes:

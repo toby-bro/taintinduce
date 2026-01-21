@@ -23,7 +23,7 @@ from taintinduce.inference_engine.logic import (
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EFLAGS
 from taintinduce.rules.conditions import LogicType, TaintCondition
-from taintinduce.rules.rules import ConditionDataflowPair, Rule
+from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
 from taintinduce.state.state import Observation, State
 from taintinduce.types import BitPosition, Dataflow, MutatedInputStates, ObservationDependency, StateValue
 
@@ -158,7 +158,7 @@ class TestInfer:
             [simple_observation],
         )
 
-        assert isinstance(result, Rule)
+        assert isinstance(result, GlobalRule)
         assert result.state_format == simple_observation.state_format
 
     def test_infer_merges_conditions_and_dataflows(self, simple_observation):
@@ -412,6 +412,7 @@ class TestInferConditionsForDataflows:
             obs_deps,
             possible_flows,
             BitPosition(32),
+            {},
         )
 
         # With single partition, should return one pair with condition=None
@@ -454,6 +455,7 @@ class TestInferConditionsForDataflows:
             [obs_dep1, obs_dep2],
             possible_flows,
             BitPosition(32),
+            {},
         )
 
         assert len(pairs) >= 1  # Should have at least one pair
@@ -469,6 +471,7 @@ class TestInferConditionsForDataflows:
                 obs_deps,
                 possible_flows,
                 BitPosition(32),
+                {},
             )
 
 
@@ -558,7 +561,7 @@ class TestInferenceEngineIntegration:
         # This should work without exceptions
         result = infer([obs])
 
-        assert isinstance(result, Rule)
+        assert isinstance(result, GlobalRule)
         assert result.state_format == state_format
         assert len(result.pairs) > 0
 
@@ -603,7 +606,7 @@ class TestInferenceEngineIntegration:
 
         result = infer([obs1, obs2])
 
-        assert isinstance(result, Rule)
+        assert isinstance(result, GlobalRule)
         # Should find conditional behavior
         assert len(result.pairs) > 0
 

@@ -6,7 +6,7 @@ from taintinduce.isa.jn_isa import JNOpcode, encode_instruction
 from taintinduce.isa.jn_registers import JN_REG_NZCV, JN_REG_R1, JN_REG_R2
 from taintinduce.observation_engine.observation import ObservationEngine
 from taintinduce.rules.conditions import LogicType, TaintCondition
-from taintinduce.rules.rules import ConditionDataflowPair, Rule
+from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
 from taintinduce.types import BitPosition, Dataflow
 
 
@@ -29,7 +29,7 @@ def test_validation_detects_incomplete_rule():
     for r2_bit in range(4, 8):
         incomplete_dataflow[BitPosition(r2_bit)] = frozenset({BitPosition(r2_bit)})
 
-    incomplete_rule = Rule(
+    incomplete_rule = GlobalRule(
         state_format,
         pairs=[ConditionDataflowPair(condition=None, output_bits=incomplete_dataflow)],
     )
@@ -75,7 +75,7 @@ def test_validation_detects_wrong_condition():
             {BitPosition(r2_bit), BitPosition(r2_bit - 4)},
         )  # R2[i] -> R2[i], R1[i]
 
-    wrong_rule = Rule(
+    wrong_rule = GlobalRule(
         state_format,
         pairs=[
             ConditionDataflowPair(condition=wrong_condition, output_bits=wrong_dataflow),
@@ -113,7 +113,7 @@ def test_validation_detects_missing_outputs():
         # Only map to R1 bits 0-3, not flags 8-11
         incomplete_dataflow[BitPosition(bit)] = frozenset(BitPosition(i) for i in range(4))
 
-    incomplete_rule = Rule(
+    incomplete_rule = GlobalRule(
         state_format,
         pairs=[ConditionDataflowPair(condition=None, output_bits=incomplete_dataflow)],
     )
