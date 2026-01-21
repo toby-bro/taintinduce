@@ -179,7 +179,7 @@ def _process_dataflow_for_pair(
                     'output_register': reg_name,
                     'output_bit': bit_idx,
                     'pair_index': pair_idx,
-                }
+                },
             )
 
 
