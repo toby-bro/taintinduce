@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, NamedTuple, Optional
+from typing import Any, Optional
 
 from taintinduce.serialization import SerializableMixin
 from taintinduce.state.state import State, check_ones
@@ -12,7 +12,7 @@ class LogicType(Enum):
     CMP = 2
 
 
-class OutputBitRef(NamedTuple):
+class OutputBitRef(SerializableMixin):
     """Reference to an output bit position in a condition.
 
     When a condition references an output bit, it means the condition
@@ -20,6 +20,20 @@ class OutputBitRef(NamedTuple):
     """
 
     output_bit: BitPosition
+
+    def __init__(self, output_bit: BitPosition) -> None:
+        self.output_bit = output_bit
+
+    def __repr__(self) -> str:
+        return f'OutputBitRef({self.output_bit})'
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, OutputBitRef):
+            return False
+        return self.output_bit == other.output_bit
+
+    def __hash__(self) -> int:
+        return hash(self.output_bit)
 
 
 class TaintCondition(SerializableMixin):
