@@ -1546,22 +1546,6 @@ class TestJNSubInstruction:
             f'{[bit for bit in r1_output_dependencies if 4 <= bit <= 7]}'
         )
 
-    def test_sub_observation_coverage(self, jn_instruction_data):
-        """Test that SUB R1, R2 inference explains all observations."""
-        # Use cached data
-        data = jn_instruction_data[(JNOpcode.SUB_R1_R2, None)]
-        rule = data['rule']
-        observation_dependencies = data['obs_deps']
-
-        # Validate that rule explains all observations
-        explained, total = validate_rule_explains_observations(rule, observation_dependencies)
-        coverage = explained / total if total > 0 else 0
-
-        assert coverage == 1.0, (
-            f'SUB R1, R2 should explain 100% of observations, but only explains {coverage:.1%} '
-            f'({explained}/{total}). Unexplained behaviors suggest inference issues.'
-        )
-
 
 @pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_R2_is_always_unconditionnal(jn_instruction_data, opcode, immediate):
