@@ -3,14 +3,10 @@ import logging
 import os
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from tqdm import tqdm
 
-if TYPE_CHECKING:
-    from taintinduce.observation_engine.observation import ObservationEngine
-
-from taintinduce.isa.register import CondRegister, Register
 from taintinduce.rules.conditions import TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, Rule
 from taintinduce.state.state import Observation
@@ -98,9 +94,6 @@ def _build_dataflows_from_unitary_conditions(
 
 def infer(
     observations: list[Observation],
-    cond_reg: CondRegister,
-    observation_engine: Optional['ObservationEngine'] = None,
-    enable_refinement: bool = False,
 ) -> Rule:
     """Infers the dataflow of the instruction using the obesrvations.
 
@@ -126,10 +119,6 @@ def infer(
 
     per_bit_conditions = infer_flow_conditions(
         observations,
-        cond_reg,
-        state_format,
-        enable_refinement=enable_refinement,
-        observation_engine=observation_engine,
     )
 
     if len(per_bit_conditions) == 0:
@@ -158,10 +147,6 @@ def infer(
 
 def infer_flow_conditions(
     observations: list[Observation],
-    cond_reg: CondRegister,
-    state_format: list[Register],
-    enable_refinement: bool = False,
-    observation_engine: Optional['ObservationEngine'] = None,
 ) -> dict[BitPosition, list[ConditionDataflowPair]]:
     """Infer conditions for dataflows for each input bit independently.
 
@@ -203,14 +188,9 @@ def infer_flow_conditions(
         future_to_bit = {
             executor.submit(
                 infer_conditions_for_dataflows,
-                cond_reg,
-                state_format,
                 observation_dependencies,
                 possible_flows,
                 mutated_input_bit,
-                enable_refinement,
-                observation_engine,
-                observations,
                 completed_conditional_flows,
             ): mutated_input_bit
             for mutated_input_bit in sorted_input_bits
@@ -246,14 +226,9 @@ def infer_flow_conditions(
 
 
 def infer_conditions_for_dataflows(
-    cond_reg: CondRegister,
-    state_format: list[Register],
     observation_dependencies: list[ObservationDependency],
     possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
     mutated_input_bit: BitPosition,
-    enable_refinement: bool = False,
-    observation_engine: Optional['ObservationEngine'] = None,
-    all_observations: Optional[list[Observation]] = None,
     completed_conditional_flows: Optional[dict[frozenset[BitPosition], set[BitPosition]]] = None,
 ) -> list[ConditionDataflowPair]:
     """Infer conditions and their associated dataflows for a mutated input bit.
@@ -270,13 +245,8 @@ def infer_conditions_for_dataflows(
         # no conditional dataflow - single behavior for all inputs
         return partition_handler.handle_single_partition(mutated_input_bit, possible_flows)
 
-    return partition_handler.handle_multiple_partitions(
+    return partition_handler.handle_multiple_partitions_output_centric(
         mutated_input_bit,
         observation_dependencies,
-        state_format,
-        cond_reg,
         completed_conditional_flows or {},
-        enable_refinement,
-        observation_engine,
-        all_observations,
     )

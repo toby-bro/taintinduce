@@ -146,8 +146,6 @@ def jn_instruction_data():
     state_format_long = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
     state_format_short = [JN_REG_R1(), JN_REG_NZCV()]
 
-    cond_reg = JN_REG_NZCV()
-
     class LazyCache:
         def __init__(self):
             self._cache = {}
@@ -165,7 +163,7 @@ def jn_instruction_data():
                 obs_deps = extract_observation_dependencies(observations)
 
                 # Infer rule
-                rule = infer(observations, cond_reg, obs_engine, enable_refinement=False)
+                rule = infer(observations)
 
                 self._cache[key] = {
                     'observations': observations,
@@ -1298,7 +1296,7 @@ class TestJNNZCVFlags:
         nzcv = output[JN_REG_NZCV()]
         assert nzcv & 1 == 1, 'V flag (bit 0) should be set'
 
-    def test_nzcv_taint_from_specific_bits(self, jn_state_format, jn_cond_reg):
+    def test_nzcv_taint_from_specific_bits(self, jn_instruction_data):
         """Test that specific NZCV flag bits get taint from expected sources.
 
         For ADD R1, R2:
@@ -1307,11 +1305,7 @@ class TestJNNZCVFlags:
         - C flag depends on carry out (all bits contribute)
         - V flag depends on sign bits and result
         """
-        bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
-        obs_engine = ObservationEngine(bytestring, 'JN', jn_state_format)
-        observations = obs_engine.observe_insn()
-
-        rule = infer(observations, jn_cond_reg, obs_engine, enable_refinement=False)
+        rule = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]['rule']
 
         # Verify that all R1 and R2 bits can affect NZCV
         for input_reg_bit in range(8):  # R1[0-3] and R2[0-3]

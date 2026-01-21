@@ -46,7 +46,7 @@ def x86_cond_reg():
 
 
 @pytest.fixture(scope='module')
-def x86_instruction_data(x86_state_format, x86_cond_reg):
+def x86_instruction_data(x86_state_format):
     """Lazy cache for X86 instruction observations and inferred rules.
 
     This fixture provides on-demand computation and caching of observations,
@@ -73,7 +73,7 @@ def x86_instruction_data(x86_state_format, x86_cond_reg):
                 obs_deps = extract_observation_dependencies(observations)
 
                 # Infer rule
-                rule = infer(observations, x86_cond_reg, obs_engine, enable_refinement=False)
+                rule = infer(observations)
 
                 self._cache[key] = {
                     'observations': observations,

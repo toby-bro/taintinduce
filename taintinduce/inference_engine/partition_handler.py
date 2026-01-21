@@ -2,15 +2,10 @@
 
 import logging
 from collections import defaultdict
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
-if TYPE_CHECKING:
-    from taintinduce.observation_engine.observation import ObservationEngine
-
-from taintinduce.isa.register import CondRegister, Register
 from taintinduce.rules.conditions import LogicType, OutputBitRef, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair
-from taintinduce.state.state import Observation
 from taintinduce.types import (
     BitPosition,
     ObservationDependency,
@@ -230,28 +225,3 @@ def handle_multiple_partitions_output_centric(
         condition_dataflow_pairs.append(ConditionDataflowPair(condition=condition, output_bits=output_bits))
 
     return condition_dataflow_pairs
-
-
-def handle_multiple_partitions(
-    mutated_input_bit: BitPosition,
-    observation_dependencies: list[ObservationDependency],
-    _state_format: list[Register],
-    _cond_reg: CondRegister,
-    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
-    _enable_refinement: bool,
-    _observation_engine: Optional['ObservationEngine'],
-    _all_observations: Optional[list[Observation]],
-) -> list[ConditionDataflowPair]:
-    """Handle case with multiple partitions (conditional dataflow).
-
-    Uses the new output-bit-centric approach to prevent cross-contamination
-    of conditions between unrelated flows.
-
-    Note: Some parameters are unused in the new implementation but kept
-    for interface compatibility.
-    """
-    return handle_multiple_partitions_output_centric(
-        mutated_input_bit,
-        observation_dependencies,
-        completed_conditional_flows,
-    )

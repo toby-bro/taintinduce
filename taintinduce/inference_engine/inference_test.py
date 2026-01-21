@@ -128,20 +128,20 @@ def condition_generator(mocker):
 class TestInfer:
     """Tests for the main infer method."""
 
-    def test_infer_with_empty_observations_raises_exception(self, mock_eflags):
+    def test_infer_with_empty_observations_raises_exception(self):
         """Test that infer raises exception with empty observations."""
         with pytest.raises(Exception, match='No observations to infer from'):
-            infer([], mock_eflags, observation_engine=None, enable_refinement=False)
+            infer([])
 
-    def test_infer_with_none_state_format_raises_exception(self, mock_eflags, mocker):
+    def test_infer_with_none_state_format_raises_exception(self, mocker):
         """Test that infer raises exception when state_format is None."""
         obs = mocker.Mock(spec=Observation)
         obs.state_format = None
 
         with pytest.raises(Exception, match='State format is None'):
-            infer([obs], mock_eflags, observation_engine=None, enable_refinement=False)
+            infer([obs])
 
-    def test_infer_returns_rule(self, simple_observation, mock_eflags, mocker):
+    def test_infer_returns_rule(self, simple_observation, mocker):
         """Test that infer returns a Rule object."""
         mock_infer_flow = mocker.patch('taintinduce.inference_engine.inference.infer_flow_conditions')
         # Return dict mapping input bits to their condition-dataflow pairs
@@ -156,46 +156,15 @@ class TestInfer:
 
         result = infer(
             [simple_observation],
-            mock_eflags,
-            observation_engine=None,
-            enable_refinement=False,
         )
 
         assert isinstance(result, Rule)
         assert result.state_format == simple_observation.state_format
 
-    def test_infer_calls_infer_flow_conditions(self, simple_observation, mock_eflags, mocker):
-        """Test that infer calls infer_flow_conditions with correct arguments."""
-        mock_infer_flow = mocker.patch('taintinduce.inference_engine.inference.infer_flow_conditions')
-        # Return dict mapping input bits to their condition-dataflow pairs
-        mock_cond = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
-        mock_pair = ConditionDataflowPair(
-            condition=mock_cond,
-            output_bits=frozenset([BitPosition(0)]),
-        )
-
-        # infer_flow_conditions now returns dict[BitPosition, list[ConditionDataflowPair]]
-        mock_infer_flow.return_value = {BitPosition(0): [mock_pair]}
-
-        infer([simple_observation], mock_eflags, observation_engine=None, enable_refinement=False)
-
-        mock_infer_flow.assert_called_once_with(
-            [simple_observation],
-            mock_eflags,
-            simple_observation.state_format,
-            enable_refinement=False,
-            observation_engine=None,
-        )
-
-    def test_infer_merges_conditions_and_dataflows(self, simple_observation, mock_eflags):
+    def test_infer_merges_conditions_and_dataflows(self, simple_observation):
         """Test that infer properly creates condition-dataflow pairs."""
         # Integration-style test to verify pairs are created correctly
-        result = infer(
-            [simple_observation],
-            mock_eflags,
-            observation_engine=None,
-            enable_refinement=False,
-        )
+        result = infer([simple_observation])
 
         # Verify we have at least one condition-dataflow pair
         assert len(result.pairs) >= 1
@@ -433,15 +402,13 @@ class TestGenCondition:
 class TestInferConditionsForDataflows:
     """Tests for infer_conditions_for_dataflows method."""
 
-    def test_single_partition_no_conditions(self, state_format, mock_eflags):
+    def test_single_partition_no_conditions(self):
         """Test that single partition results in no conditions (returns default/None)."""
         obs_deps: list[ObservationDependency] = []
         possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
         possible_flows[BitPosition(32)] = {frozenset([BitPosition(32)])}
 
         pairs = infer_conditions_for_dataflows(
-            mock_eflags,
-            state_format,
             obs_deps,
             possible_flows,
             BitPosition(32),
@@ -453,7 +420,7 @@ class TestInferConditionsForDataflows:
         assert pair.condition is None  # No condition needed for single partition
         assert BitPosition(32) in pair.output_bits
 
-    def test_multiple_partitions_generates_conditions(self, condition_generator, state_format, mock_eflags, mocker):
+    def test_multiple_partitions_generates_conditions(self, condition_generator, mocker):
         """Test that multiple partitions generate conditions."""
         # Create observation dependencies with different behaviors
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
@@ -484,8 +451,6 @@ class TestInferConditionsForDataflows:
         mock_gen_cond.return_value = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
 
         pairs = infer_conditions_for_dataflows(
-            mock_eflags,
-            state_format,
             [obs_dep1, obs_dep2],
             possible_flows,
             BitPosition(32),
@@ -493,7 +458,7 @@ class TestInferConditionsForDataflows:
 
         assert len(pairs) >= 1  # Should have at least one pair
 
-    def test_raises_on_zero_partitions(self, state_format, mock_eflags):
+    def test_raises_on_zero_partitions(self):
         """Test that method raises exception when no possible flows exist."""
         obs_deps: list[ObservationDependency] = []
         possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
@@ -501,8 +466,6 @@ class TestInferConditionsForDataflows:
 
         with pytest.raises(Exception, match='No possible flows'):
             infer_conditions_for_dataflows(
-                mock_eflags,
-                state_format,
                 obs_deps,
                 possible_flows,
                 BitPosition(32),
@@ -520,8 +483,6 @@ class TestInferFlowConditions:
     def test_infer_flow_conditions_calls_extract_dependencies(
         self,
         simple_observation,
-        state_format,
-        mock_eflags,
         mocker,
     ):
         """Test that method calls extract_observation_dependencies."""
@@ -533,11 +494,11 @@ class TestInferFlowConditions:
         mock_infer_cond = mocker.patch('taintinduce.inference_engine.inference.infer_conditions_for_dataflows')
         mock_infer_cond.return_value = []
 
-        infer_flow_conditions([simple_observation], mock_eflags, state_format)
+        infer_flow_conditions([simple_observation])
 
         mock_extract.assert_called_once_with([simple_observation])
 
-    def test_infer_flow_conditions_processes_all_input_bits(self, state_format, mock_eflags, mocker):
+    def test_infer_flow_conditions_processes_all_input_bits(self, mocker):
         """Test that method processes all mutated input bits."""
         # Create observation dependencies with multiple input bits
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
@@ -562,7 +523,7 @@ class TestInferFlowConditions:
             ConditionDataflowPair(condition=None, output_bits=frozenset([BitPosition(32)])),
         ]
 
-        infer_flow_conditions([mocker.Mock()], mock_eflags, state_format)
+        infer_flow_conditions([mocker.Mock()])
 
         # Should be called for both bits 32 and 33
         assert mock_infer_cond.call_count == 2
@@ -594,10 +555,8 @@ class TestInferenceEngineIntegration:
             state_format=state_format,
         )
 
-        mock_eflags = state_format[0]
-
         # This should work without exceptions
-        result = infer([obs], mock_eflags, observation_engine=None, enable_refinement=False)
+        result = infer([obs])
 
         assert isinstance(result, Rule)
         assert result.state_format == state_format
@@ -642,9 +601,7 @@ class TestInferenceEngineIntegration:
             state_format=state_format,
         )
 
-        mock_eflags = state_format[0]
-
-        result = infer([obs1, obs2], mock_eflags, observation_engine=None, enable_refinement=False)
+        result = infer([obs1, obs2])
 
         assert isinstance(result, Rule)
         # Should find conditional behavior

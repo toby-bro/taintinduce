@@ -77,8 +77,8 @@ def gen_obs(
 
 def taintinduce_infer(archstring: str, bytestring: str) -> tuple[InsnInfo, list[Observation], TaintRule]:
     insninfo = gen_insninfo(archstring, bytestring)
-    obs_list, obs_engine = gen_obs(archstring, bytestring, insninfo.state_format)
-    rule = infer(obs_list, insninfo.cond_reg, obs_engine, enable_refinement=False)
+    obs_list, _obs_engine = gen_obs(archstring, bytestring, insninfo.state_format)
+    rule = infer(obs_list)
     taintrule = rule.convert2squirrel(archstring, bytestring)
     return insninfo, obs_list, taintrule
 
@@ -145,9 +145,9 @@ def main() -> None:
             if not isinstance(obs_list, list):
                 raise Exception('Loaded observations is not a list!')
             assert all(isinstance(obs, Observation) for obs in obs_list)
-        obs_engine = None  # No refinement when loading from file
+        _obs_engine = None  # No refinement when loading from file
     else:
-        obs_list, obs_engine = gen_obs(args.arch, insn.bytestring, insn.state_format)
+        obs_list, _obs_engine = gen_obs(args.arch, insn.bytestring, insn.state_format)
         print('Writing observations to {}'.format(obs_path))
         # Verify serialization round-trip
         serialized = json.dumps(obs_list, cls=TaintInduceEncoder)
@@ -161,7 +161,7 @@ def main() -> None:
         with open(obs_path, 'w') as f:
             json.dump(obs_list, f, cls=TaintInduceEncoder)
 
-    rule = infer(obs_list, insn.cond_reg, obs_engine, enable_refinement=False)
+    rule = infer(obs_list)
     taintrule = rule.convert2squirrel(args.arch, args.bytestring)
     if args.output_dir:
         with open(rule_path, 'w') as myfile:
