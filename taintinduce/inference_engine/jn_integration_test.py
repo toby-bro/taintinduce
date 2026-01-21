@@ -745,6 +745,80 @@ class TestJNExpectedTaintRules:
         # The rule should capture carry propagation
         assert len(rule.pairs) > 0, 'ADD should have condition-dataflow pairs'
 
+    def test_add_r1_output_bit_refs_from_subsets(self, jn_instruction_data):
+        """Test ADD R1, R2 includes output bit refs for carry-dependent bits.
+
+        For ADD operation with carry propagation, each R1 output bit should include
+        references to previous R1 output bits that have CONDITIONAL flows:
+        - R1[0] = R1[0] + R2[0] (no carry, unconditional - no refs)
+        - R1[1] = R1[1] + R2[1] + carry[0] (usually unconditional - no refs)
+        - R1[2] = R1[2] + R2[2] + carry[1] (conditional on carry, should reference R1[1])
+        - R1[3] = R1[3] + R2[3] + carry[2] (conditional on carry, should reference R1[1], R1[2])
+
+        Only CONDITIONAL flows are tracked, so only R1[2] and R1[3] may have output_bit_refs.
+
+        This tests the taint-by-induction mechanism where higher bits reference
+        lower bits' taint states from conditional flows.
+        """
+        data = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]
+        rule = data['rule']
+
+        # R1 register bits are at positions 0-3
+        r1_bits = {BitPosition(0), BitPosition(1), BitPosition(2), BitPosition(3)}
+
+        # Collect all output_bit_refs for all R1 output bits across all pairs
+        # Map: output_bit -> set of referenced output bits
+        output_refs_by_bit: dict[BitPosition, set[BitPosition]] = {BitPosition(i): set() for i in range(4)}
+
+        # Count pairs with conditions and output refs for debugging
+        pairs_with_refs = 0
+        total_conditional_pairs = 0
+
+        for pair in rule.pairs:
+            # pair.output_bits is a Dataflow (dict: input_bit -> frozenset[output_bits])
+            if not isinstance(pair.output_bits, dict):
+                continue
+
+            # Check if this pair has a condition
+            if not pair.condition:
+                continue
+
+            total_conditional_pairs += 1
+
+            # Check if this pair's condition has output bit refs
+            has_refs = hasattr(pair.condition, 'output_bit_refs') and pair.condition.output_bit_refs
+            if has_refs:
+                pairs_with_refs += 1
+                ref_bits = {ref.output_bit for ref in pair.condition.output_bit_refs}
+
+                # Find which R1 bits are affected in this pair
+                for _input_bit, output_bits_set in pair.output_bits.items():
+                    r1_outputs = output_bits_set & r1_bits
+                    # Associate the refs with each R1 output bit in this pair
+                    for output_bit in r1_outputs:
+                        output_refs_by_bit[output_bit].update(ref_bits)
+
+        # Since only conditional flows are tracked:
+        # - R1[0] and R1[1] are typically unconditional, so no refs expected
+        # - R1[2] may have conditional flows, should reference R1[1]
+        # - R1[3] may have conditional flows, should reference R1[1] and R1[2]
+
+        # We expect at least some pairs with output_bit_refs for higher bits
+        assert pairs_with_refs > 0, f'Expected at least some pairs with output_bit_refs, found {pairs_with_refs}'
+
+        # Check specific expectations (filter to only R1 bits)
+        r1_refs_2 = sorted(output_refs_by_bit[BitPosition(2)] & r1_bits)
+        r1_refs_3 = sorted(output_refs_by_bit[BitPosition(3)] & r1_bits)
+
+        # R1[2] should reference R1[1] if there's a conditional flow
+        if output_refs_by_bit[BitPosition(2)]:
+            assert BitPosition(1) in r1_refs_2, f'R1[2] should reference R1[1], got {r1_refs_2}'
+
+        # R1[3] should reference R1[1] and R1[2] if there's a conditional flow
+        if output_refs_by_bit[BitPosition(3)]:
+            assert BitPosition(1) in r1_refs_3, f'R1[3] should reference R1[1], got {r1_refs_3}'
+            assert BitPosition(2) in r1_refs_3, f'R1[3] should reference R1[2], got {r1_refs_3}'
+
 
 # =============================================================================
 # Concrete Value Tests for Rule Validation

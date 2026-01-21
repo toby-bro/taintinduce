@@ -177,6 +177,8 @@ def infer_flow_conditions(
     # Track completed conditional flows: maps input bits to their output bits
     # This will be passed to handle_multiple_partitions for superset detection
     completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]] = {}
+    # Also track the actual conditions for evaluating output bit taint states
+    all_conditions: dict[frozenset[BitPosition], TaintCondition] = {}
 
     # Parallelize condition inference across input bits
     max_workers = os.cpu_count() or 1
@@ -191,6 +193,7 @@ def infer_flow_conditions(
                 possible_flows,
                 mutated_input_bit,
                 completed_conditional_flows,
+                all_conditions,
             ): mutated_input_bit
             for mutated_input_bit in sorted_input_bits
         }
@@ -214,7 +217,9 @@ def infer_flow_conditions(
                                 for input_bit, output_bits in obs_dep.dataflow.items():
                                     if any(ob in pair.output_bits for ob in output_bits):
                                         input_bits.add(input_bit)
-                            completed_conditional_flows[frozenset(input_bits)] = set(pair.output_bits)
+                            input_bits_frozen = frozenset(input_bits)
+                            completed_conditional_flows[input_bits_frozen] = set(pair.output_bits)
+                            all_conditions[input_bits_frozen] = pair.condition
 
                     pbar.update(1)
                 except Exception as e:
@@ -229,6 +234,7 @@ def infer_conditions_for_dataflows(
     possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
     mutated_input_bit: BitPosition,
     completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    all_conditions: dict[frozenset[BitPosition], TaintCondition],
 ) -> list[ConditionDataflowPair]:
     """Infer conditions and their associated dataflows for a mutated input bit.
 
@@ -248,4 +254,5 @@ def infer_conditions_for_dataflows(
         mutated_input_bit,
         observation_dependencies,
         completed_conditional_flows,
+        all_conditions,
     )

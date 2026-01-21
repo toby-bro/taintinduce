@@ -413,6 +413,7 @@ class TestInferConditionsForDataflows:
             possible_flows,
             BitPosition(32),
             {},
+            {},
         )
 
         # With single partition, should return one pair with condition=None
@@ -456,6 +457,7 @@ class TestInferConditionsForDataflows:
             possible_flows,
             BitPosition(32),
             {},
+            {},
         )
 
         assert len(pairs) >= 1  # Should have at least one pair
@@ -471,6 +473,7 @@ class TestInferConditionsForDataflows:
                 obs_deps,
                 possible_flows,
                 BitPosition(32),
+                {},
                 {},
             )
 

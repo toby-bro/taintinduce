@@ -118,19 +118,32 @@ def extract_relevant_bits_from_state(
 
 def transpose_condition_bits(
     condition_ops: frozenset[tuple[int, int]],
-    relevant_bit_positions: frozenset[BitPosition],
+    input_bit_positions: frozenset[BitPosition],
+    output_bit_positions: list[BitPosition] | None = None,
 ) -> frozenset[tuple[int, int]]:
     """Transpose condition from simplified bit positions back to original positions.
 
+    This function maps conditions from a simplified coordinate space back to the
+    original bit positions. It handles both input bits (which stay as regular
+    bit positions) and output bits (which remain as-is since they're used for
+    taint-by-induction evaluation).
+
     Args:
         condition_ops: Condition in simplified coordinates as (mask, value) tuples
-        relevant_bit_positions: The original bit positions in sorted order
+        input_bit_positions: The original input bit positions
+        output_bit_positions: The output bit positions (if any) for taint-by-induction.
+                             These are in the higher bit range of the simplified space.
 
     Returns:
-        Condition transposed to original bit positions as (mask, value) tuples
+        Condition transposed to original bit positions as (mask, value) tuples.
+        Output bit positions are preserved in their higher bit range.
     """
-    # Sort to get the mapping from simplified -> original
-    sorted_positions = sorted(relevant_bit_positions)
+    # Sort input positions to get the mapping from simplified -> original
+    sorted_input_positions = sorted(input_bit_positions)
+    num_input_bits = len(sorted_input_positions)
+
+    # Build output position mapping if provided
+    sorted_output_positions = output_bit_positions if output_bit_positions else []
 
     transposed_clauses: set[tuple[int, int]] = set()
 
@@ -139,13 +152,24 @@ def transpose_condition_bits(
         new_mask = 0
         new_value = 0
 
-        # Check each bit in the simplified mask
-        for simplified_pos in range(len(sorted_positions)):
+        # Map input bits [0..num_input_bits-1] back to original positions
+        for simplified_pos in range(num_input_bits):
             if mask & (1 << simplified_pos):
-                original_pos = sorted_positions[simplified_pos]
+                original_pos = sorted_input_positions[simplified_pos]
                 new_mask |= 1 << original_pos
                 if value & (1 << simplified_pos):
                     new_value |= 1 << original_pos
+
+        # Map output bits [num_input_bits..num_input_bits+num_output_bits-1]
+        # Keep them in the same relative positions (they're used for evaluation)
+        for i, _output_pos in enumerate(sorted_output_positions):
+            simplified_pos = num_input_bits + i
+            if mask & (1 << simplified_pos):
+                # Output bits stay in their simplified positions since they're
+                # evaluated differently (via OutputBitRef in TaintCondition)
+                new_mask |= 1 << simplified_pos
+                if value & (1 << simplified_pos):
+                    new_value |= 1 << simplified_pos
 
         transposed_clauses.add((new_mask, new_value))
 

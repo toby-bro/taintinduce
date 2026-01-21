@@ -6,6 +6,7 @@ from typing import Optional
 
 from taintinduce.rules.conditions import LogicType, OutputBitRef, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair
+from taintinduce.state.state import State
 from taintinduce.types import (
     BitPosition,
     ObservationDependency,
@@ -15,6 +16,142 @@ from taintinduce.types import (
 from . import condition_generator, unitary_flow_processor
 
 logger = logging.getLogger(__name__)
+
+
+def evaluate_output_bit_taint_states(
+    state: StateValue,
+    output_bit_refs: frozenset[OutputBitRef],
+    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    all_conditions: dict[frozenset[BitPosition], TaintCondition],
+) -> dict[BitPosition, int]:
+    """Evaluate output bit taint states for a given input state.
+
+    For each output bit in output_bit_refs, determine if it would be tainted
+    by evaluating its condition against the current input state. This implements
+    "taint by induction" where previous output taint states become inputs to
+    later conditions.
+
+    Args:
+        state: The current input state value
+        output_bit_refs: Output bits to evaluate
+        completed_conditional_flows: Maps input bit sets to output bits
+        all_conditions: Maps input bit sets to their TaintCondition
+
+    Returns:
+        Dict mapping output bit position to taint state (1=tainted, 0=untainted)
+    """
+    taint_states: dict[BitPosition, int] = {}
+
+    for output_ref in output_bit_refs:
+        output_bit = output_ref.output_bit
+
+        # Find which condition generates this output bit
+        found_condition = False
+        for input_bits, output_bits in completed_conditional_flows.items():
+            if output_bit in output_bits:
+                # Get the condition for these input bits
+                condition = all_conditions.get(input_bits)
+
+                if condition is None:
+                    # Unconditional flow - always tainted
+                    taint_states[output_bit] = 1
+                else:
+                    # Evaluate condition against current state
+                    # Count bits in state to create State object
+                    num_bits = max(input_bits) + 1 if input_bits else 64
+                    input_state = State(num_bits=num_bits, state_value=state)
+                    is_tainted = condition.eval(input_state, output_state=None)
+                    taint_states[output_bit] = 1 if is_tainted else 0
+
+                found_condition = True
+                break
+
+        if not found_condition:
+            # Output bit not found in completed flows - treat as untainted
+            logger.warning(f'Output bit {output_bit} not found in completed flows')
+            taint_states[output_bit] = 0
+
+    return taint_states
+
+
+def augment_states_with_output_bit_taints(
+    propagating_states: set[State],
+    non_propagating_states: set[State],
+    relevant_bit_positions: frozenset[BitPosition],
+    output_bit_refs: frozenset[OutputBitRef],
+    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    all_conditions: dict[frozenset[BitPosition], TaintCondition],
+) -> tuple[set[StateValue], set[StateValue], list[BitPosition]]:
+    """Augment simplified states with output bit taint values.
+
+    For taint by induction, we evaluate the taint state of referenced output bits
+    and append them as additional bits to the state representation before
+    condition generation.
+
+    Args:
+        propagating_states: States where input bit affects output bit
+        non_propagating_states: States where input bit doesn't affect output bit
+        relevant_bit_positions: Input bit positions for the current flow
+        output_bit_refs: Output bits to include in condition
+        completed_conditional_flows: Maps input bits to output bits
+        all_conditions: Maps input bits to their conditions
+
+    Returns:
+        Tuple of (augmented_propagating, augmented_non_propagating, output_bit_list)
+    """
+    # Sort output bits for consistent ordering
+    output_bit_list = sorted([ref.output_bit for ref in output_bit_refs])
+    num_relevant_bits = len(relevant_bit_positions)
+
+    # Augment propagating states
+    augmented_propagating: set[StateValue] = set()
+    for state in propagating_states:
+        # Get original simplified state
+        simplified_state = unitary_flow_processor.extract_relevant_bits_from_state(
+            state,
+            relevant_bit_positions,
+        )
+        # Evaluate output bit taint states
+        if state.state_value is None:
+            raise RuntimeError('State value is None')
+        taint_states = evaluate_output_bit_taint_states(
+            state.state_value,
+            output_bit_refs,
+            completed_conditional_flows,
+            all_conditions,
+        )
+        # Append taint values to state (higher bits)
+        augmented_state: StateValue = simplified_state
+        for i, output_bit_pos in enumerate(output_bit_list):
+            taint_value = taint_states.get(output_bit_pos, 0)
+            augmented_state = StateValue(augmented_state | (taint_value << (num_relevant_bits + i)))
+        augmented_propagating.add(augmented_state)
+
+    # Augment non-propagating states
+    augmented_non_propagating: set[StateValue] = set()
+    for state in non_propagating_states:
+        # Get original simplified state
+        simplified_state = unitary_flow_processor.extract_relevant_bits_from_state(
+            state,
+            relevant_bit_positions,
+        )
+        # Evaluate output bit taint states
+        if state.state_value is None:
+            raise RuntimeError('State value is None')
+        taint_states = evaluate_output_bit_taint_states(
+            state.state_value,
+            output_bit_refs,
+            completed_conditional_flows,
+            all_conditions,
+        )
+        # Append taint values to state (higher bits)
+        augmented_state_np: StateValue = simplified_state
+        for i, output_bit_pos in enumerate(output_bit_list):
+            taint_value = taint_states.get(output_bit_pos, 0)
+            augmented_state_np = StateValue(augmented_state_np | (taint_value << (num_relevant_bits + i)))
+        augmented_non_propagating.add(augmented_state_np)
+
+    return augmented_propagating, augmented_non_propagating, output_bit_list
 
 
 def find_output_bit_refs_from_subsets(
@@ -78,10 +215,11 @@ def handle_single_partition(
     return [ConditionDataflowPair(condition=None, output_bits=output_bits)]
 
 
-def handle_multiple_partitions_output_centric(
+def handle_multiple_partitions_output_centric(  # noqa: C901
     mutated_input_bit: BitPosition,
     observation_dependencies: list[ObservationDependency],
     completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    all_conditions: dict[frozenset[BitPosition], TaintCondition],
 ) -> list[ConditionDataflowPair]:
     """Handle multiple partitions using output-bit-centric approach.
 
@@ -95,6 +233,8 @@ def handle_multiple_partitions_output_centric(
         observation_dependencies: All observation dependencies
         completed_conditional_flows: Maps input bit sets to their output bits for
             previously processed conditional flows (used for superset detection)
+        all_conditions: Maps input bit sets to their TaintCondition for evaluating
+            output bit taint states (taint by induction)
 
     Returns:
         List of ConditionDataflowPair objects
@@ -177,18 +317,45 @@ def handle_multiple_partitions_output_centric(
             for state in non_propagating_states
         }
 
-        # Step 6: Generate condition on simplified bits
+        # Step 5bis: Add output bit taint values for taint by induction
+        # If we have output bit refs, augment states with their taint values
+        num_output_bits = 0
+        output_bit_list: list[BitPosition] = []
+        if output_bit_refs:
+            augmented_prop, augmented_non_prop, output_bit_list = augment_states_with_output_bit_taints(
+                propagating_states,
+                non_propagating_states,
+                relevant_bit_positions,
+                output_bit_refs,
+                completed_conditional_flows,
+                all_conditions,
+            )
+            simplified_propagating = augmented_prop
+            simplified_non_propagating = augmented_non_prop
+            num_output_bits = len(output_bit_list)
+
+            logger.debug(
+                f'  Augmented states with {num_output_bits} output bit taint values: {output_bit_list}',
+            )
+
+        # Step 6: Generate condition on simplified bits (including output bit taint values)
         condition_gen = condition_generator.ConditionGenerator()
 
         try:
-            # Use espresso directly on simplified bit space
+            # Use espresso on augmented bit space (input bits + output bit taint values)
+            total_num_bits = num_relevant_bits + num_output_bits
             partitions = {1: simplified_propagating, 0: simplified_non_propagating}
-            dnf_condition = condition_gen.espresso.minimize(num_relevant_bits, 1, 'fr', partitions)
+            dnf_condition = condition_gen.espresso.minimize(total_num_bits, 1, 'fr', partitions)
 
             # Step 7: Transpose condition back to original bit positions
+            # Separate input bit conditions from output bit conditions
+            # We need to map back:
+            # - bits [0..num_relevant_bits-1] -> relevant_input_bits
+            # - bits [num_relevant_bits..total_num_bits-1] -> output_bit_list
             transposed_ops = unitary_flow_processor.transpose_condition_bits(
                 dnf_condition,
                 relevant_bit_positions,
+                output_bit_list,
             )
 
             logger.debug(
