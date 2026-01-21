@@ -1,8 +1,6 @@
 # Replaced squirrel import with our own
 import logging
-import os
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tqdm import tqdm
 
@@ -180,51 +178,39 @@ def infer_flow_conditions(
     # Also track the actual conditions for evaluating output bit taint states
     all_conditions: dict[frozenset[BitPosition], TaintCondition] = {}
 
-    # Parallelize condition inference across input bits
-    max_workers = os.cpu_count() or 1
-    logger.debug(f'Using {max_workers} workers for parallel condition inference')
+    # Process input bits SEQUENTIALLY (not parallel) to enable taint-by-induction
+    # Simpler flows must complete before complex flows that reference their outputs
+    logger.debug(f'Processing {len(sorted_input_bits)} input bits sequentially for taint-by-induction')
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all tasks in sorted order
-        future_to_bit = {
-            executor.submit(
-                infer_conditions_for_dataflows,
+    for mutated_input_bit in tqdm(sorted_input_bits, desc='Inferring conditions', unit='bit'):
+        try:
+            condition_dataflow_pairs = infer_conditions_for_dataflows(
                 observation_dependencies,
                 possible_flows,
                 mutated_input_bit,
                 completed_conditional_flows,
                 all_conditions,
-            ): mutated_input_bit
-            for mutated_input_bit in sorted_input_bits
-        }
+            )
+            # Store this input bit's conditions directly - no grouping
+            per_bit_conditions[mutated_input_bit] = condition_dataflow_pairs
 
-        # Collect results as they complete with progress bar
-        with tqdm(total=len(future_to_bit), desc='Inferring conditions', unit='bit') as pbar:
-            for future in as_completed(future_to_bit):
-                mutated_input_bit = future_to_bit[future]
-                try:
-                    condition_dataflow_pairs = future.result()
-                    # Store this input bit's conditions directly - no grouping
-                    per_bit_conditions[mutated_input_bit] = condition_dataflow_pairs
+            # Track completed conditional flows for superset detection
+            # Only include flows with conditions (conditional flows)
+            for pair in condition_dataflow_pairs:
+                if pair.condition is not None and pair.output_bits:
+                    # Get all input bits that affect these outputs
+                    input_bits: set[BitPosition] = {mutated_input_bit}
+                    for obs_dep in observation_dependencies:
+                        for input_bit, output_bits in obs_dep.dataflow.items():
+                            if any(ob in pair.output_bits for ob in output_bits):
+                                input_bits.add(input_bit)
+                    input_bits_frozen = frozenset(input_bits)
+                    completed_conditional_flows[input_bits_frozen] = set(pair.output_bits)
+                    all_conditions[input_bits_frozen] = pair.condition
 
-                    # Track completed conditional flows for superset detection
-                    # Only include flows with conditions (conditional flows)
-                    for pair in condition_dataflow_pairs:
-                        if pair.condition is not None and pair.output_bits:
-                            # Get all input bits that affect these outputs
-                            input_bits: set[BitPosition] = {mutated_input_bit}
-                            for obs_dep in observation_dependencies:
-                                for input_bit, output_bits in obs_dep.dataflow.items():
-                                    if any(ob in pair.output_bits for ob in output_bits):
-                                        input_bits.add(input_bit)
-                            input_bits_frozen = frozenset(input_bits)
-                            completed_conditional_flows[input_bits_frozen] = set(pair.output_bits)
-                            all_conditions[input_bits_frozen] = pair.condition
-
-                    pbar.update(1)
-                except Exception as e:
-                    logger.error(f'Failed to infer conditions for bit {mutated_input_bit}: {e}')
-                    raise
+        except Exception as e:
+            logger.error(f'Failed to infer conditions for bit {mutated_input_bit}: {e}')
+            raise
 
     return per_bit_conditions
 
