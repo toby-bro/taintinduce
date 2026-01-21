@@ -191,3 +191,8 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = ["taintinduce.isa.*"]
 warn_return_any = false
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:multiprocessing.popen_fork",
+]
