@@ -173,9 +173,10 @@ def infer_flow_conditions(
     )
     logger.debug(f'Processing {len(sorted_input_bits)} input bits in order of dataflow complexity')
 
-    # Track completed conditional flows: maps input bits to their output bits
+    # Track completed flows: maps input bits to their output bits
+    # This includes both conditional and unconditional flows
     # This will be passed to handle_multiple_partitions for superset detection
-    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]] = {}
+    completed_flows: dict[frozenset[BitPosition], set[BitPosition]] = {}
     # Also track the actual conditions for evaluating output bit taint states
     all_conditions: dict[frozenset[BitPosition], TaintCondition] = {}
 
@@ -207,7 +208,7 @@ def infer_flow_conditions(
             wave_number,
             observation_dependencies,
             possible_flows,
-            completed_conditional_flows,
+            completed_flows,
             all_conditions,
         )
 
@@ -216,7 +217,7 @@ def infer_flow_conditions(
             wave_results,
             per_bit_conditions,
             observation_dependencies,
-            completed_conditional_flows,
+            completed_flows,
             all_conditions,
         )
 
@@ -231,24 +232,25 @@ def _update_state_from_wave_results(
     wave_results: dict[BitPosition, list[ConditionDataflowPair]],
     per_bit_conditions: dict[BitPosition, list[ConditionDataflowPair]],
     observation_dependencies: list[ObservationDependency],
-    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
     all_conditions: dict[frozenset[BitPosition], TaintCondition],
 ) -> None:
     """Update shared state with results from a completed wave."""
     for mutated_input_bit, condition_dataflow_pairs in wave_results.items():
         per_bit_conditions[mutated_input_bit] = condition_dataflow_pairs
 
-        # Track completed conditional flows for superset detection
+        # Track completed flows (both conditional and unconditional) for superset detection
         for pair in condition_dataflow_pairs:
-            if pair.condition is not None and pair.output_bits:
+            if pair.output_bits:
                 input_bits: set[BitPosition] = {mutated_input_bit}
                 for obs_dep in observation_dependencies:
                     for input_bit, output_bits in obs_dep.dataflow.items():
                         if any(ob in pair.output_bits for ob in output_bits):
                             input_bits.add(input_bit)
                 input_bits_frozen = frozenset(input_bits)
-                completed_conditional_flows[input_bits_frozen] = set(pair.output_bits)
-                all_conditions[input_bits_frozen] = pair.condition
+                completed_flows[input_bits_frozen] = set(pair.output_bits)
+                if pair.condition is not None:
+                    all_conditions[input_bits_frozen] = pair.condition
 
 
 def _identify_ready_bits_by_subset_dependency(
@@ -268,13 +270,9 @@ def _identify_ready_bits_by_subset_dependency(
 
     # If nothing is ready, return bits with minimal output sizes to bootstrap
     if not ready and remaining_bits:
-        min_size = min(
-            min(len(output_set) for output_set in possible_flows[bit])
-            for bit in remaining_bits
-        )
+        min_size = min(min(len(output_set) for output_set in possible_flows[bit]) for bit in remaining_bits)
         ready = {
-            bit for bit in remaining_bits
-            if min(len(output_set) for output_set in possible_flows[bit]) == min_size
+            bit for bit in remaining_bits if min(len(output_set) for output_set in possible_flows[bit]) == min_size
         }
 
     return ready
@@ -307,7 +305,7 @@ def _process_wave_parallel(
     wave_number: int,
     observation_dependencies: list[ObservationDependency],
     possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
-    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
     all_conditions: dict[frozenset[BitPosition], TaintCondition],
 ) -> dict[BitPosition, list[ConditionDataflowPair]]:
     """Process a wave of bits in parallel, return results without modifying shared state."""
@@ -321,7 +319,7 @@ def _process_wave_parallel(
                 observation_dependencies,
                 possible_flows,
                 mutated_input_bit,
-                completed_conditional_flows,
+                completed_flows,
                 all_conditions,
             )
             futures[future] = mutated_input_bit
@@ -348,7 +346,7 @@ def infer_conditions_for_dataflows(
     observation_dependencies: list[ObservationDependency],
     possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
     mutated_input_bit: BitPosition,
-    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
     all_conditions: dict[frozenset[BitPosition], TaintCondition],
 ) -> list[ConditionDataflowPair]:
     """Infer conditions and their associated dataflows for a mutated input bit.
@@ -368,6 +366,6 @@ def infer_conditions_for_dataflows(
     return partition_handler.handle_multiple_partitions_output_centric(
         mutated_input_bit,
         observation_dependencies,
-        completed_conditional_flows,
+        completed_flows,
         all_conditions,
     )

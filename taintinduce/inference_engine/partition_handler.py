@@ -22,7 +22,7 @@ INCLUSION_THRESHOLD = 2  # Minimum count to exclude input bits covered by output
 def evaluate_output_bit_taint_states(
     state: StateValue,
     output_bit_refs: frozenset[OutputBitRef],
-    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
     all_conditions: dict[frozenset[BitPosition], TaintCondition],
 ) -> dict[BitPosition, int]:
     """Evaluate output bit taint states for a given input state.
@@ -35,7 +35,7 @@ def evaluate_output_bit_taint_states(
     Args:
         state: The current input state value
         output_bit_refs: Output bits to evaluate
-        completed_conditional_flows: Maps input bit sets to output bits
+        completed_flows: Maps input bit sets to output bits
         all_conditions: Maps input bit sets to their TaintCondition
 
     Returns:
@@ -48,7 +48,7 @@ def evaluate_output_bit_taint_states(
 
         # Find which condition generates this output bit
         found_condition = False
-        for input_bits, output_bits in completed_conditional_flows.items():
+        for input_bits, output_bits in completed_flows.items():
             if output_bit in output_bits:
                 # Get the condition for these input bits
                 condition = all_conditions.get(input_bits)
@@ -80,7 +80,7 @@ def augment_states_with_output_bit_taints(
     non_propagating_states: set[State],
     relevant_bit_positions: frozenset[BitPosition],
     output_bit_refs: frozenset[OutputBitRef],
-    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
     all_conditions: dict[frozenset[BitPosition], TaintCondition],
 ) -> tuple[set[StateValue], set[StateValue], list[BitPosition]]:
     """Augment simplified states with output bit taint values.
@@ -94,7 +94,7 @@ def augment_states_with_output_bit_taints(
         non_propagating_states: States where input bit doesn't affect output bit
         relevant_bit_positions: Input bit positions for the current flow
         output_bit_refs: Output bits to include in condition
-        completed_conditional_flows: Maps input bits to output bits
+        completed_flows: Maps input bits to output bits
         all_conditions: Maps input bits to their conditions
 
     Returns:
@@ -118,7 +118,7 @@ def augment_states_with_output_bit_taints(
         taint_states = evaluate_output_bit_taint_states(
             state.state_value,
             output_bit_refs,
-            completed_conditional_flows,
+            completed_flows,
             all_conditions,
         )
         # Append taint values to state (higher bits)
@@ -142,7 +142,7 @@ def augment_states_with_output_bit_taints(
         taint_states = evaluate_output_bit_taint_states(
             state.state_value,
             output_bit_refs,
-            completed_conditional_flows,
+            completed_flows,
             all_conditions,
         )
         # Append taint values to state (higher bits)
@@ -157,26 +157,26 @@ def augment_states_with_output_bit_taints(
 
 def find_output_bit_refs_from_subsets(
     current_input_bits: frozenset[BitPosition],
-    all_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
 ) -> Optional[frozenset[OutputBitRef]]:
-    """Find output bits from smaller conditional flows whose inputs are a subset.
+    """Find output bits from smaller flows whose inputs are a subset.
 
-    When a dataflow uses input bits that are a superset of another conditional flow's
+    When a dataflow uses input bits that are a superset of another flow's
     inputs, we should include the output bits from that smaller flow in our condition.
     This helps with operations like ADD where carry propagation causes many inputs
     to affect an output bit.
 
     Args:
         current_input_bits: Input bits for the current flow being processed
-        all_conditional_flows: Map from input bit sets to their output bits
-                              (only conditional flows with actual conditions)
+        completed_flows: Map from input bit sets to their output bits
+                        (includes both conditional and unconditional flows)
 
     Returns:
         Frozenset of OutputBitRef objects if subsets found, None otherwise
     """
     output_refs: set[OutputBitRef] = set()
 
-    for other_input_bits, other_output_bits in all_conditional_flows.items():
+    for other_input_bits, other_output_bits in completed_flows.items():
         # Skip self
         if other_input_bits == current_input_bits:
             continue
@@ -203,7 +203,7 @@ def find_output_bit_refs_from_subsets(
 def exclude_input_bits_covered_by_output_refs(
     relevant_input_bits: frozenset[BitPosition],
     output_bit_refs: Optional[frozenset[OutputBitRef]],
-    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
 ) -> frozenset[BitPosition]:
     """Exclude input bits that are already covered by output bit references.
 
@@ -227,7 +227,7 @@ def exclude_input_bits_covered_by_output_refs(
     Args:
         relevant_input_bits: All input bits that affect the current output bit
         output_bit_refs: Output bit references from subset flows (if any)
-        completed_conditional_flows: Maps input bit sets to their output bits
+        completed_flows: Maps input bit sets to their output bits
 
     Returns:
         Filtered set of input bits with multiply-covered bits excluded
@@ -239,7 +239,7 @@ def exclude_input_bits_covered_by_output_refs(
     input_bit_counts: dict[BitPosition, int] = {}
 
     # For each output bit ref, find which input bits generate it
-    for other_input_bits, other_output_bits in completed_conditional_flows.items():
+    for other_input_bits, other_output_bits in completed_flows.items():
         # Check if any of our output_bit_refs come from this flow
         for output_ref in output_bit_refs:
             if output_ref.output_bit in other_output_bits:
@@ -285,7 +285,7 @@ def handle_single_partition(
 def handle_multiple_partitions_output_centric(  # noqa: C901
     mutated_input_bit: BitPosition,
     observation_dependencies: list[ObservationDependency],
-    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
     all_conditions: dict[frozenset[BitPosition], TaintCondition],
 ) -> list[ConditionDataflowPair]:
     """Handle multiple partitions using output-bit-centric approach.
@@ -298,8 +298,8 @@ def handle_multiple_partitions_output_centric(  # noqa: C901
     Args:
         mutated_input_bit: The input bit we're analyzing
         observation_dependencies: All observation dependencies
-        completed_conditional_flows: Maps input bit sets to their output bits for
-            previously processed conditional flows (used for superset detection)
+        completed_flows: Maps input bit sets to their output bits for
+            previously processed flows (both conditional and unconditional)
         all_conditions: Maps input bit sets to their TaintCondition for evaluating
             output bit taint states (taint by induction)
 
@@ -338,15 +338,19 @@ def handle_multiple_partitions_output_centric(  # noqa: C901
         # Find output bit references from subset flows
         output_bit_refs = find_output_bit_refs_from_subsets(
             frozenset(relevant_input_bits),
-            completed_conditional_flows,
+            completed_flows,
         )
-
+        logger.debug(
+            f'Trying to exclude for dataflow {mutated_input_bit} -> {output_bit}, output_bit_refs={output_bit_refs}',
+        )
         # OPTIMIZATION: Exclude input bits that are covered by output_bit_refs to prevent DNF explosion
         relevant_input_bits_filtered = exclude_input_bits_covered_by_output_refs(
             frozenset(relevant_input_bits),
             output_bit_refs,
-            completed_conditional_flows,
-        )
+            completed_flows,
+        )  # .union(
+        #   {mutated_input_bit},
+        # )  # Always include mutated_input_bit
 
         logger.debug(
             f'Processing output bit {output_bit}: mutated_input_bit={mutated_input_bit}, '
@@ -402,7 +406,7 @@ def handle_multiple_partitions_output_centric(  # noqa: C901
                 non_propagating_states,
                 relevant_bit_positions,
                 output_bit_refs,
-                completed_conditional_flows,
+                completed_flows,
                 all_conditions,
             )
             simplified_propagating = augmented_prop
