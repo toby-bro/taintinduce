@@ -285,12 +285,12 @@ class ByteBlocks(Strategy):
 
     Special handling:
     - EFLAGS registers are set to all zeros (not included in combinations)
-    - For 32-bit registers: 4 * 2 = 8 patterns per register
-    - For 64-bit registers: 4 * 2 * 2 = 16 patterns per register
+    - For 32-bit registers: 8 base patterns * 2 (with highest bit flipped) = 15 patterns per register
+    - For 64-bit registers: 16 base patterns * 2 (with highest bit flipped) = 31 patterns per register
     - Combinations are generated across all non-EFLAGS registers
 
-    For ADD EAX, EBX: 8 * 8 = 64 combinations (optimized from 256)
-    For ADD RAX, RBX: 16 * 16 = 256 combinations (optimized from 1024)
+    For ADD EAX, EBX: 15 * 15 = 225 combinations
+    For ADD RAX, RBX: 31 * 31 = 961 combinations
     """
 
     def _build_value_from_byte_blocks(self, combination: int, num_bytes: int) -> int:
@@ -345,16 +345,40 @@ class ByteBlocks(Strategy):
                     patterns.append(value)
         return patterns
 
-    def _generate_patterns_for_register(self, reg: Register) -> list[int]:
-        """Generate byte block patterns for a single register."""
-        if reg.bits == 32:
-            return self._generate_32bit_patterns()
-        if reg.bits == 64:
-            return self._generate_64bit_patterns()
+    def _flip_highest_bit(self, value: int) -> int | None:
+        """Flip the highest 1 bit to 0. Returns None if value is 0."""
+        if value == 0:
+            return None
+        # Find the position of the highest 1 bit
+        highest_bit = value.bit_length() - 1
+        # Flip it
+        return value ^ (1 << highest_bit)
 
-        # For other sizes, use all combinations
-        num_bytes = reg.bits // 8
-        return [self._build_value_from_byte_blocks(combo, num_bytes) for combo in range(2**num_bytes)]
+    def _generate_patterns_for_register(self, reg: Register) -> list[int]:
+        """Generate byte block patterns for a single register.
+
+        For each pattern, also generate a variant with the highest 1 bit flipped to 0.
+        This doubles the number of patterns while preventing combinatorial explosion.
+        """
+        base_patterns = []
+        if reg.bits == 32:
+            base_patterns = self._generate_32bit_patterns()
+        elif reg.bits == 64:
+            base_patterns = self._generate_64bit_patterns()
+        else:
+            # For other sizes, use all combinations
+            num_bytes = reg.bits // 8
+            base_patterns = [self._build_value_from_byte_blocks(combo, num_bytes) for combo in range(2**num_bytes)]
+
+        # Double the patterns by flipping the highest bit
+        patterns = []
+        for pattern in base_patterns:
+            patterns.append(pattern)
+            flipped = self._flip_highest_bit(pattern)
+            if flipped is not None:
+                patterns.append(flipped)
+
+        return patterns
 
     def generator(self, regs: list[Register]) -> list[SeedVariation]:
         inputs: list[SeedVariation] = []
