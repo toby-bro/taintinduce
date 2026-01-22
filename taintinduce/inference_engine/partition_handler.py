@@ -16,6 +16,7 @@ from taintinduce.types import (
 from . import condition_generator, unitary_flow_processor
 
 logger = logging.getLogger(__name__)
+INCLUSION_THRESHOLD = 2  # Minimum count to exclude input bits covered by output refs
 
 
 def evaluate_output_bit_taint_states(
@@ -199,6 +200,72 @@ def find_output_bit_refs_from_subsets(
     return None
 
 
+def exclude_input_bits_covered_by_output_refs(
+    relevant_input_bits: frozenset[BitPosition],
+    output_bit_refs: Optional[frozenset[OutputBitRef]],
+    completed_conditional_flows: dict[frozenset[BitPosition], set[BitPosition]],
+) -> frozenset[BitPosition]:
+    """Exclude input bits that are already covered by output bit references.
+
+    To prevent DNF explosion, when output bits from subset flows are included as
+    output_bit_refs, we can exclude the input bits that generate those output bits.
+    However, we only exclude input bits that appear in MULTIPLE subset flows (2 or more).
+    This is because a bit appearing in only one subset flow might still be needed
+    for the condition.
+
+    For example, if we have:
+    - Flow A: input bits {0, 1} -> output bit 32
+    - Flow B: input bits {1, 2} -> output bit 33
+    - Flow C: input bits {0, 1, 2, 3} -> output bit 34
+
+    When processing Flow C, we add output bits 32 and 33 as output_bit_refs.
+    - Bit 0 appears in 1 subset flow (A) -> keep it
+    - Bit 1 appears in 2 subset flows (A, B) -> exclude it
+    - Bit 2 appears in 1 subset flow (B) -> keep it
+    - Bit 3 appears in 0 subset flows -> keep it
+
+    Args:
+        relevant_input_bits: All input bits that affect the current output bit
+        output_bit_refs: Output bit references from subset flows (if any)
+        completed_conditional_flows: Maps input bit sets to their output bits
+
+    Returns:
+        Filtered set of input bits with multiply-covered bits excluded
+    """
+    if not output_bit_refs:
+        return relevant_input_bits
+
+    # Count how many times each input bit appears in subset flows
+    input_bit_counts: dict[BitPosition, int] = {}
+
+    # For each output bit ref, find which input bits generate it
+    for other_input_bits, other_output_bits in completed_conditional_flows.items():
+        # Check if any of our output_bit_refs come from this flow
+        for output_ref in output_bit_refs:
+            if output_ref.output_bit in other_output_bits:
+                # Count these input bits
+                for input_bit in other_input_bits:
+                    if input_bit in relevant_input_bits:
+                        input_bit_counts[input_bit] = input_bit_counts.get(input_bit, 0) + 1
+                break  # Only count each flow once
+
+    # Only exclude bits that appear in 2+ subset flows
+    excluded_input_bits = {bit for bit, count in input_bit_counts.items() if count >= INCLUSION_THRESHOLD}
+
+    # Filter relevant_input_bits to exclude multiply-covered bits
+    filtered_bits = frozenset(bit for bit in relevant_input_bits if bit not in excluded_input_bits)
+
+    logger.debug(
+        f'Excluding input bits covered by multiple output refs: '
+        f'original={sorted(relevant_input_bits)}, '
+        f'counts={dict(sorted(input_bit_counts.items()))}, '
+        f'excluded={sorted(excluded_input_bits)}, '
+        f'filtered={sorted(filtered_bits)}',
+    )
+
+    return filtered_bits
+
+
 def handle_single_partition(
     mutated_input_bit: BitPosition,
     possible_flows: dict[BitPosition, set[frozenset[BitPosition]]],
@@ -274,9 +341,17 @@ def handle_multiple_partitions_output_centric(  # noqa: C901
             completed_conditional_flows,
         )
 
+        # OPTIMIZATION: Exclude input bits that are covered by output_bit_refs to prevent DNF explosion
+        relevant_input_bits_filtered = exclude_input_bits_covered_by_output_refs(
+            frozenset(relevant_input_bits),
+            output_bit_refs,
+            completed_conditional_flows,
+        )
+
         logger.debug(
             f'Processing output bit {output_bit}: mutated_input_bit={mutated_input_bit}, '
             f'relevant_input_bits={sorted(relevant_input_bits)}, '
+            f'filtered_input_bits={sorted(relevant_input_bits_filtered)}, '
             f'output_bit_refs={output_bit_refs}',
         )
 
