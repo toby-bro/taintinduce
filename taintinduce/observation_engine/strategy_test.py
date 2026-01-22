@@ -1,7 +1,15 @@
 """Unit tests for strategy generators."""
 
 from taintinduce.isa.register import Register
-from taintinduce.isa.x86_registers import X86_REG_AL, X86_REG_AX, X86_REG_EAX, X86_REG_EBX
+from taintinduce.isa.x86_registers import (
+    X86_REG_AL,
+    X86_REG_AX,
+    X86_REG_EAX,
+    X86_REG_EBX,
+    X86_REG_EFLAGS,
+    X86_REG_RAX,
+    X86_REG_RBX,
+)
 from taintinduce.observation_engine.strategy import ByteBlocks
 
 
@@ -87,27 +95,30 @@ class TestByteBlocks:
         assert sorted(actual_values) == sorted(expected_values)
 
     def test_byteblocks_multiple_registers(self):
-        """Test ByteBlocks strategy with multiple registers."""
+        """Test ByteBlocks strategy with multiple registers.
 
+        When multiple registers are provided, ByteBlocks now generates
+        all combinations across registers instead of treating them independently.
+        """
         strategy = ByteBlocks(num_runs=1)
         eax = X86_REG_EAX()
         ebx = X86_REG_EBX()
 
         variations = strategy.generator([eax, ebx])
 
-        # Each 32-bit register generates 16 variations
-        assert len(variations) == 32
+        # Each 32-bit register generates 16 variations (2^4)
+        # With combinations: 16 * 16 = 256
+        assert len(variations) == 256
 
-        # Check that we have variations for both registers
-        eax_variations = [var for var in variations if var.registers[0].name == 'EAX']
-        ebx_variations = [var for var in variations if var.registers[0].name == 'EBX']
-
-        assert len(eax_variations) == 16
-        assert len(ebx_variations) == 16
+        # All variations should set both registers
+        for var in variations:
+            assert len(var.registers) == 2
+            assert var.registers[0].name == 'EAX'
+            assert var.registers[1].name == 'EBX'
+            assert len(var.values) == 2
 
     def test_byteblocks_non_byte_aligned_register_skipped(self):
         """Test that registers with bits not divisible by 8 are skipped."""
-        # Create a mock register with non-byte-aligned size
 
         class MockReg(Register):
             def __init__(self):
@@ -124,3 +135,111 @@ class TestByteBlocks:
 
         # Should produce no variations for non-byte-aligned register
         assert len(variations) == 0
+
+    def test_byteblocks_two_32bit_registers_combinations(self):
+        """Test ByteBlocks generates all combinations across two 32-bit registers.
+
+        For arithmetic operations like ADD EAX, EBX, we need to test all
+        combinations of byte patterns across both registers to capture
+        carry propagation effects. With two 32-bit registers:
+        - Each register has 2^4 = 16 byte patterns
+        - Total combinations: 16 * 16 = 2^8 = 256
+        """
+        strategy = ByteBlocks(num_runs=1)
+        eax = X86_REG_EAX()
+        ebx = X86_REG_EBX()
+
+        variations = strategy.generator([eax, ebx])
+
+        # Should generate all combinations across both registers
+        assert len(variations) == 256, f'Expected 256 combinations, got {len(variations)}'
+
+        # Verify that all variations set both registers
+        for var in variations:
+            assert len(var.registers) == 2, 'Each variation should set both registers'
+            assert var.registers[0].name == 'EAX'
+            assert var.registers[1].name == 'EBX'
+            assert len(var.values) == 2
+
+        # Check that we have specific important combinations
+        # ByteBlocks only generates byte patterns (0x00 or 0xFF per byte)
+        found_specific_patterns = {
+            'both_all_ones': False,  # EAX=0xFFFFFFFF, EBX=0xFFFFFFFF
+            'one_all_ones': False,  # EAX=0xFFFFFFFF, EBX=0x000000FF
+            'both_zeros': False,  # EAX=0x00000000, EBX=0x00000000
+        }
+        for var in variations:
+            if var.values[0] == 0xFFFFFFFF and var.values[1] == 0xFFFFFFFF:
+                found_specific_patterns['both_all_ones'] = True
+            if var.values[0] == 0xFFFFFFFF and var.values[1] == 0x000000FF:
+                found_specific_patterns['one_all_ones'] = True
+            if var.values[0] == 0x00000000 and var.values[1] == 0x00000000:
+                found_specific_patterns['both_zeros'] = True
+
+        for pattern_name, found in found_specific_patterns.items():
+            assert found, f'Should include pattern {pattern_name}'
+
+        # Verify no duplicates
+        unique_combos = {(var.values[0], var.values[1]) for var in variations}
+        assert len(unique_combos) == 256, 'All combinations should be unique'
+
+    def test_byteblocks_with_eflags_register(self):
+        """Test ByteBlocks with EFLAGS register - should set EFLAGS to 0."""
+        strategy = ByteBlocks(num_runs=1)
+        eflags = X86_REG_EFLAGS()
+        eax = X86_REG_EAX()
+
+        variations = strategy.generator([eflags, eax])
+
+        # Should generate 16 combinations (only EAX varies, EFLAGS is always 0)
+        assert len(variations) == 16, f'Expected 16 combinations, got {len(variations)}'
+
+        # Verify EFLAGS is always 0
+        for var in variations:
+            assert len(var.registers) == 2
+            assert var.registers[0].name == 'EFLAGS'
+            assert var.registers[1].name == 'EAX'
+            assert var.values[0] == 0, 'EFLAGS should always be 0'
+
+    def test_byteblocks_64bit_registers(self):
+        """Test ByteBlocks with 64-bit registers.
+
+        For 64-bit registers:
+        - Lower 32 bits: all 2^4 = 16 byte patterns
+        - Upper 32 bits: only 2 patterns (all 0s or all 1s)
+        - Total per register: 16 * 2 = 32 patterns
+        - For two 64-bit registers: 32 * 32 = 1024 combinations
+        """
+        strategy = ByteBlocks(num_runs=1)
+        rax = X86_REG_RAX()
+        rbx = X86_REG_RBX()
+
+        variations = strategy.generator([rax, rbx])
+
+        # Should generate 32 * 32 = 1024 combinations
+        assert len(variations) == 1024, f'Expected 1024 combinations, got {len(variations)}'
+
+        # Verify that all variations set both registers
+        for var in variations:
+            assert len(var.registers) == 2
+            assert var.registers[0].name == 'RAX'
+            assert var.registers[1].name == 'RBX'
+            assert len(var.values) == 2
+
+        # Check specific patterns exist
+        found_patterns = {
+            'lower_all_ones': False,  # 0x00000000FFFFFFFF
+            'upper_all_ones': False,  # 0xFFFFFFFF00000000
+            'all_ones': False,  # 0xFFFFFFFFFFFFFFFF
+        }
+
+        for var in variations:
+            if var.values[0] == 0x00000000FFFFFFFF:
+                found_patterns['lower_all_ones'] = True
+            if var.values[0] == 0xFFFFFFFF00000000:
+                found_patterns['upper_all_ones'] = True
+            if var.values[0] == 0xFFFFFFFFFFFFFFFF:
+                found_patterns['all_ones'] = True
+
+        for pattern_name, found in found_patterns.items():
+            assert found, f'Should include pattern {pattern_name}'

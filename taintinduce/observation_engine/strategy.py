@@ -278,29 +278,75 @@ class SystematicRange(Strategy):
 class ByteBlocks(Strategy):
     """Generate all combinations of 8-bit blocks that are either all zeros (0x00) or all ones (0xFF).
 
-    For a 32-bit register, this generates 2^4 = 16 combinations:
-    0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF, ..., 0xFFFFFFFF
+    Special handling:
+    - EFLAGS registers are set to all zeros (not included in combinations)
+    - For 32-bit registers: all 2^4 = 16 byte patterns per register
+    - For 64-bit registers: all 2^4 = 16 patterns for lower 32 bits,
+      and only 2 patterns (all 0s or all 1s) for upper 32 bits = 32 patterns total
+    - Combinations are generated across all non-EFLAGS registers
 
-    Useful for testing byte-wise operations and instruction behavior with
-    different patterns of high/low bytes.
+    For ADD EAX, EBX: 16 * 16 = 256 combinations
+    For ADD RAX, RBX: 32 * 32 = 1024 combinations
     """
 
+    def _build_value_from_byte_blocks(self, combination: int, num_bytes: int) -> int:
+        """Build a value from byte block combination."""
+        value = 0
+        for byte_idx in range(num_bytes):
+            if combination & (1 << byte_idx):
+                value |= 0xFF << (byte_idx * 8)
+        return value
+
+    def _generate_32bit_patterns(self) -> list[int]:
+        """Generate all 16 patterns for 32-bit registers."""
+        return [self._build_value_from_byte_blocks(combo, 4) for combo in range(2**4)]
+
+    def _generate_64bit_patterns(self) -> list[int]:
+        """Generate all 32 patterns for 64-bit registers."""
+        patterns = []
+        for lower_combo in range(2**4):  # Lower 4 bytes
+            for upper_pattern in [0, 1]:  # Upper 4 bytes: all 0s or all 1s
+                value = self._build_value_from_byte_blocks(lower_combo, 4)
+                if upper_pattern == 1:
+                    value |= 0xFFFFFFFF00000000
+                patterns.append(value)
+        return patterns
+
+    def _generate_patterns_for_register(self, reg: Register) -> list[int]:
+        """Generate byte block patterns for a single register."""
+        if reg.bits == 32:
+            return self._generate_32bit_patterns()
+        if reg.bits == 64:
+            return self._generate_64bit_patterns()
+
+        # For other sizes, use all combinations
+        num_bytes = reg.bits // 8
+        return [self._build_value_from_byte_blocks(combo, num_bytes) for combo in range(2**num_bytes)]
+
     def generator(self, regs: list[Register]) -> list[SeedVariation]:
-        inputs = []
+        inputs: list[SeedVariation] = []
 
-        for reg in regs:
-            # Only process registers with bits divisible by 8
-            if reg.bits % 8 != 0:
-                continue
+        # Separate EFLAGS registers from others
+        eflags_regs = [reg for reg in regs if 'EFLAGS' in reg.name or 'FLAGS' in reg.name]
+        non_eflags_regs = [reg for reg in regs if reg not in eflags_regs]
 
-            num_bytes = reg.bits // 8
-            # Generate all 2^num_bytes combinations
-            for combination in range(2**num_bytes):
-                value = 0
-                for byte_idx in range(num_bytes):
-                    # Check if this byte should be 0xFF (bit set) or 0x00 (bit clear)
-                    if combination & (1 << byte_idx):
-                        value |= 0xFF << (byte_idx * 8)
-                inputs.append(SeedVariation(registers=[reg], values=[value]))
+        # Filter to only registers with bits divisible by 8
+        valid_regs = [reg for reg in non_eflags_regs if reg.bits % 8 == 0]
+
+        if not valid_regs:
+            return inputs
+
+        # Generate byte patterns for each register
+        reg_patterns: list[list[int]] = []
+        for reg in valid_regs:
+            patterns = self._generate_patterns_for_register(reg)
+            reg_patterns.append(patterns)
+
+        # Generate all combinations across non-EFLAGS registers
+        for pattern_combo in itertools.product(*reg_patterns):
+            # Build complete register list with EFLAGS set to 0
+            all_regs = list(eflags_regs) + list(valid_regs)
+            all_values = [0] * len(eflags_regs) + list(pattern_combo)
+            inputs.append(SeedVariation(registers=all_regs, values=all_values))
 
         return inputs
