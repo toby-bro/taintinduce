@@ -273,3 +273,34 @@ class SystematicRange(Strategy):
                         inputs.append(SeedVariation(registers=[reg], values=[value]))
 
         return inputs
+
+
+class ByteBlocks(Strategy):
+    """Generate all combinations of 8-bit blocks that are either all zeros (0x00) or all ones (0xFF).
+
+    For a 32-bit register, this generates 2^4 = 16 combinations:
+    0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF, ..., 0xFFFFFFFF
+
+    Useful for testing byte-wise operations and instruction behavior with
+    different patterns of high/low bytes.
+    """
+
+    def generator(self, regs: list[Register]) -> list[SeedVariation]:
+        inputs = []
+
+        for reg in regs:
+            # Only process registers with bits divisible by 8
+            if reg.bits % 8 != 0:
+                continue
+
+            num_bytes = reg.bits // 8
+            # Generate all 2^num_bytes combinations
+            for combination in range(2**num_bytes):
+                value = 0
+                for byte_idx in range(num_bytes):
+                    # Check if this byte should be 0xFF (bit set) or 0x00 (bit clear)
+                    if combination & (1 << byte_idx):
+                        value |= 0xFF << (byte_idx * 8)
+                inputs.append(SeedVariation(registers=[reg], values=[value]))
+
+        return inputs

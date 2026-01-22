@@ -25,7 +25,7 @@ from taintinduce.state.state import Observation, State
 from taintinduce.state.state_utils import regs2bits
 from taintinduce.types import CpuRegisterMap
 
-from .strategy import SeedVariation, Strategy
+from .strategy import ByteBlocks, SeedVariation, Strategy
 
 
 def decode_instruction_bytes(bytestring: str, archstring: str) -> bytes:
@@ -488,6 +488,7 @@ class ObservationEngine(object):
                 ZeroWalk(),
                 BitFill(),
                 IEEE754Extended(10),
+                ByteBlocks(),
                 # Flag-targeted strategies for X86/AMD64
                 # FlagTargetedArithmetic(),
                 # ParityFocused(),
