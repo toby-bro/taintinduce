@@ -257,11 +257,15 @@ def exclude_input_bits_covered_by_output_refs(
 
     logger.debug(
         f'Excluding input bits covered by multiple output refs: '
-        f'original={sorted(relevant_input_bits)}, '
-        f'counts={dict(sorted(input_bit_counts.items()))}, '
-        f'excluded={sorted(excluded_input_bits)}, '
-        f'filtered={sorted(filtered_bits)}',
+        f'\n    original={sorted(relevant_input_bits)}, '
+        f'\n    counts={dict(sorted(input_bit_counts.items()))}, '
+        f'\n    excluded={sorted(excluded_input_bits)}, '
+        f'\n    filtered={sorted(filtered_bits)}',
     )
+    if len(filtered_bits) > 4:
+        logger.warning(
+            f'After exclusion we still have {len(filtered_bits)} input bits: {sorted(filtered_bits)}',
+        )
 
     return filtered_bits
 
