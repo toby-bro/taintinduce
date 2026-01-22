@@ -75,6 +75,7 @@ class Disassembler(object):
         if arch_str == 'JN':
             # Decode the instruction to check if it has an immediate operand
             jn_insn = decode_jn_hex_string(bytestring)
+            print(f'Disassembling {arch_str} instruction: {bytestring}')
 
             # For immediate instructions, exclude R2 from state (it's not used)
             # For register instructions, include R1, R2, and NZCV
@@ -98,6 +99,8 @@ class Disassembler(object):
         insn = dis.disassemble(bytestring)
         if not isinstance(insn, CsInsn):
             raise Exception('Disassembled object is not a CsInsn instance.')
+
+        print(f'Disassembling {arch_str} instruction: {bytestring} -> {insn.mnemonic} {insn.op_str}')
 
         # capstone register set
         self.cs_reg_set = []
