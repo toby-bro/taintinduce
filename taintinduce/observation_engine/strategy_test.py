@@ -23,27 +23,21 @@ class TestByteBlocks:
 
         variations = strategy.generator([reg])
 
-        # For a 32-bit register, we have 4 bytes, so 2^4 = 16 combinations
-        assert len(variations) == 16
+        # Optimized: bits 0-15 (4 patterns) * bits 16-31 (2 patterns) = 8 patterns
+        assert len(variations) == 8
 
-        # Expected values (all combinations of 0x00 and 0xFF for 4 bytes)
+        # Expected values with optimized block sizes:
+        # Lower 16 bits: 0x0000, 0x00FF, 0xFF00, 0xFFFF
+        # Upper 16 bits: 0x0000, 0xFFFF
         expected_values = [
-            0x00000000,  # 0000
-            0x000000FF,  # 0001
-            0x0000FF00,  # 0010
-            0x0000FFFF,  # 0011
-            0x00FF0000,  # 0100
-            0x00FF00FF,  # 0101
-            0x00FFFF00,  # 0110
-            0x00FFFFFF,  # 0111
-            0xFF000000,  # 1000
-            0xFF0000FF,  # 1001
-            0xFF00FF00,  # 1010
-            0xFF00FFFF,  # 1011
-            0xFFFF0000,  # 1100
-            0xFFFF00FF,  # 1101
-            0xFFFFFF00,  # 1110
-            0xFFFFFFFF,  # 1111
+            0x00000000,  # lower=0x0000, upper=0x0000
+            0xFFFF0000,  # lower=0x0000, upper=0xFFFF
+            0x000000FF,  # lower=0x00FF, upper=0x0000
+            0xFFFF00FF,  # lower=0x00FF, upper=0xFFFF
+            0x0000FF00,  # lower=0xFF00, upper=0x0000
+            0xFFFFFF00,  # lower=0xFF00, upper=0xFFFF
+            0x0000FFFF,  # lower=0xFFFF, upper=0x0000
+            0xFFFFFFFF,  # lower=0xFFFF, upper=0xFFFF
         ]
 
         # Extract values from variations
@@ -106,9 +100,9 @@ class TestByteBlocks:
 
         variations = strategy.generator([eax, ebx])
 
-        # Each 32-bit register generates 16 variations (2^4)
-        # With combinations: 16 * 16 = 256
-        assert len(variations) == 256
+        # Optimized: each 32-bit register generates 8 variations
+        # With combinations: 8 * 8 = 64
+        assert len(variations) == 64
 
         # All variations should set both registers
         for var in variations:
@@ -142,8 +136,8 @@ class TestByteBlocks:
         For arithmetic operations like ADD EAX, EBX, we need to test all
         combinations of byte patterns across both registers to capture
         carry propagation effects. With two 32-bit registers:
-        - Each register has 2^4 = 16 byte patterns
-        - Total combinations: 16 * 16 = 2^8 = 256
+        - Each register has 8 patterns (4 for bits 0-15, 2 for bits 16-31)
+        - Total combinations: 8 * 8 = 64
         """
         strategy = ByteBlocks(num_runs=1)
         eax = X86_REG_EAX()
@@ -152,7 +146,7 @@ class TestByteBlocks:
         variations = strategy.generator([eax, ebx])
 
         # Should generate all combinations across both registers
-        assert len(variations) == 256, f'Expected 256 combinations, got {len(variations)}'
+        assert len(variations) == 64, f'Expected 64 combinations, got {len(variations)}'
 
         # Verify that all variations set both registers
         for var in variations:
@@ -181,7 +175,7 @@ class TestByteBlocks:
 
         # Verify no duplicates
         unique_combos = {(var.values[0], var.values[1]) for var in variations}
-        assert len(unique_combos) == 256, 'All combinations should be unique'
+        assert len(unique_combos) == 64, 'All combinations should be unique'
 
     def test_byteblocks_with_eflags_register(self):
         """Test ByteBlocks with EFLAGS register - should set EFLAGS to 0."""
@@ -191,8 +185,8 @@ class TestByteBlocks:
 
         variations = strategy.generator([eflags, eax])
 
-        # Should generate 16 combinations (only EAX varies, EFLAGS is always 0)
-        assert len(variations) == 16, f'Expected 16 combinations, got {len(variations)}'
+        # Should generate 8 combinations (only EAX varies, EFLAGS is always 0)
+        assert len(variations) == 8, f'Expected 8 combinations, got {len(variations)}'
 
         # Verify EFLAGS is always 0
         for var in variations:
@@ -205,10 +199,11 @@ class TestByteBlocks:
         """Test ByteBlocks with 64-bit registers.
 
         For 64-bit registers:
-        - Lower 32 bits: all 2^4 = 16 byte patterns
-        - Upper 32 bits: only 2 patterns (all 0s or all 1s)
-        - Total per register: 16 * 2 = 32 patterns
-        - For two 64-bit registers: 32 * 32 = 1024 combinations
+        - Bits 0-15: 4 patterns (8-bit blocks)
+        - Bits 16-31: 2 patterns (16-bit block)
+        - Bits 32-63: 2 patterns (32-bit block)
+        - Total per register: 4 * 2 * 2 = 16 patterns
+        - For two 64-bit registers: 16 * 16 = 256 combinations
         """
         strategy = ByteBlocks(num_runs=1)
         rax = X86_REG_RAX()
@@ -216,8 +211,8 @@ class TestByteBlocks:
 
         variations = strategy.generator([rax, rbx])
 
-        # Should generate 32 * 32 = 1024 combinations
-        assert len(variations) == 1024, f'Expected 1024 combinations, got {len(variations)}'
+        # Should generate 16 * 16 = 256 combinations
+        assert len(variations) == 256, f'Expected 256 combinations, got {len(variations)}'
 
         # Verify that all variations set both registers
         for var in variations:

@@ -276,17 +276,21 @@ class SystematicRange(Strategy):
 
 
 class ByteBlocks(Strategy):
-    """Generate all combinations of 8-bit blocks that are either all zeros (0x00) or all ones (0xFF).
+    """Generate combinations with progressively larger block sizes to optimize observation count.
+
+    Block size strategy:
+    - Bits 0-15 (lower 16 bits): 8-bit blocks (0x00 or 0xFF per byte) -> 2^2 = 4 patterns
+    - Bits 16-31: 16-bit block (all 0s or all 1s) -> 2 patterns
+    - Bits 32-63: 32-bit block (all 0s or all 1s) -> 2 patterns
 
     Special handling:
     - EFLAGS registers are set to all zeros (not included in combinations)
-    - For 32-bit registers: all 2^4 = 16 byte patterns per register
-    - For 64-bit registers: all 2^4 = 16 patterns for lower 32 bits,
-      and only 2 patterns (all 0s or all 1s) for upper 32 bits = 32 patterns total
+    - For 32-bit registers: 4 * 2 = 8 patterns per register
+    - For 64-bit registers: 4 * 2 * 2 = 16 patterns per register
     - Combinations are generated across all non-EFLAGS registers
 
-    For ADD EAX, EBX: 16 * 16 = 256 combinations
-    For ADD RAX, RBX: 32 * 32 = 1024 combinations
+    For ADD EAX, EBX: 8 * 8 = 64 combinations (optimized from 256)
+    For ADD RAX, RBX: 16 * 16 = 256 combinations (optimized from 1024)
     """
 
     def _build_value_from_byte_blocks(self, combination: int, num_bytes: int) -> int:
@@ -298,18 +302,47 @@ class ByteBlocks(Strategy):
         return value
 
     def _generate_32bit_patterns(self) -> list[int]:
-        """Generate all 16 patterns for 32-bit registers."""
-        return [self._build_value_from_byte_blocks(combo, 4) for combo in range(2**4)]
+        """Generate 8 patterns for 32-bit registers.
+
+        - Bits 0-15: 8-bit blocks -> 4 patterns
+        - Bits 16-31: 16-bit block -> 2 patterns
+        Total: 4 * 2 = 8 patterns
+        """
+        patterns = []
+        # Lower 16 bits: 8-bit blocks (2 bytes)
+        for lower_combo in range(2**2):  # 4 patterns
+            lower_value = self._build_value_from_byte_blocks(lower_combo, 2)
+            # Upper 16 bits: single 16-bit block
+            for upper_pattern in [0, 1]:  # 2 patterns
+                value = lower_value
+                if upper_pattern == 1:
+                    value |= 0xFFFF0000
+                patterns.append(value)
+        return patterns
 
     def _generate_64bit_patterns(self) -> list[int]:
-        """Generate all 32 patterns for 64-bit registers."""
+        """Generate 16 patterns for 64-bit registers.
+
+        - Bits 0-15: 8-bit blocks -> 4 patterns
+        - Bits 16-31: 16-bit block -> 2 patterns
+        - Bits 32-63: 32-bit block -> 2 patterns
+        Total: 4 * 2 * 2 = 16 patterns
+        """
         patterns = []
-        for lower_combo in range(2**4):  # Lower 4 bytes
-            for upper_pattern in [0, 1]:  # Upper 4 bytes: all 0s or all 1s
-                value = self._build_value_from_byte_blocks(lower_combo, 4)
-                if upper_pattern == 1:
-                    value |= 0xFFFFFFFF00000000
-                patterns.append(value)
+        # Bits 0-15: 8-bit blocks (2 bytes)
+        for lower_combo in range(2**2):  # 4 patterns
+            lower_value = self._build_value_from_byte_blocks(lower_combo, 2)
+            # Bits 16-31: 16-bit block
+            for mid_pattern in [0, 1]:  # 2 patterns
+                mid_value = lower_value
+                if mid_pattern == 1:
+                    mid_value |= 0xFFFF0000
+                # Bits 32-63: 32-bit block
+                for upper_pattern in [0, 1]:  # 2 patterns
+                    value = mid_value
+                    if upper_pattern == 1:
+                        value |= 0xFFFFFFFF00000000
+                    patterns.append(value)
         return patterns
 
     def _generate_patterns_for_register(self, reg: Register) -> list[int]:
