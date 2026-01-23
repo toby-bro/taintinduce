@@ -1,3 +1,8 @@
+# Temp files
+*.tmp
+*.bak
+*.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -105,3 +110,4 @@ venv.bak/
 
 output/
 stubs/
+

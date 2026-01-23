@@ -24,3 +24,4 @@ applyTo: "**/*.py"
 - When writing unit tests write them with pytest, use pytest mock to mock NEVER unittest.
 - Do not make loops to check different variables, use pytest.mark.parametrize
 - use `assert` never `self.Assert`
+- the test file for "file.py" is "file_test.py" in the same folder.
