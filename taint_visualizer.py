@@ -76,7 +76,7 @@ def get_matching_pairs(rule: TaintRule, input_state_value: int) -> list[dict['st
                 {
                     'pair_index': idx,
                     'condition': pair.condition,
-                    'dataflow': pair.output_bits,
+                    'dataflow': pair.output_bit,
                     'is_unconditional': pair.condition is None,
                 },
             )
@@ -233,39 +233,34 @@ def get_rule_data():
         in_info = bitpos_to_reg_bit(pair.input_bit, current_rule.format.registers)
         input_label = f"{in_info['name']}[{in_info['bit']}]" if in_info['type'] == 'reg' else f'bit[{pair.input_bit}]'
 
-        # Convert output bit positions to register names
-        output_labels = []
-        for out_bit in sorted(pair.output_bits):
-            out_info = bitpos_to_reg_bit(out_bit, current_rule.format.registers)
-            out_label = f"{out_info['name']}[{out_info['bit']}]" if out_info['type'] == 'reg' else f'bit[{out_bit}]'
-            output_labels.append(out_label)
+        # Convert output bit position to register name (single output now)
+        out_info = bitpos_to_reg_bit(pair.output_bit, current_rule.format.registers)
+        out_label = f"{out_info['name']}[{out_info['bit']}]" if out_info['type'] == 'reg' else f'bit[{pair.output_bit}]'
 
-        outputs_str = ', '.join(output_labels)
         sample_flows.append(
             {
                 'input': input_label,
-                'outputs': outputs_str,
+                'outputs': out_label,
             },
         )
 
         # Also prepare structured dataflow for graph
         # BitPosition is just an integer offset - need to map to register+bit
-        for out_bit_pos in pair.output_bits:
-            # Convert integer BitPosition to (register, bit) using format
-            out_info = bitpos_to_reg_bit(out_bit_pos, current_rule.format.registers)
-            in_info = bitpos_to_reg_bit(pair.input_bit, current_rule.format.registers)
+        # Convert integer BitPosition to (register, bit) using format
+        out_info = bitpos_to_reg_bit(pair.output_bit, current_rule.format.registers)
+        in_info = bitpos_to_reg_bit(pair.input_bit, current_rule.format.registers)
 
-            dataflow_list.append(
-                {
-                    'output_bit': out_info,
-                    'input_bits': [in_info],
-                    'condition': format_condition_human_readable(pair.condition),
-                    'is_unconditional': pair.condition is None,
-                    'pair_index': idx,
-                },
-            )
+        dataflow_list.append(
+            {
+                'output_bit': out_info,
+                'input_bits': [in_info],
+                'condition': format_condition_human_readable(pair.condition),
+                'is_unconditional': pair.condition is None,
+                'pair_index': idx,
+            },
+        )
 
-        num_dataflows = len(pair.output_bits)
+        num_dataflows = 1  # Single output bit per pair now
 
         pairs_data.append(
             {

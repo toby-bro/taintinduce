@@ -52,18 +52,13 @@ class TaintCondition(SerializableMixin):
     """
 
     condition_type: LogicType
-    condition_ops: Optional[frozenset[tuple[int, int]]]
-    output_bit_refs: Optional[frozenset[OutputBitRef]]
+    condition_ops: frozenset[tuple[int, int]]
+    output_bit_refs: frozenset[OutputBitRef]
 
     def __repr__(self) -> str:
-        if self.condition_ops is None and (not hasattr(self, 'output_bit_refs') or self.output_bit_refs is None):
-            return 'TaintCondition()'
-        parts = [str(self.condition_type)]
-        if self.condition_ops:
-            parts.append(str([(check_ones(a), check_ones(b)) for a, b in self.condition_ops]))
-        if hasattr(self, 'output_bit_refs') and self.output_bit_refs:
-            parts.append(f'output_refs={self.output_bit_refs}')
-        return f'TaintCondition({', '.join(parts)})'
+        return f"""TaintCondition({self.condition_type}, {
+            {bin(mask): bin(value)  for mask, value in self.condition_ops} if self.condition_ops else None
+        }, {self.output_bit_refs})"""
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -79,8 +74,8 @@ class TaintCondition(SerializableMixin):
             self.deserialize(repr_str)
         else:
             self.condition_type = condition_type
-            self.condition_ops = conditions
-            self.output_bit_refs = output_bit_refs
+            self.condition_ops = conditions if conditions is not None else frozenset()
+            self.output_bit_refs = output_bit_refs if output_bit_refs is not None else frozenset()
 
     def __hash__(self) -> int:
         return hash((self.condition_type, self.condition_ops, self.output_bit_refs))
@@ -106,7 +101,7 @@ class TaintCondition(SerializableMixin):
             None
         """
         result = True
-        if self.condition_ops is None and (not hasattr(self, 'output_bit_refs') or self.output_bit_refs is None):
+        if len(self.condition_ops) == 0 and (not hasattr(self, 'output_bit_refs') or len(self.output_bit_refs) == 0):
             return result
 
         match self.condition_type:
@@ -120,8 +115,6 @@ class TaintCondition(SerializableMixin):
                 raise ValueError(f'Condition type {self.condition_type} is not defined')
 
     def get_cond_bits(self) -> frozenset[BitPosition]:
-        if self.condition_ops is None:
-            return frozenset()
         cond_bits: set[BitPosition] = set()
         if self.condition_type == LogicType.DNF:
             for mask, _ in self.condition_ops:

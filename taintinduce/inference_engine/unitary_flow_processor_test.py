@@ -20,7 +20,7 @@ class TestTransposeConditionBits:
         )
         input_positions = frozenset([BitPosition(5), BitPosition(10), BitPosition(15)])
 
-        result = transpose_condition_bits(condition_ops, input_positions)
+        result = transpose_condition_bits(condition_ops, input_positions, [])
 
         # Expected: bit 0->5, bit 1->10, bit 2->15
         # (0b111, 0b101) -> mask has bits 5,10,15, value has bits 5,15
@@ -71,7 +71,7 @@ class TestTransposeConditionBits:
         condition_ops: frozenset[tuple[int, int]] = frozenset()
         input_positions = frozenset([BitPosition(0), BitPosition(1)])
 
-        result = transpose_condition_bits(condition_ops, input_positions)
+        result = transpose_condition_bits(condition_ops, input_positions, [])
 
         assert result == frozenset()
 
@@ -86,7 +86,7 @@ class TestTransposeConditionBits:
         )
         input_positions = frozenset([BitPosition(7)])
 
-        result = transpose_condition_bits(condition_ops, input_positions)
+        result = transpose_condition_bits(condition_ops, input_positions, [])
 
         expected = frozenset(
             [
@@ -162,7 +162,7 @@ class TestTransposeConditionBitsWithExclusion:
         # After exclusion, only bits 0, 3, 4 remain
         filtered_input_positions = frozenset([BitPosition(0), BitPosition(3), BitPosition(4)])
 
-        result = transpose_condition_bits(condition_ops, filtered_input_positions)
+        result = transpose_condition_bits(condition_ops, filtered_input_positions, [])
 
         # Expected: simplified bit 0->0, bit 1->3, bit 2->4
         expected = frozenset(
@@ -190,7 +190,7 @@ class TestTransposeConditionBitsWithExclusion:
         # Only bits 2, 3 remain after exclusion
         filtered_input_positions = frozenset([BitPosition(2), BitPosition(3)])
 
-        result = transpose_condition_bits(condition_ops, filtered_input_positions)
+        result = transpose_condition_bits(condition_ops, filtered_input_positions, [])
 
         # Simplified bit 0->2, bit 1->3
         expected = frozenset(
@@ -218,7 +218,7 @@ class TestTransposeConditionBitsWithExclusion:
         # After exclusion: only bit 30 from EAX and bit 62 from EBX (bit 30 with offset 32)
         filtered_input_positions = frozenset([BitPosition(30), BitPosition(62)])
 
-        result = transpose_condition_bits(condition_ops, filtered_input_positions)
+        result = transpose_condition_bits(condition_ops, filtered_input_positions, [])
 
         # Simplified bits 0,1 -> original bits 30,62
         expected = frozenset(
@@ -284,7 +284,7 @@ class TestTransposeConditionBitsWithExclusion:
         # Very sparse remaining bits
         filtered_input_positions = frozenset([BitPosition(5), BitPosition(20), BitPosition(100)])
 
-        result = transpose_condition_bits(condition_ops, filtered_input_positions)
+        result = transpose_condition_bits(condition_ops, filtered_input_positions, [])
 
         expected = frozenset(
             [
@@ -311,7 +311,7 @@ class TestTransposeConditionBitsWithExclusion:
         # Only one bit remains
         filtered_input_positions = frozenset([BitPosition(42)])
 
-        result = transpose_condition_bits(condition_ops, filtered_input_positions)
+        result = transpose_condition_bits(condition_ops, filtered_input_positions, [])
 
         expected = frozenset(
             [

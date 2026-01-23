@@ -4,16 +4,12 @@ This module tests the InferenceEngine class and its methods for inferring
 taint propagation rules with data-dependent conditions.
 """
 
-from collections import defaultdict
-
 import pytest
 
 from taintinduce.inference_engine import observation_processor
 from taintinduce.inference_engine.condition_generator import ConditionGenerator
 from taintinduce.inference_engine.inference import (
     infer,
-    infer_conditions_for_dataflows,
-    infer_flow_conditions,
 )
 from taintinduce.inference_engine.logic import (
     Espresso,
@@ -149,7 +145,7 @@ class TestInfer:
         mock_pair = ConditionDataflowPair(
             condition=mock_cond,
             input_bit=BitPosition(0),
-            output_bits=frozenset([BitPosition(0)]),
+            output_bit=BitPosition(0),
         )
 
         # infer_flow_conditions now returns dict[BitPosition, list[ConditionDataflowPair]]
@@ -393,147 +389,6 @@ class TestGenCondition:
         )
 
         mock_espresso2cond.assert_called_once()
-
-
-# ============================================================================
-# Tests for InferenceEngine.infer_conditions_for_dataflows
-# ============================================================================
-
-
-class TestInferConditionsForDataflows:
-    """Tests for infer_conditions_for_dataflows method."""
-
-    def test_single_partition_no_conditions(self):
-        """Test that single partition results in no conditions (returns default/None)."""
-        obs_deps: list[ObservationDependency] = []
-        possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
-        possible_flows[BitPosition(32)] = {frozenset([BitPosition(32)])}
-
-        pairs = infer_conditions_for_dataflows(
-            obs_deps,
-            possible_flows,
-            BitPosition(32),
-            {},
-            {},
-        )
-
-        # With single partition, should return one pair with condition=None
-        assert len(pairs) == 1
-        pair = pairs[0]
-        assert pair.condition is None  # No condition needed for single partition
-        assert BitPosition(32) in pair.output_bits
-
-    def test_multiple_partitions_generates_conditions(self, condition_generator, mocker):
-        """Test that multiple partitions generate conditions."""
-        # Create observation dependencies with different behaviors
-        state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
-        state2 = State(num_bits=64, state_value=StateValue(0x0000000087654321))
-
-        dataflow1 = Dataflow()
-        dataflow1[BitPosition(32)] = frozenset([BitPosition(32), BitPosition(33)])
-
-        dataflow2 = Dataflow()
-        dataflow2[BitPosition(32)] = frozenset([BitPosition(32)])
-
-        mutated_inputs1 = MutatedInputStates()
-        mutated_inputs1[BitPosition(32)] = state1
-
-        mutated_inputs2 = MutatedInputStates()
-        mutated_inputs2[BitPosition(32)] = state2
-
-        obs_dep1 = ObservationDependency(dataflow=dataflow1, mutated_inputs=mutated_inputs1, original_output=state1)
-        obs_dep2 = ObservationDependency(dataflow=dataflow2, mutated_inputs=mutated_inputs2, original_output=state2)
-
-        possible_flows = defaultdict(set)
-        possible_flows[BitPosition(32)] = {
-            frozenset([BitPosition(32), BitPosition(33)]),
-            frozenset([BitPosition(32)]),
-        }
-
-        mock_gen_cond = mocker.patch.object(condition_generator, 'generate_condition')
-        mock_gen_cond.return_value = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
-
-        pairs = infer_conditions_for_dataflows(
-            [obs_dep1, obs_dep2],
-            possible_flows,
-            BitPosition(32),
-            {},
-            {},
-        )
-
-        assert len(pairs) >= 1  # Should have at least one pair
-
-    def test_raises_on_zero_partitions(self):
-        """Test that method raises exception when no possible flows exist."""
-        obs_deps: list[ObservationDependency] = []
-        possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
-        possible_flows[BitPosition(32)] = set()  # Empty
-
-        with pytest.raises(Exception, match='No possible flows'):
-            infer_conditions_for_dataflows(
-                obs_deps,
-                possible_flows,
-                BitPosition(32),
-                {},
-                {},
-            )
-
-
-# ============================================================================
-# Tests for InferenceEngine.infer_flow_conditions
-# ============================================================================
-
-
-class TestInferFlowConditions:
-    """Tests for infer_flow_conditions method."""
-
-    def test_infer_flow_conditions_calls_extract_dependencies(
-        self,
-        simple_observation,
-        mocker,
-    ):
-        """Test that method calls extract_observation_dependencies."""
-        mock_extract = mocker.patch(
-            'taintinduce.inference_engine.observation_processor.extract_observation_dependencies',
-        )
-        mock_extract.return_value = []
-
-        mock_infer_cond = mocker.patch('taintinduce.inference_engine.inference.infer_conditions_for_dataflows')
-        mock_infer_cond.return_value = []
-
-        infer_flow_conditions([simple_observation])
-
-        mock_extract.assert_called_once_with([simple_observation])
-
-    def test_infer_flow_conditions_processes_all_input_bits(self, mocker):
-        """Test that method processes all mutated input bits."""
-        # Create observation dependencies with multiple input bits
-        state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
-
-        dataflow1 = Dataflow()
-        dataflow1[BitPosition(32)] = frozenset([BitPosition(32)])
-        dataflow1[BitPosition(33)] = frozenset([BitPosition(33)])
-
-        mutated_inputs1 = MutatedInputStates()
-        mutated_inputs1[BitPosition(32)] = state1
-        mutated_inputs1[BitPosition(33)] = state1
-
-        obs_dep1 = ObservationDependency(dataflow=dataflow1, mutated_inputs=mutated_inputs1, original_output=state1)
-
-        mocker.patch(
-            'taintinduce.inference_engine.observation_processor.extract_observation_dependencies',
-            return_value=[obs_dep1],
-        )
-        mock_infer_cond = mocker.patch('taintinduce.inference_engine.inference.infer_conditions_for_dataflows')
-        # Return list of ConditionDataflowPair objects
-        mock_infer_cond.return_value = [
-            ConditionDataflowPair(condition=None, input_bit=BitPosition(32), output_bits=frozenset([BitPosition(32)])),
-        ]
-
-        infer_flow_conditions([mocker.Mock()])
-
-        # Should be called for both bits 32 and 33
-        assert mock_infer_cond.call_count == 2
 
 
 # ============================================================================

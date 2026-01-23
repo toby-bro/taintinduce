@@ -500,7 +500,7 @@ def test_full_inference(
     for pair in rule.pairs:
         if pair.input_bit not in rule_flows:
             rule_flows[pair.input_bit] = set()
-        rule_flows[pair.input_bit].update(pair.output_bits)
+        rule_flows[pair.input_bit].add(pair.output_bit)
 
     # Should have dataflows for input bits
     assert len(rule_flows) > 0, f'Should have dataflows for {opcode.name}'
@@ -612,7 +612,7 @@ class TestJNExpectedTaintRules:
         for pair in rule.pairs:
             if pair.input_bit not in all_flows:
                 all_flows[pair.input_bit] = set()
-            all_flows[pair.input_bit].update(pair.output_bits)
+            all_flows[pair.input_bit].add(pair.output_bit)
 
         # Verify XOR dataflows exist
         for i in range(4):
@@ -822,10 +822,9 @@ class TestJNExpectedTaintRules:
                 ref_bits = {ref.output_bit for ref in pair.condition.output_bit_refs}
 
                 # Find which R1 bits are affected in this pair
-                r1_outputs = pair.output_bits & r1_bits
-                # Associate the refs with each R1 output bit in this pair
-                for output_bit in r1_outputs:
-                    output_refs_by_bit[output_bit].update(ref_bits)
+                if pair.output_bit in r1_bits:
+                    # Associate the refs with this R1 output bit
+                    output_refs_by_bit[pair.output_bit].update(ref_bits)
 
         # Since only conditional flows are tracked:
         # - R1[0] and R1[1] are typically unconditional, so no refs expected
@@ -1367,8 +1366,7 @@ class TestJNNZCVFlags:
                 for pair in rule.pairs:
                     if pair.input_bit == BitPosition(input_bit):
                         # Check if any NZCV bit (8-11) is in outputs
-                        nzcv_outputs = [b for b in pair.output_bits if 8 <= b <= 11]
-                        if nzcv_outputs:
+                        if 8 <= pair.output_bit <= 11:
                             found_nzcv_flow = True
                             break
 
@@ -1428,9 +1426,8 @@ class TestJNNZCVFlags:
             nzcv_affected = set()
             for pair in rule.pairs:
                 if pair.input_bit == BitPosition(input_reg_bit):
-                    for out_bit in pair.output_bits:
-                        if 8 <= out_bit <= 11:
-                            nzcv_affected.add(out_bit)
+                    if 8 <= pair.output_bit <= 11:
+                        nzcv_affected.add(pair.output_bit)
 
             # Each input bit should affect at least one NZCV flag
             assert len(nzcv_affected) > 0, (
@@ -1570,9 +1567,8 @@ class TestJNSubInstruction:
         # Check R1 output bits specifically (bits 0-3)
         r1_output_dependencies = set()
         for pair in rule.pairs:
-            for output_bit in pair.output_bits:
-                if 0 <= output_bit <= 3:  # R1 output bits
-                    r1_output_dependencies.add(pair.input_bit)
+            if 0 <= pair.output_bit <= 3:  # R1 output bits
+                r1_output_dependencies.add(pair.input_bit)
 
         # R1 output should depend on R1 input (bits 0-3)
         assert any(0 <= bit <= 3 for bit in r1_output_dependencies), 'R1 output should depend on R1 inputs'
@@ -1609,7 +1605,7 @@ def test_R2_is_always_unconditionnal(
         if 4 <= r2_input_bit <= 7:
             # This pair has r2_input_bit as input
             # Check if it propagates to itself (R2[i] -> R2[i])
-            if r2_input_bit in pair.output_bits:
+            if pair.output_bit == r2_input_bit:
                 # R2[i] -> R2[i] should be unconditional
                 assert pair.condition is None or (
                     pair.condition.condition_ops is not None and len(pair.condition.condition_ops) == 0
@@ -1630,22 +1626,21 @@ def test_or_R1_condition(jn_instruction_data: _JNInstructionCache) -> None:
         input_bit = pair.input_bit
         # Only check R1 input bits (0-3)
         if 0 <= input_bit <= 3:
-            for output_bit in pair.output_bits:
-                if 0 <= output_bit <= 3:  # R1 output bits
-                    # For OR: R1[i] affects R1[i] when R2[i] = 0
-                    # R2[i] is at bit position (input_bit + 4)
-                    assert pair.condition is not None
-                    r2_bit = input_bit + 4
-                    expected_condition = TaintCondition(
-                        LogicType.DNF,
-                        frozenset([(1 << r2_bit, 0)]),
-                        None,
-                    )
+            if 0 <= pair.output_bit <= 3:  # R1 output bits
+                # For OR: R1[i] affects R1[i] when R2[i] = 0
+                # R2[i] is at bit position (input_bit + 4)
+                assert pair.condition is not None
+                r2_bit = input_bit + 4
+                expected_condition = TaintCondition(
+                    LogicType.DNF,
+                    frozenset([(1 << r2_bit, 0)]),
+                    None,
+                )
 
-                    assert pair.condition == expected_condition, (
-                        f'OR R1, R2: Input bit {input_bit} -> Output bit {output_bit} has incorrect condition. '
-                        f'Expected {expected_condition}, got {pair.condition}'
-                    )
+                assert pair.condition == expected_condition, (
+                    f'OR R1, R2: Input bit {input_bit} -> Output bit {pair.output_bit} has incorrect condition. '
+                    f'Expected {expected_condition}, got {pair.condition}'
+                )
 
 
 def test_and_R1_condition(jn_instruction_data: _JNInstructionCache) -> None:
@@ -1659,19 +1654,18 @@ def test_and_R1_condition(jn_instruction_data: _JNInstructionCache) -> None:
         input_bit = pair.input_bit
         # Only check R1 input bits (0-3)
         if 0 <= input_bit <= 3:
-            for output_bit in pair.output_bits:
-                if 0 <= output_bit <= 3:  # R1 output bits
-                    # For AND: R1[i] affects R1[i] when R2[i] = 1
-                    # R2[i] is at bit position (input_bit + 4)
-                    assert pair.condition is not None
-                    r2_bit = input_bit + 4
-                    expected_condition = TaintCondition(
-                        LogicType.DNF,
-                        frozenset([(1 << r2_bit, 1 << r2_bit)]),
-                        None,
-                    )
+            if 0 <= pair.output_bit <= 3:  # R1 output bits
+                # For AND: R1[i] affects R1[i] when R2[i] = 1
+                # R2[i] is at bit position (input_bit + 4)
+                assert pair.condition is not None
+                r2_bit = input_bit + 4
+                expected_condition = TaintCondition(
+                    LogicType.DNF,
+                    frozenset([(1 << r2_bit, 1 << r2_bit)]),
+                    None,
+                )
 
-                    assert pair.condition == expected_condition, (
-                        f'AND R1, R2: Input bit {input_bit} -> Output bit {output_bit} has incorrect condition. '
-                        f'Expected {expected_condition}, got {pair.condition}'
-                    )
+                assert pair.condition == expected_condition, (
+                    f'AND R1, R2: Input bit {input_bit} -> Output bit {pair.output_bit} has incorrect condition. '
+                    f'Expected {expected_condition}, got {pair.condition}'
+                )

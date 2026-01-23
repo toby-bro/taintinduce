@@ -195,7 +195,7 @@ def test_and_eax_ebx_ebx_always_unconditional(x86_instruction_data: _X86Instruct
         for pair in rule.pairs:
             if pair.condition is None or pair.condition.condition_ops is None:
                 # Unconditional pair
-                if pair.input_bit == ebx_bit and ebx_bit in pair.output_bits:
+                if pair.input_bit == ebx_bit and pair.output_bit == ebx_bit:
                     found_unconditional = True
                     break
 
@@ -235,7 +235,7 @@ def test_and_eax_ebx_conditional_propagation(x86_instruction_data: _X86Instructi
         found_conditional = False
         for pair in rule.pairs:
             # Check if this pair has EBX[i] -> EAX[i] mapping
-            if pair.input_bit == ebx_bit and eax_bit in pair.output_bits:
+            if pair.input_bit == ebx_bit and pair.output_bit == eax_bit:
                 # Should have a condition
                 if pair.condition is not None and pair.condition.condition_ops is not None:
                     # Condition should involve EAX[i] = 1
@@ -277,7 +277,7 @@ def test_and_eax_ebx_eax_identity_propagation(x86_instruction_data: _X86Instruct
         # Find pairs where EAX[i] -> EAX[i]
         found = False
         for pair in rule.pairs:
-            if pair.input_bit == eax_bit and eax_bit in pair.output_bits:
+            if pair.input_bit == eax_bit and pair.output_bit == eax_bit:
                 # Should have a condition or be unconditional
                 # For OR, EAX[i] -> EAX[i] when EAX[i] = 1
                 found = True
@@ -307,7 +307,7 @@ def test_and_eax_ebx_condition_only_uses_relevant_bits(x86_instruction_data: _X8
     # Find pairs where EAX[1] -> EAX[1]
     found_eax1_rule = False
     for pair in rule.pairs:
-        if pair.input_bit == eax_bit_1 and eax_bit_1 in pair.output_bits:
+        if pair.input_bit == eax_bit_1 and pair.output_bit == eax_bit_1:
             found_eax1_rule = True
             print('\nFound EAX[1] -> EAX[1] rule:')
             print(f'  Condition: {pair.condition}')

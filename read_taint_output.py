@@ -182,7 +182,7 @@ def read_rule(rule_file: str) -> None:
         print(f'   │ CONDITION: {condition_desc}')
 
         # Display dataflow statistics
-        print(f'   │ DATAFLOW: [{pair.input_bit}] → {pair.output_bits}')
+        print(f'   │ DATAFLOW: [{pair.input_bit}] → [{pair.output_bit}]')
 
         print('   └─────────────────────────────────────────────────────────\n')
 

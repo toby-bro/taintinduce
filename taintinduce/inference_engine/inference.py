@@ -1,11 +1,9 @@
 # Replaced squirrel import with our own
 import logging
-from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tqdm import tqdm
 
-from taintinduce.rules.conditions import TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
 from taintinduce.state.state import Observation
 from taintinduce.types import (
@@ -13,7 +11,7 @@ from taintinduce.types import (
     ObservationDependency,
 )
 
-from . import observation_processor, partition_handler, validation
+from . import observation_processor, partition_handler, unitary_flow_processor, validation
 
 """Inference engine for data-dependent taint propagation rules.
 
@@ -35,56 +33,6 @@ separate different taint propagation behaviors based on input state.
 """
 
 logger = logging.getLogger(__name__)
-
-
-def _log_unconditional_warnings(
-    condition: TaintCondition | None,
-    input_bit: BitPosition,
-    output_bits: frozenset[BitPosition],
-) -> None:
-    """Log warnings for unconditional 1-to-many flows."""
-    is_empty = condition is None or (condition.condition_ops is not None and len(condition.condition_ops) == 0)
-    if not is_empty:
-        return
-
-    if len(output_bits) > 1:
-        logger.warning(
-            f'No condition for input bit {input_bit} -> {len(output_bits)} output bits (full dataflow)',
-        )
-
-
-def _build_dataflows_from_unitary_conditions(
-    per_bit_conditions: dict[BitPosition, list[ConditionDataflowPair]],
-) -> list[ConditionDataflowPair]:
-    """Build list of ConditionDataflowPair objects from per-input-bit conditions.
-
-    Each input bit's condition-dataflow pairs are converted to proper Dataflow objects.
-    No grouping across input bits - each condition applies only to the specific
-    input bits it was generated for.
-
-    Args:
-        per_bit_conditions: Maps each input bit to its condition-dataflow pairs
-
-    Returns:
-        List of ConditionDataflowPair objects with Dataflow dicts
-    """
-    result: list[ConditionDataflowPair] = []
-
-    # Process each input bit's conditions
-    for input_bit, pairs in per_bit_conditions.items():
-        for pair in pairs:
-            # Log warnings for unconditional 1-to-many flows
-            _log_unconditional_warnings(pair.condition, input_bit, pair.output_bits)
-            if pair.input_bit != input_bit:
-                raise Exception(
-                    f'Input bit mismatch: expected {input_bit}, got {pair.input_bit} in ConditionDataflowPair',
-                )
-
-            result.append(
-                ConditionDataflowPair(condition=pair.condition, input_bit=input_bit, output_bits=pair.output_bits),
-            )
-
-    return result
 
 
 def infer(
@@ -112,8 +60,9 @@ def infer(
         raise Exception('State format is None!')
     assert all(obs.state_format == state_format for obs in observations)
 
+    observation_dependencies = observation_processor.extract_observation_dependencies(observations)
     per_bit_conditions = infer_flow_conditions(
-        observations,
+        observation_dependencies,
     )
 
     if len(per_bit_conditions) == 0:
@@ -121,12 +70,10 @@ def infer(
 
     # Build list of ConditionDataflowPair objects from unitary flow conditions
     # Each condition applies only to the specific input bits it was generated for
-    condition_dataflow_pairs = _build_dataflows_from_unitary_conditions(per_bit_conditions)
 
-    rule = GlobalRule(state_format, pairs=condition_dataflow_pairs)
+    rule = GlobalRule(state_format, pairs=[pair for pairs in per_bit_conditions.values() for pair in pairs])
 
     # Validate that the generated rule explains all observations
-    observation_dependencies = observation_processor.extract_observation_dependencies(observations)
     explained, total = validation.validate_rule_explains_observations(rule, observation_dependencies)
 
     if explained < total:
@@ -141,7 +88,7 @@ def infer(
 
 
 def infer_flow_conditions(
-    observations: list[Observation],
+    observation_dependencies: list[ObservationDependency],
 ) -> dict[BitPosition, list[ConditionDataflowPair]]:
     """Infer conditions for dataflows for each input bit independently.
 
@@ -151,218 +98,150 @@ def infer_flow_conditions(
         conditions from one bit to another.
     """
 
-    observation_dependencies = observation_processor.extract_observation_dependencies(observations)
+    # Group flows by OUTPUT bit to get input dependencies for each output
+    output_to_inputs = unitary_flow_processor.group_unitary_flows_by_output(observation_dependencies)
 
-    # iterate through all the dependencies from the observations and identify what are the possible flows
-    possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
-    for observation in observation_dependencies:
-        for mutated_input_bit, modified_output_bits in observation.dataflow.items():
-            possible_flows[mutated_input_bit].add(modified_output_bits)
+    # Also track input to outputs for possible_flows (needed for subset detection)
+    # possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]] = defaultdict(set)
+    # for observation in observation_dependencies:
+    #     for mutated_input_bit, modified_output_bits in observation.dataflow.items():
+    #         possible_flows[mutated_input_bit].add(modified_output_bits)
 
-    # Store conditions per input bit - no grouping to avoid condition misattribution
+    # Store conditions per input bit
     per_bit_conditions: dict[BitPosition, list[ConditionDataflowPair]] = {}
 
-    # Sort input bits by their dataflow complexity (smallest first)
-    # This ensures we process simpler flows before complex ones
-    sorted_input_bits = sorted(
-        possible_flows.keys(),
-        key=lambda bit: min(len(flow) for flow in possible_flows[bit]),
+    # Sort OUTPUT bits by their input dependency count (fewest dependencies first)
+    sorted_output_bits = sorted(
+        output_to_inputs.keys(),
+        key=lambda bit: len(output_to_inputs[bit]),
     )
-    logger.debug(f'Processing {len(sorted_input_bits)} input bits in order of dataflow complexity')
+    logger.debug(f'Processing {len(sorted_output_bits)} output bits in order of input dependency count')
 
-    # Track completed flows: maps input bits to their output bits
-    # This includes both conditional and unconditional flows
-    # This will be passed to handle_multiple_partitions for superset detection
-    completed_flows: dict[frozenset[BitPosition], set[BitPosition]] = {}
-    # Also track the actual conditions for evaluating output bit taint states
-    all_conditions: dict[frozenset[BitPosition], TaintCondition] = {}
+    completed_outputs: set[BitPosition] = set()
+    all_conditions: list[ConditionDataflowPair] = []
 
-    # Process input bits in WAVES based on dependencies (parallel within each wave)
-    logger.debug(f'Processing {len(sorted_input_bits)} input bits in dependency-aware waves')
+    # Process OUTPUT bits in WAVES based on subset dependencies (parallel within each wave)
+    logger.debug(f'Processing {len(sorted_output_bits)} output bits in dependency-aware waves')
 
-    remaining_bits = set(sorted_input_bits)
+    remaining_output_bits = set(sorted_output_bits)
     wave_number = 0
 
-    while remaining_bits:
-        wave_number += 1
+    with tqdm(total=len(sorted_output_bits), desc='Inferring flow conditions', unit='output') as pbar:
+        while remaining_output_bits:
+            wave_number += 1
 
-        # Identify bits ready for this wave (all subset dependencies satisfied)
-        ready_bits = _identify_ready_bits_by_subset_dependency(
-            remaining_bits,
-            possible_flows,
-        )
+            # Identify output bits ready for this wave (all subset dependencies satisfied)
+            ready_output_bits = _identify_ready_output_bits_by_subset_dependency(
+                remaining_output_bits,
+                output_to_inputs,
+            )
 
-        if not ready_bits:
-            logger.error(f'Deadlock: {len(remaining_bits)} bits remain but none are ready')
-            logger.error(f'Remaining bits: {remaining_bits}')
-            raise Exception('Circular dependency detected in output_bit_refs')
+            if not ready_output_bits:
+                logger.error(f'Deadlock: {len(remaining_output_bits)} output bits remain but none are ready')
+                logger.error(f'Remaining output bits: {remaining_output_bits}')
+                raise Exception('Circular dependency detected in output_bit_refs')
 
-        logger.debug(f'Wave {wave_number}: processing {len(ready_bits)} bits in parallel')
+            logger.debug(f'Wave {wave_number}: processing {len(ready_output_bits)} output bits in parallel')
 
-        # Process this wave in parallel, collect results WITHOUT modifying shared state
-        wave_results = _process_wave_parallel(
-            ready_bits,
-            wave_number,
-            observation_dependencies,
-            possible_flows,
-            completed_flows,
-            all_conditions,
-        )
+            # Process this wave in parallel, collect results WITHOUT modifying shared state
+            wave_results = _process_output_wave_parallel(
+                ready_output_bits,
+                output_to_inputs,
+                frozenset(completed_outputs),
+                observation_dependencies,
+                all_conditions,
+            )
 
-        # NOW update shared state with all results from this wave (thread-safe)
-        _update_state_from_wave_results(
-            wave_results,
-            per_bit_conditions,
-            observation_dependencies,
-            completed_flows,
-            all_conditions,
-        )
+            # NOW update shared state with all results from this wave (thread-safe)
+            for output_bit, conditionalFlows in wave_results.items():
+                completed_outputs.add(output_bit)
+                all_conditions.extend(conditionalFlows)
+                for pair in conditionalFlows:
+                    if pair.input_bit not in per_bit_conditions:
+                        per_bit_conditions[pair.input_bit] = []
+                    per_bit_conditions[pair.input_bit].append(pair)
 
-        remaining_bits -= ready_bits
+            remaining_output_bits -= ready_output_bits
+            pbar.update(len(ready_output_bits))
 
     logger.debug(f'Completed processing in {wave_number} waves')
 
     return per_bit_conditions
 
 
-def _update_state_from_wave_results(
-    wave_results: dict[BitPosition, list[ConditionDataflowPair]],
-    per_bit_conditions: dict[BitPosition, list[ConditionDataflowPair]],
-    observation_dependencies: list[ObservationDependency],
-    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
-    all_conditions: dict[frozenset[BitPosition], TaintCondition],
-) -> None:
-    """Update shared state with results from a completed wave."""
-    for mutated_input_bit, condition_dataflow_pairs in wave_results.items():
-        per_bit_conditions[mutated_input_bit] = condition_dataflow_pairs
-
-        # Track completed flows (both conditional and unconditional) for superset detection
-        for pair in condition_dataflow_pairs:
-            if pair.output_bits:
-                input_bits: set[BitPosition] = {mutated_input_bit}
-                for obs_dep in observation_dependencies:
-                    for input_bit, output_bits in obs_dep.dataflow.items():
-                        if any(ob in pair.output_bits for ob in output_bits):
-                            input_bits.add(input_bit)
-                input_bits_frozen = frozenset(input_bits)
-                completed_flows[input_bits_frozen] = set(pair.output_bits)
-                if pair.condition is not None:
-                    all_conditions[input_bits_frozen] = pair.condition
-
-
-def _identify_ready_bits_by_subset_dependency(
-    remaining_bits: set[BitPosition],
-    possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
+def _identify_ready_output_bits_by_subset_dependency(
+    remaining_output_bits: set[BitPosition],
+    output_to_inputs: dict[BitPosition, frozenset[BitPosition]],
 ) -> set[BitPosition]:
-    """Identify bits ready for processing based on subset dependencies.
+    """Identify output bits ready for processing based on subset dependencies.
 
-    A bit is ready when all flows that produce SUBSETS of its outputs are completed.
-    This ensures output_bit_refs can be properly detected.
+    An output bit is ready when all other outputs with FEWER input dependencies are complete.
     """
     ready: set[BitPosition] = set()
 
-    for input_bit in remaining_bits:
-        if _bit_is_ready(input_bit, remaining_bits, possible_flows):
-            ready.add(input_bit)
+    for output_bit in remaining_output_bits:
+        input_bits = output_to_inputs[output_bit]
 
-    # If nothing is ready, return bits with minimal output sizes to bootstrap
-    if not ready and remaining_bits:
-        min_size = min(min(len(output_set) for output_set in possible_flows[bit]) for bit in remaining_bits)
-        ready = {
-            bit for bit in remaining_bits if min(len(output_set) for output_set in possible_flows[bit]) == min_size
-        }
+        # Check if any other remaining output has fewer inputs (subset dependency)
+        has_blocking_subset = False
+        for other_output in remaining_output_bits:
+            if other_output == output_bit:
+                continue
+            other_inputs = output_to_inputs[other_output]
+            # If another output has inputs that are a PROPER SUBSET of ours, wait
+            if other_inputs and input_bits and other_inputs < input_bits:
+                has_blocking_subset = True
+                break
+
+        if not has_blocking_subset:
+            ready.add(output_bit)
+
+    # If nothing is ready, return outputs with minimal input count to bootstrap
+    if not ready and remaining_output_bits:
+        min_size = min(len(output_to_inputs[bit]) for bit in remaining_output_bits)
+        ready = {bit for bit in remaining_output_bits if len(output_to_inputs[bit]) == min_size}
 
     return ready
 
 
-def _bit_is_ready(
-    input_bit: BitPosition,
-    remaining_bits: set[BitPosition],
-    possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
-) -> bool:
-    """Check if a bit is ready by verifying all subset dependencies are satisfied."""
-    output_sets = possible_flows[input_bit]
-
-    for output_set in output_sets:
-        # Check other remaining bits for subset dependencies
-        for other_bit in remaining_bits:
-            if other_bit == input_bit:
-                continue
-            other_output_sets = possible_flows[other_bit]
-            for other_output_set in other_output_sets:
-                # If other produces a proper subset of our output, we must wait
-                if other_output_set and output_set and other_output_set < output_set:
-                    return False
-
-    return True
-
-
-def _process_wave_parallel(
-    ready_bits: set[BitPosition],
-    wave_number: int,
+def _process_output_wave_parallel(
+    ready_output_bits: set[BitPosition],
+    output_to_inputs: dict[BitPosition, frozenset[BitPosition]],
+    completed_outputs: frozenset[BitPosition],
     observation_dependencies: list[ObservationDependency],
-    possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
-    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
-    all_conditions: dict[frozenset[BitPosition], TaintCondition],
+    all_conditions: list[ConditionDataflowPair],
 ) -> dict[BitPosition, list[ConditionDataflowPair]]:
-    """Process a wave of bits in parallel, return results without modifying shared state."""
-    wave_results: dict[BitPosition, list[ConditionDataflowPair]] = {}
-
-    with ThreadPoolExecutor() as executor:
-        futures = {}
-        for mutated_input_bit in ready_bits:
-            future = executor.submit(
-                infer_conditions_for_dataflows,
-                observation_dependencies,
-                possible_flows,
-                mutated_input_bit,
-                completed_flows,
-                all_conditions,
-            )
-            futures[future] = mutated_input_bit
-
-        # Collect results
-        for future in tqdm(
-            as_completed(futures),
-            total=len(futures),
-            desc=f'Wave {wave_number}',
-            unit='bit',
-        ):
-            mutated_input_bit = futures[future]
-            try:
-                condition_dataflow_pairs = future.result()
-                wave_results[mutated_input_bit] = condition_dataflow_pairs
-            except Exception as e:
-                logger.error(f'Failed to infer conditions for bit {mutated_input_bit}: {e}')
-                raise
-
-    return wave_results
-
-
-def infer_conditions_for_dataflows(
-    observation_dependencies: list[ObservationDependency],
-    possible_flows: defaultdict[BitPosition, set[frozenset[BitPosition]]],
-    mutated_input_bit: BitPosition,
-    completed_flows: dict[frozenset[BitPosition], set[BitPosition]],
-    all_conditions: dict[frozenset[BitPosition], TaintCondition],
-) -> list[ConditionDataflowPair]:
-    """Infer conditions and their associated dataflows for a mutated input bit.
+    """Process a wave of output bits in parallel.
 
     Returns:
-        List of ConditionDataflowPair objects, each pairing a condition with its output bits.
-        condition=None represents the default/fallthrough case.
+        Dict mapping output_bit -> [ConditionDataflowPair]
     """
-    num_partitions = len(possible_flows[mutated_input_bit])
-    if num_partitions == 0:
-        raise Exception(f'No possible flows for mutated input bit {mutated_input_bit}')
 
-    if num_partitions == 1:
-        # no conditional dataflow - single behavior for all inputs
-        return partition_handler.handle_single_partition(mutated_input_bit, possible_flows)
+    def process_single_output(
+        output_bit: BitPosition,
+    ) -> tuple[BitPosition, list[ConditionDataflowPair]]:
+        input_bits_for_output = output_to_inputs[output_bit]
+        results_for_output: list[ConditionDataflowPair] = []
 
-    return partition_handler.handle_multiple_partitions_output_centric(
-        mutated_input_bit,
-        observation_dependencies,
-        completed_flows,
-        all_conditions,
-    )
+        for input_bit in input_bits_for_output:
+            pair = partition_handler.handle_multiple_partitions_output_centric(
+                input_bit,
+                output_bit,
+                output_to_inputs,
+                completed_outputs,
+                observation_dependencies,
+                all_conditions,
+            )
+
+            results_for_output.append(pair)
+
+        return output_bit, results_for_output
+
+    wave_results: dict[BitPosition, list[ConditionDataflowPair]] = {}
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(process_single_output, ob): ob for ob in ready_output_bits}
+        for future in as_completed(futures):
+            output_bit, results = future.result()
+            wave_results[output_bit] = results
+
+    return wave_results

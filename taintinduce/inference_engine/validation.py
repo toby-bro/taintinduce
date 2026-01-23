@@ -56,7 +56,7 @@ def validate_condition(
     Returns:
         True if condition correctly separates partitions, False otherwise
     """
-    if condition.condition_ops is None:
+    if len(condition.condition_ops) == 0 and len(condition.output_bit_refs) == 0:
         return True
 
     # Check that all agreeing states satisfy at least one clause in DNF
@@ -109,7 +109,7 @@ def _validate_observation_dependency_worker(
 
             # Check if this pair's input_bit matches the current input_bit
             if pair.input_bit == input_bit:
-                explained_outputs.update(pair.output_bits)
+                explained_outputs.add(pair.output_bit)
 
         # Check if the union of all explained outputs matches the observed outputs
         if frozenset(explained_outputs) == output_bits:

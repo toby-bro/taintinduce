@@ -29,7 +29,7 @@ def test_validation_detects_incomplete_rule():
     incomplete_rule = GlobalRule(
         state_format,
         pairs=[
-            ConditionDataflowPair(condition=None, input_bit=BitPosition(4), output_bits=frozenset({BitPosition(4)})),
+            ConditionDataflowPair(condition=None, input_bit=BitPosition(4), output_bit=BitPosition(4)),
         ],
     )
 
@@ -65,12 +65,12 @@ def test_validation_detects_wrong_condition():
         None,
     )
 
-    wrong_dataflow = frozenset({BitPosition(0)})
+    wrong_output_bit = BitPosition(0)
 
     wrong_rule = GlobalRule(
         state_format,
         pairs=[
-            ConditionDataflowPair(condition=wrong_condition, input_bit=BitPosition(0), output_bits=wrong_dataflow),
+            ConditionDataflowPair(condition=wrong_condition, input_bit=BitPosition(0), output_bit=wrong_output_bit),
         ],
     )
 
@@ -82,34 +82,3 @@ def test_validation_detects_wrong_condition():
     # With wrong condition, should explain much less than the observations
     coverage = explained / total if total > 0 else 0
     assert coverage < 0.9, f'Rule with wrong condition should explain less than 90%, but got {coverage:.1%}'
-
-
-def test_validation_detects_missing_outputs():
-    """Test that validation fails when rule is missing some output bits."""
-    # Setup: Generate observations for ADD R1, R2
-    state_format = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
-    bytestring = encode_instruction(JNOpcode.ADD_R1_R2, None)
-
-    obs_engine = ObservationEngine(bytestring, 'JN', state_format)
-    observations = obs_engine.observe_insn()
-
-    # Extract observation dependencies
-    obs_deps = extract_observation_dependencies(observations)
-
-    # Create a rule that's missing flag outputs
-    # ADD affects R1 bits and NZCV flags, but we'll only include R1 bits
-    incomplete_dataflow = frozenset({BitPosition(i) for i in range(4)})
-
-    incomplete_rule = GlobalRule(
-        state_format,
-        pairs=[ConditionDataflowPair(condition=None, input_bit=BitPosition(4), output_bits=incomplete_dataflow)],
-    )
-
-    # Validate: should detect missing flag outputs
-    explained, total = validate_rule_explains_observations(incomplete_rule, obs_deps)
-
-    # Assert: validation should show incomplete coverage
-    assert explained < total, f'Validation should detect missing outputs, but reported {explained}/{total} explained'
-    # Missing all flag outputs, should explain significantly less
-    coverage = explained / total if total > 0 else 0
-    assert coverage < 0.8, f'Rule missing flag outputs should explain less than 80%, but got {coverage:.1%}'

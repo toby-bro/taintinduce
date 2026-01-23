@@ -54,6 +54,11 @@ def collect_states_for_unitary_flow(
 ) -> tuple[set[State], set[State]]:
     """Collect states that trigger/don't trigger propagation for a unitary flow.
 
+    This function analyzes observations to determine which input states cause propagation:
+    - For each observation where input_bit was flipped
+    - If output_bit changed as a result → propagating state
+    - If output_bit did NOT change → non-propagating state
+
     Args:
         observation_dependencies: List of observation dependencies
         input_bit: The input bit position
@@ -69,23 +74,25 @@ def collect_states_for_unitary_flow(
 
     for obs_dep in observation_dependencies:
         # Check if this observation has data for the input bit
-        if input_bit not in obs_dep.dataflow:
+        if input_bit not in obs_dep.dataflow.inputs():
             continue
 
         # Get the mutated input state for this input bit
-        if input_bit not in obs_dep.mutated_inputs:
+        if input_bit not in obs_dep.mutated_inputs.mutated_bits():
             continue
 
         mutated_input_state = obs_dep.mutated_inputs[input_bit]
 
         # Check if this input bit affects the output bit in this observation
+        # obs_dep.dataflow[input_bit] contains the set of output bits that CHANGED
+        # when we flipped input_bit in the state mutated_input_state
         affected_outputs = obs_dep.dataflow[input_bit]
 
         if output_bit in affected_outputs:
-            # This state causes propagation
+            # Flipping input_bit caused output_bit to change → propagating
             propagating_states.add(mutated_input_state)
         else:
-            # This state blocks propagation
+            # Flipping input_bit did NOT cause output_bit to change → non-propagating
             non_propagating_states.add(mutated_input_state)
 
     return propagating_states, non_propagating_states
@@ -119,7 +126,7 @@ def extract_relevant_bits_from_state(
 def transpose_condition_bits(
     condition_ops: frozenset[tuple[int, int]],
     input_bit_positions: frozenset[BitPosition],
-    output_bit_positions: list[BitPosition] | None = None,
+    sorted_output_positions: list[BitPosition],
 ) -> frozenset[tuple[int, int]]:
     """Transpose condition from simplified bit positions back to original positions.
 
@@ -143,7 +150,6 @@ def transpose_condition_bits(
     num_input_bits = len(sorted_input_positions)
 
     # Build output position mapping if provided
-    sorted_output_positions = output_bit_positions if output_bit_positions else []
 
     transposed_clauses: set[tuple[int, int]] = set()
 

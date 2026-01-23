@@ -15,22 +15,27 @@ class ConditionDataflowPair:
 
     Attributes:
         condition: The TaintCondition for this dataflow, or None for unconditional (default) case
-        output_bits: For per-bit conditions, the set of output bit positions affected under this condition.
+        input_bit: The input bit position for this condition-dataflow pair.
+        output_bit: For per-bit conditions, the set of output bit positions affected under this condition.
                      For full dataflows, a Dataflow mapping input bits to output bit sets.
     """
+
+    condition: Optional[TaintCondition]
+    input_bit: BitPosition
+    output_bit: BitPosition
 
     def __init__(
         self,
         condition: Optional[TaintCondition],
         input_bit: BitPosition,
-        output_bits: frozenset[BitPosition],
+        output_bit: BitPosition,
     ):
         self.condition = condition
         self.input_bit = input_bit
-        self.output_bits = output_bits
+        self.output_bit = output_bit
 
     def __repr__(self) -> str:
-        return f'ConditionDataflowPair(condition={self.condition}, [{self.input_bit}] -> [{self.output_bits}])'
+        return f'ConditionDataflowPair(condition={self.condition}, [{self.input_bit}] -> [{self.output_bit}])'
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ConditionDataflowPair):
@@ -38,12 +43,12 @@ class ConditionDataflowPair:
         return (
             self.condition == other.condition
             and self.input_bit == other.input_bit
-            and self.output_bits == other.output_bits
+            and self.output_bit == other.output_bit
         )
 
     def __hash__(self) -> int:
-        # Convert output_bits to a hashable form
-        output_hash = hash(self.output_bits)
+        # Convert output_bit to a hashable form
+        output_hash = hash(self.output_bit)
         return hash((self.condition, self.input_bit, output_hash))
 
 
@@ -102,14 +107,14 @@ class TaintRule(SerializableMixin):
     ) -> None:
         self.format = format
         self.bytestring = bytestring
-        # Deep copy dataflows - output_bits should always be a Dataflow for TaintRule
+        # Deep copy dataflows - output_bit should always be a Dataflow for TaintRule
         self.pairs = []
         for pair in pairs:
             self.pairs.append(
                 ConditionDataflowPair(
                     condition=pair.condition,
                     input_bit=pair.input_bit,
-                    output_bits=pair.output_bits,
+                    output_bit=pair.output_bit,
                 ),
             )
 
@@ -128,8 +133,8 @@ class TaintRule(SerializableMixin):
         for i in range(len(self.pairs)):
             if self.pairs[i].condition != value.pairs[i].condition:
                 return False
-            my_df = self.pairs[i].output_bits
-            other_df = value.pairs[i].output_bits
+            my_df = self.pairs[i].output_bit
+            other_df = value.pairs[i].output_bit
             if my_df != other_df:
                 return False
         return True
@@ -138,7 +143,7 @@ class TaintRule(SerializableMixin):
         pairs_hash = tuple(
             (
                 pair.condition,
-                pair.output_bits,
+                pair.output_bit,
             )
             for pair in self.pairs
         )
@@ -213,7 +218,7 @@ class GlobalRule(SerializableMixin):
                 ConditionDataflowPair(
                     condition=condition,
                     input_bit=pair.input_bit,
-                    output_bits=pair.output_bits,
+                    output_bit=pair.output_bit,
                 ),
             )
         return TaintRule(taint_rule_format, pairs_list, bytestring)
@@ -229,6 +234,5 @@ class GlobalRule(SerializableMixin):
             mystr_list.append('')
             mystr_list.append('Dataflows: &lt;in bit&gt; &rarr; &lt;out bit&gt;')
             # dataflow should be a Dataflow (dict-like) at this point
-            for output_bit in pair.output_bits:
-                mystr_list.append('{} &rarr; {}'.format(pair.input_bit, output_bit))
+            mystr_list.append('{} &rarr; {}'.format(pair.input_bit, pair.output_bit))
         return '<br/>'.join(mystr_list)
