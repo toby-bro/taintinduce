@@ -7,7 +7,7 @@ from taintinduce.isa.jn_registers import JN_REG_NZCV, JN_REG_R1, JN_REG_R2
 from taintinduce.observation_engine.observation import ObservationEngine
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
-from taintinduce.types import BitPosition, Dataflow
+from taintinduce.types import BitPosition
 
 
 def test_validation_detects_incomplete_rule():
@@ -24,14 +24,13 @@ def test_validation_detects_incomplete_rule():
 
     # Create an INCOMPLETE rule: only include R2 -> R2 flows, missing R1 and R2 -> R1 flows
     # This should cause validation to fail
-    incomplete_dataflow = Dataflow()
     # Only add R2 bits mapping to themselves (bits 4-7 -> 4-7)
-    for r2_bit in range(4, 8):
-        incomplete_dataflow[BitPosition(r2_bit)] = frozenset({BitPosition(r2_bit)})
 
     incomplete_rule = GlobalRule(
         state_format,
-        pairs=[ConditionDataflowPair(condition=None, output_bits=incomplete_dataflow)],
+        pairs=[
+            ConditionDataflowPair(condition=None, input_bit=BitPosition(4), output_bits=frozenset({BitPosition(4)})),
+        ],
     )
 
     # Validate: should detect that many behaviors are unexplained
@@ -66,19 +65,12 @@ def test_validation_detects_wrong_condition():
         None,
     )
 
-    wrong_dataflow = Dataflow()
-    wrong_dataflow[BitPosition(0)] = frozenset({BitPosition(0)})  # R1[0] -> R1[0]
-
-    # Add R2 unconditional flows
-    for r2_bit in range(4, 8):
-        wrong_dataflow[BitPosition(r2_bit)] = frozenset(
-            {BitPosition(r2_bit), BitPosition(r2_bit - 4)},
-        )  # R2[i] -> R2[i], R1[i]
+    wrong_dataflow = frozenset({BitPosition(0)})
 
     wrong_rule = GlobalRule(
         state_format,
         pairs=[
-            ConditionDataflowPair(condition=wrong_condition, output_bits=wrong_dataflow),
+            ConditionDataflowPair(condition=wrong_condition, input_bit=BitPosition(0), output_bits=wrong_dataflow),
         ],
     )
 
@@ -106,16 +98,11 @@ def test_validation_detects_missing_outputs():
 
     # Create a rule that's missing flag outputs
     # ADD affects R1 bits and NZCV flags, but we'll only include R1 bits
-    incomplete_dataflow = Dataflow()
-
-    # Add R1 and R2 flows to R1, but NOT to NZCV flags
-    for bit in range(8):  # R1 and R2 bits
-        # Only map to R1 bits 0-3, not flags 8-11
-        incomplete_dataflow[BitPosition(bit)] = frozenset(BitPosition(i) for i in range(4))
+    incomplete_dataflow = frozenset({BitPosition(i) for i in range(4)})
 
     incomplete_rule = GlobalRule(
         state_format,
-        pairs=[ConditionDataflowPair(condition=None, output_bits=incomplete_dataflow)],
+        pairs=[ConditionDataflowPair(condition=None, input_bit=BitPosition(4), output_bits=incomplete_dataflow)],
     )
 
     # Validate: should detect missing flag outputs

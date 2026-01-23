@@ -20,14 +20,13 @@ function loadPairs(pairs) {
 
   pairs.forEach((pair, idx) => {
     const numFlows = pair.num_dataflows;
-    const totalPropagations = pair.total_propagations;
 
     html += `
             <div class="pair-card">
                 <div class="pair-header">
                     <span class="pair-number">Pair ${idx + 1}</span>
                     <span class="pair-stats">
-                        ${numFlows} input bits → ${totalPropagations} propagations
+                        1 input bits → ${numFlows} propagations
                         ${
                           pair.is_unconditional
                             ? '<span class="badge badge-success">UNCONDITIONAL</span>'

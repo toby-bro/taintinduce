@@ -148,6 +148,7 @@ class TestInfer:
         mock_cond = TaintCondition(LogicType.DNF, frozenset([(0xFF, 0x01)]))
         mock_pair = ConditionDataflowPair(
             condition=mock_cond,
+            input_bit=BitPosition(0),
             output_bits=frozenset([BitPosition(0)]),
         )
 
@@ -526,7 +527,7 @@ class TestInferFlowConditions:
         mock_infer_cond = mocker.patch('taintinduce.inference_engine.inference.infer_conditions_for_dataflows')
         # Return list of ConditionDataflowPair objects
         mock_infer_cond.return_value = [
-            ConditionDataflowPair(condition=None, output_bits=frozenset([BitPosition(32)])),
+            ConditionDataflowPair(condition=None, input_bit=BitPosition(32), output_bits=frozenset([BitPosition(32)])),
         ]
 
         infer_flow_conditions([mocker.Mock()])

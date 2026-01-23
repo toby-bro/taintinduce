@@ -41,31 +41,6 @@ def check_condition_satisfied(
     return False
 
 
-def check_dataflow_matches(
-    pair: ConditionDataflowPair,
-    input_bit: BitPosition,
-    output_bits: frozenset[BitPosition],
-) -> bool:
-    """Check if a pair's dataflow matches the observed behavior.
-
-    Args:
-        pair: The condition-dataflow pair to check
-        input_bit: The input bit that was flipped
-        output_bits: The observed output bits that changed
-
-    Returns:
-        True if the dataflow matches, False otherwise
-    """
-    if isinstance(pair.output_bits, dict):
-        # pair.output_bits is a Dataflow dict: {input_bit: output_bits_set}
-        if input_bit not in pair.output_bits:
-            return False
-        return output_bits == pair.output_bits[input_bit]
-
-    # Fallback: pair.output_bits is a frozenset (shouldn't happen with new implementation)
-    return output_bits == pair.output_bits
-
-
 def validate_condition(
     condition: TaintCondition,
     agreeing_partition: set[State],
@@ -132,11 +107,8 @@ def _validate_observation_dependency_worker(
             if not check_condition_satisfied(pair.condition, input_state):
                 continue
 
-            # Check if this pair has outputs for this input_bit
-            if isinstance(pair.output_bits, dict) and input_bit in pair.output_bits:
-                explained_outputs.update(pair.output_bits[input_bit])
-            elif not isinstance(pair.output_bits, dict):
-                # Fallback for old format
+            # Check if this pair's input_bit matches the current input_bit
+            if pair.input_bit == input_bit:
                 explained_outputs.update(pair.output_bits)
 
         # Check if the union of all explained outputs matches the observed outputs

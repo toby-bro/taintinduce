@@ -156,31 +156,28 @@ def _process_dataflow_for_pair(
     all_dataflows: list[dict[str, Any]],
 ) -> None:
     """Process dataflow for a single condition-dataflow pair."""
-    if not isinstance(pair.output_bits, dict):
-        return
-
-    for input_bit_pos, output_bit_positions in pair.output_bits.items():
+    input_bit_pos = pair.input_bit
+    for output_bit_position in pair.output_bits:
         # Check if this input bit is tainted
         if input_bit_pos not in tainted_positions:
             continue
 
         # Taint propagates to all output bits
-        for output_bit_pos in output_bit_positions:
-            # Convert output bit position to (register, bit) tuple
-            reg_name, bit_idx = _global_bit_to_reg_bit(output_bit_pos, rule_format)
-            tainted_outputs.add((reg_name, bit_idx))
+        # Convert output bit position to (register, bit) tuple
+        reg_name, bit_idx = _global_bit_to_reg_bit(output_bit_position, rule_format)
+        tainted_outputs.add((reg_name, bit_idx))
 
-            # Record dataflow
-            input_reg, input_bit = _global_bit_to_reg_bit(input_bit_pos, rule_format)
-            all_dataflows.append(
-                {
-                    'input_register': input_reg,
-                    'input_bit': input_bit,
-                    'output_register': reg_name,
-                    'output_bit': bit_idx,
-                    'pair_index': pair_idx,
-                },
-            )
+        # Record dataflow
+        input_reg, input_bit = _global_bit_to_reg_bit(input_bit_pos, rule_format)
+        all_dataflows.append(
+            {
+                'input_register': input_reg,
+                'input_bit': input_bit,
+                'output_register': reg_name,
+                'output_bit': bit_idx,
+                'pair_index': pair_idx,
+            },
+        )
 
 
 def simulate_taint_propagation(

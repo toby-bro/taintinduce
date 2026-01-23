@@ -283,7 +283,7 @@ def handle_single_partition(
         logger.info(
             f'No condition for input bit {mutated_input_bit} -> {len(output_bits)} output bits',
         )
-    return [ConditionDataflowPair(condition=None, output_bits=output_bits)]
+    return [ConditionDataflowPair(condition=None, input_bit=mutated_input_bit, output_bits=output_bits)]
 
 
 def handle_multiple_partitions_output_centric(  # noqa: C901
@@ -317,7 +317,7 @@ def handle_multiple_partitions_output_centric(  # noqa: C901
             affected_output_bits.update(obs_dep.dataflow[mutated_input_bit])
 
     if not affected_output_bits:
-        return [ConditionDataflowPair(condition=None, output_bits=frozenset())]
+        return [ConditionDataflowPair(condition=None, input_bit=mutated_input_bit, output_bits=frozenset())]
 
     # Step 2: For each output bit, determine all input bits that affect it
     output_to_all_inputs = unitary_flow_processor.group_unitary_flows_by_output(observation_dependencies)
@@ -474,6 +474,8 @@ def handle_multiple_partitions_output_centric(  # noqa: C901
             condition = TaintCondition(cond_type, cond_ops, output_refs)  # type: ignore[arg-type]
 
         output_bits = frozenset(output_bits_set)
-        condition_dataflow_pairs.append(ConditionDataflowPair(condition=condition, output_bits=output_bits))
+        condition_dataflow_pairs.append(
+            ConditionDataflowPair(condition=condition, input_bit=mutated_input_bit, output_bits=output_bits),
+        )
 
     return condition_dataflow_pairs

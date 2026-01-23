@@ -28,6 +28,9 @@ Known Issues:
 - Immediate variants with specific values (OR #0x3, AND #0xF) may appear unconditional
 """
 
+from dataclasses import dataclass
+from typing import Optional
+
 import pytest
 
 from taintinduce.cpu.jn_cpu import JNCpu
@@ -37,14 +40,34 @@ from taintinduce.inference_engine.validation import validate_rule_explains_obser
 from taintinduce.isa.jn_isa import JNOpcode, encode_instruction
 from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex
 from taintinduce.isa.jn_registers import JN_REG_NZCV, JN_REG_R1, JN_REG_R2
+from taintinduce.isa.register import Register
 from taintinduce.observation_engine.observation import (
     ObservationEngine,
     decode_instruction_bytes,
     encode_instruction_bytes,
 )
 from taintinduce.rules.conditions import LogicType, TaintCondition
-from taintinduce.types import BitPosition, CpuRegisterMap
+from taintinduce.rules.rules import GlobalRule
+from taintinduce.state.state import Observation
+from taintinduce.types import BitPosition, CpuRegisterMap, ObservationDependency
 from taintinduce.visualizer.taint_simulator import simulate_taint_propagation
+
+
+@dataclass
+class JNInstructionData:
+    """Cached data for a JN instruction.
+
+    Attributes:
+        observations: List of generated observations
+        obs_engine: ObservationEngine instance used to generate observations
+        rule: Inferred GlobalRule from observations
+        obs_deps: Observation dependencies extracted from observations
+    """
+
+    observations: list[Observation]
+    obs_engine: ObservationEngine
+    rule: GlobalRule
+    obs_deps: list[ObservationDependency]
 
 
 def jn_hex_to_bytes(hex_string: str) -> bytes:
@@ -57,19 +80,19 @@ def jn_hex_to_bytes(hex_string: str) -> bytes:
 
 
 @pytest.fixture
-def jn_state_format():
+def jn_state_format() -> list[Register]:
     """JN state format: R1 (4 bits), R2 (4 bits), NZCV (4 bits)."""
     return [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
 
 
 @pytest.fixture
-def jn_state_format_immediate():
+def jn_state_format_immediate() -> list[Register]:
     """JN state format for immediate instructions: R1 (4 bits), NZCV (4 bits)."""
     return [JN_REG_R1(), JN_REG_NZCV()]
 
 
 @pytest.fixture
-def jn_cond_reg():
+def jn_cond_reg() -> Register:
     """JN condition register (NZCV)."""
     return JN_REG_NZCV()
 
@@ -117,8 +140,48 @@ INSTRUCTIONS_WITH_CONDITIONALITY = [
 # =============================================================================
 
 
+class _JNInstructionCache:
+    """Cache for lazily computing and storing JN instruction data.
+
+    This class provides dict-like access to instruction data, computing it
+    on first access and caching for subsequent uses.
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[tuple[JNOpcode, Optional[int]], JNInstructionData] = {}
+        self._state_format_long = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
+        self._state_format_short = [JN_REG_R1(), JN_REG_NZCV()]
+
+    def __getitem__(self, key: tuple[JNOpcode, Optional[int]]) -> JNInstructionData:
+        if key not in self._cache:
+            opcode, immediate = key
+            bytestring = encode_instruction(opcode, immediate)
+            if immediate is None:
+                state_format = self._state_format_long
+            else:
+                state_format = self._state_format_short
+            obs_engine = ObservationEngine(bytestring, 'JN', state_format)
+            observations = obs_engine.observe_insn()
+            obs_deps = extract_observation_dependencies(observations)
+
+            # Infer rule
+            rule = infer(observations)
+
+            self._cache[key] = JNInstructionData(
+                observations=observations,
+                obs_engine=obs_engine,
+                rule=rule,
+                obs_deps=obs_deps,
+            )
+
+        return self._cache[key]
+
+    def __contains__(self, key: tuple[JNOpcode, Optional[int]]) -> bool:
+        return True  # Always return True since we can compute on-demand
+
+
 @pytest.fixture(scope='module')
-def jn_instruction_data():
+def jn_instruction_data() -> _JNInstructionCache:
     """Compute observations and rules for JN instructions lazily on-demand.
 
     This fixture uses pytest's module-level caching with lazy evaluation.
@@ -129,55 +192,16 @@ def jn_instruction_data():
     - Without caching: Each test regenerates observations (~2-3s per instruction)
     - With lazy caching: Each instruction computed once when needed, cached thereafter
 
-    Returns a dict-like object that computes on access: (opcode, immediate) -> {
-        'observations': list of observations,
-        'obs_engine': ObservationEngine instance,
-        'rule': inferred Rule,
-        'obs_deps': observation dependencies
-    }
+    Returns a dict-like object that computes on access: (opcode, immediate) -> JNInstructionData
 
     Usage in tests:
-        def test_something(jn_instruction_data):
+        def test_something(jn_instruction_data: _JNInstructionCache):
             data = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]
-            rule = data['rule']
-            observations = data['observations']
+            rule = data.rule
+            observations = data.observations
             # ... use the cached data
     """
-    state_format_long = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
-    state_format_short = [JN_REG_R1(), JN_REG_NZCV()]
-
-    class LazyCache:
-        def __init__(self):
-            self._cache = {}
-
-        def __getitem__(self, key):
-            if key not in self._cache:
-                opcode, immediate = key
-                bytestring = encode_instruction(opcode, immediate)
-                if immediate is None:
-                    state_format = state_format_long
-                else:
-                    state_format = state_format_short
-                obs_engine = ObservationEngine(bytestring, 'JN', state_format)
-                observations = obs_engine.observe_insn()
-                obs_deps = extract_observation_dependencies(observations)
-
-                # Infer rule
-                rule = infer(observations)
-
-                self._cache[key] = {
-                    'observations': observations,
-                    'obs_engine': obs_engine,
-                    'rule': rule,
-                    'obs_deps': obs_deps,
-                }
-
-            return self._cache[key]
-
-        def __contains__(self, key):
-            return True  # Always return True since we can compute on-demand
-
-    return LazyCache()
+    return _JNInstructionCache()
 
 
 # =============================================================================
@@ -186,7 +210,7 @@ def jn_instruction_data():
 
 
 @pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
-def test_decode_roundtrip(opcode, immediate):
+def test_decode_roundtrip(opcode: JNOpcode, immediate: Optional[int]) -> None:
     """Test that decode_jn_hex(decode_instruction_bytes(...)) is a round trip.
 
     This verifies that encoding an instruction to a hex string, converting to bytes,
@@ -218,11 +242,11 @@ def test_decode_roundtrip(opcode, immediate):
 
 @pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_observation_generation(
-    opcode,
-    immediate,
-    jn_state_format,
-    jn_state_format_immediate,
-):
+    opcode: JNOpcode,
+    immediate: Optional[int],
+    jn_state_format: list[Register],
+    jn_state_format_immediate: list[Register],
+) -> None:
     """Test observation generation for all JN instructions."""
     bytestring = encode_instruction(opcode, immediate)
     state_format = jn_state_format_immediate if immediate is not None else jn_state_format
@@ -254,7 +278,7 @@ def test_observation_generation(
 class TestJNDataflowCompleteness:
     """Test that all expected taint flows are captured in observations."""
 
-    def test_add_r1_r2_captures_all_flows(self, jn_instruction_data):
+    def test_add_r1_r2_captures_all_flows(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test ADD R1, R2 captures all expected flows.
 
         Expected flows:
@@ -270,7 +294,7 @@ class TestJNDataflowCompleteness:
         """
         # Use cached data
         data = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]
-        obs_deps = data['obs_deps']
+        obs_deps = data.obs_deps
 
         # Collect all flows from all observation dependencies
         all_flows: dict[BitPosition, set[BitPosition]] = {}
@@ -303,7 +327,7 @@ class TestJNDataflowCompleteness:
             r2_out = BitPosition(4 + i)
             assert r2_out in all_flows.get(r2_in, set()), f'R2[{i}] should flow to R2[{i}]'
 
-    def test_or_r1_r2_captures_all_flows(self, jn_instruction_data):
+    def test_or_r1_r2_captures_all_flows(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test OR R1, R2 captures all expected flows.
 
         Expected flows:
@@ -318,7 +342,7 @@ class TestJNDataflowCompleteness:
         """
         # Use cached data
         data = jn_instruction_data[(JNOpcode.OR_R1_R2, None)]
-        obs_deps = data['obs_deps']
+        obs_deps = data.obs_deps
 
         # Collect all flows
         all_flows: dict[BitPosition, set[BitPosition]] = {}
@@ -348,7 +372,7 @@ class TestJNDataflowCompleteness:
             r2_out = BitPosition(4 + i)
             assert r2_out in all_flows.get(r2_in, set()), f'R2[{i}] should flow to R2[{i}]'
 
-    def test_and_r1_r2_captures_all_flows(self, jn_instruction_data):
+    def test_and_r1_r2_captures_all_flows(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test AND R1, R2 captures all expected flows.
 
         Expected flows for AND R1, R2:
@@ -364,7 +388,7 @@ class TestJNDataflowCompleteness:
         """
         # Use cached data
         data = jn_instruction_data[(JNOpcode.AND_R1_R2, None)]
-        obs_deps = data['obs_deps']
+        obs_deps = data.obs_deps
 
         # Extract dataflows from observations
 
@@ -401,7 +425,7 @@ class TestJNDataflowCompleteness:
             assert r2_in in all_flows, f'R2[{i}] should have flows'
             assert r2_out in all_flows[r2_in], f'R2[{i}] should flow to R2[{i}]'
 
-    def test_xor_r1_r2_captures_all_flows(self, jn_instruction_data):
+    def test_xor_r1_r2_captures_all_flows(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test XOR R1, R2 captures all expected flows.
 
         Expected flows:
@@ -413,7 +437,7 @@ class TestJNDataflowCompleteness:
         """
         # Use cached data
         data = jn_instruction_data[(JNOpcode.XOR_R1_R2, None)]
-        obs_deps = data['obs_deps']
+        obs_deps = data.obs_deps
 
         # Collect all flows
         all_flows: dict[BitPosition, set[BitPosition]] = {}
@@ -449,18 +473,18 @@ class TestJNDataflowCompleteness:
 
 @pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_full_inference(
-    opcode,
-    immediate,
-    jn_state_format,
-    jn_state_format_immediate,
-    jn_instruction_data,
-):
+    opcode: JNOpcode,
+    immediate: Optional[int],
+    jn_state_format: list[Register],
+    jn_state_format_immediate: list[Register],
+    jn_instruction_data: _JNInstructionCache,
+) -> None:
     """Test full inference pipeline for all JN instructions."""
     state_format = jn_state_format_immediate if immediate is not None else jn_state_format
 
     # Use cached data for register instructions to avoid recomputation
     data = jn_instruction_data[(opcode, immediate)]
-    rule = data['rule']
+    rule = data.rule
 
     # Basic checks
     assert len(rule.pairs) > 0, f'Rule should have condition-dataflow pairs for {opcode.name}'
@@ -474,10 +498,9 @@ def test_full_inference(
     # Collect all flows from the rule
     rule_flows: dict[BitPosition, set[BitPosition]] = {}
     for pair in rule.pairs:
-        for input_bit, output_bits in pair.output_bits.items():
-            if input_bit not in rule_flows:
-                rule_flows[input_bit] = set()
-            rule_flows[input_bit].update(output_bits)
+        if pair.input_bit not in rule_flows:
+            rule_flows[pair.input_bit] = set()
+        rule_flows[pair.input_bit].update(pair.output_bits)
 
     # Should have dataflows for input bits
     assert len(rule_flows) > 0, f'Should have dataflows for {opcode.name}'
@@ -490,10 +513,10 @@ def test_full_inference(
 
 @pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
 def test_rule_explains_all_observations(
-    opcode,
-    immediate,
-    jn_instruction_data,
-):
+    opcode: JNOpcode,
+    immediate: Optional[int],
+    jn_instruction_data: _JNInstructionCache,
+) -> None:
     """Test that inferred rule explains 100% of observations.
 
     This verifies that the inference engine produces a complete rule
@@ -502,8 +525,8 @@ def test_rule_explains_all_observations(
 
     # Use cached data for register instructions to avoid recomputation
     data = jn_instruction_data[(opcode, immediate)]
-    rule = data['rule']
-    obs_deps = data['obs_deps']
+    rule = data.rule
+    obs_deps = data.obs_deps
     explained, total = validate_rule_explains_observations(rule, obs_deps)
 
     # Assert that all behaviors are explained
@@ -523,11 +546,11 @@ def test_rule_explains_all_observations(
     INSTRUCTIONS_WITH_CONDITIONALITY,
 )
 def test_condition_inference(
-    opcode,
-    immediate,
-    should_be_unconditional,
-    jn_instruction_data,
-):
+    opcode: JNOpcode,
+    immediate: Optional[int],
+    should_be_unconditional: bool,
+    jn_instruction_data: _JNInstructionCache,
+) -> None:
     """Test that conditions are inferred correctly for each instruction.
 
     Unconditional instructions (ADD, XOR) should have condition=None or empty conditions.
@@ -536,11 +559,14 @@ def test_condition_inference(
 
     # Use cached data for register instructions to avoid recomputation
     data = jn_instruction_data[(opcode, immediate)]
-    rule = data['rule']
+    rule = data.rule
 
     # Check for unconditional flows
     unconditional_count = sum(
-        1 for pair in rule.pairs if pair.condition is None or len(pair.condition.condition_ops) == 0
+        1
+        for pair in rule.pairs
+        if pair.condition is None
+        or (pair.condition.condition_ops is not None and len(pair.condition.condition_ops) == 0)
     )
 
     if should_be_unconditional:
@@ -549,7 +575,10 @@ def test_condition_inference(
     else:
         # Expect conditions or multiple pairs for AND, OR (data-dependent)
         has_conditions = any(
-            pair.condition is not None and len(pair.condition.condition_ops) > 0 for pair in rule.pairs
+            pair.condition is not None
+            and pair.condition.condition_ops is not None
+            and len(pair.condition.condition_ops) > 0
+            for pair in rule.pairs
         )
         assert has_conditions or len(rule.pairs) > 1, f'{opcode.name} should have either conditions or multiple pairs'
 
@@ -562,7 +591,7 @@ def test_condition_inference(
 class TestJNExpectedTaintRules:
     """Test that inferred rules match expected taint propagation semantics."""
 
-    def test_xor_r1_r2_has_correct_flows(self, jn_instruction_data):
+    def test_xor_r1_r2_has_correct_flows(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test XOR R1, R2 has correct dataflows.
 
         Expected: For all i in 0..3:
@@ -576,15 +605,14 @@ class TestJNExpectedTaintRules:
         """
         # Use cached data
         data = jn_instruction_data[(JNOpcode.XOR_R1_R2, None)]
-        rule = data['rule']
+        rule = data.rule
 
         # Collect ALL flows (conditional and unconditional) per input bit
         all_flows: dict[BitPosition, set[BitPosition]] = {}
         for pair in rule.pairs:
-            for input_bit, output_bits in pair.output_bits.items():
-                if input_bit not in all_flows:
-                    all_flows[input_bit] = set()
-                all_flows[input_bit].update(output_bits)
+            if pair.input_bit not in all_flows:
+                all_flows[pair.input_bit] = set()
+            all_flows[pair.input_bit].update(pair.output_bits)
 
         # Verify XOR dataflows exist
         for i in range(4):
@@ -605,7 +633,7 @@ class TestJNExpectedTaintRules:
             assert any(bit in nzcv_bits for bit in all_flows[r1_bit]), f'R1[{i}] should flow to at least one NZCV flag'
             assert any(bit in nzcv_bits for bit in all_flows[r2_bit]), f'R2[{i}] should flow to at least one NZCV flag'
 
-    def test_and_r1_r2_conditional_flows(self, jn_instruction_data):
+    def test_and_r1_r2_conditional_flows(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test AND R1, R2 has correct conditional flows.
 
         Expected: For all i in 0..3:
@@ -617,8 +645,8 @@ class TestJNExpectedTaintRules:
         """
         # Use cached data
         data = jn_instruction_data[(JNOpcode.AND_R1_R2, None)]
-        rule = data['rule']
-        bytestring = data['obs_engine'].bytestring
+        rule = data.rule
+        bytestring = data.obs_engine.bytestring
 
         # Test with concrete values to verify AND behavior
 
@@ -650,7 +678,7 @@ class TestJNExpectedTaintRules:
         # The rule should capture these conditional behaviors
         assert len(rule.pairs) > 0, 'AND should have condition-dataflow pairs'
 
-    def test_or_r1_r2_conditional_flows(self, jn_instruction_data):
+    def test_or_r1_r2_conditional_flows(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test OR R1, R2 has correct conditional flows.
 
         Expected: For all i in 0..3:
@@ -662,7 +690,7 @@ class TestJNExpectedTaintRules:
         """
         data = jn_instruction_data[(JNOpcode.OR_R1_R2, None)]
         bytestring = encode_instruction(JNOpcode.OR_R1_R2)
-        rule = data['rule']
+        rule = data.rule
 
         # Test with concrete values to verify OR behavior
 
@@ -700,7 +728,7 @@ class TestJNExpectedTaintRules:
         # The rule should capture these conditional behaviors
         assert len(rule.pairs) > 0, 'OR should have condition-dataflow pairs'
 
-    def test_add_r1_r2_carry_propagation(self, jn_instruction_data):
+    def test_add_r1_r2_carry_propagation(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test ADD R1, R2 has correct carry propagation.
 
         Expected: Complex carry propagation where lower bits affect higher bits.
@@ -711,7 +739,7 @@ class TestJNExpectedTaintRules:
         """
         data = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]
         bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
-        rule = data['rule']
+        rule = data.rule
 
         # Test with concrete values to verify ADD behavior
 
@@ -745,7 +773,7 @@ class TestJNExpectedTaintRules:
         # The rule should capture carry propagation
         assert len(rule.pairs) > 0, 'ADD should have condition-dataflow pairs'
 
-    def test_add_r1_output_bit_refs_from_subsets(self, jn_instruction_data):
+    def test_add_r1_output_bit_refs_from_subsets(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test ADD R1, R2 includes output bit refs for carry-dependent bits.
 
         For ADD operation with carry propagation, each R1 output bit should include
@@ -761,7 +789,7 @@ class TestJNExpectedTaintRules:
         lower bits' taint states from conditional flows.
         """
         data = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]
-        rule = data['rule']
+        rule = data.rule
 
         # R1 register bits are at positions 0-3
         r1_bits = {BitPosition(0), BitPosition(1), BitPosition(2), BitPosition(3)}
@@ -775,10 +803,6 @@ class TestJNExpectedTaintRules:
         total_conditional_pairs = 0
 
         for pair in rule.pairs:
-            # pair.output_bits is a Dataflow (dict: input_bit -> frozenset[output_bits])
-            if not isinstance(pair.output_bits, dict):
-                continue
-
             # Check if this pair has a condition
             if not pair.condition:
                 continue
@@ -786,17 +810,22 @@ class TestJNExpectedTaintRules:
             total_conditional_pairs += 1
 
             # Check if this pair's condition has output bit refs
-            has_refs = hasattr(pair.condition, 'output_bit_refs') and pair.condition.output_bit_refs
+            has_refs = (
+                pair.condition is not None
+                and hasattr(pair.condition, 'output_bit_refs')
+                and pair.condition.output_bit_refs is not None
+            )
             if has_refs:
                 pairs_with_refs += 1
+                assert pair.condition is not None
+                assert pair.condition.output_bit_refs is not None
                 ref_bits = {ref.output_bit for ref in pair.condition.output_bit_refs}
 
                 # Find which R1 bits are affected in this pair
-                for _input_bit, output_bits_set in pair.output_bits.items():
-                    r1_outputs = output_bits_set & r1_bits
-                    # Associate the refs with each R1 output bit in this pair
-                    for output_bit in r1_outputs:
-                        output_refs_by_bit[output_bit].update(ref_bits)
+                r1_outputs = pair.output_bits & r1_bits
+                # Associate the refs with each R1 output bit in this pair
+                for output_bit in r1_outputs:
+                    output_refs_by_bit[output_bit].update(ref_bits)
 
         # Since only conditional flows are tracked:
         # - R1[0] and R1[1] are typically unconditional, so no refs expected
@@ -838,7 +867,7 @@ class TestJNConcreteValueValidation:
             (0b1100, 0b1010, 0b1000),  # 12 & 10 = 8
         ],
     )
-    def test_and_concrete_cases(self, r1_val, r2_val, expected):
+    def test_and_concrete_cases(self, r1_val: int, r2_val: int, expected: int) -> None:
         """Test AND rule with specific concrete cases.
 
         Even if the rule is complex, it should correctly predict taint
@@ -861,7 +890,7 @@ class TestJNConcreteValueValidation:
             (0b1100, 0b1010, 0b1110),  # 12 | 10 = 14
         ],
     )
-    def test_or_concrete_cases(self, r1_val, r2_val, expected):
+    def test_or_concrete_cases(self, r1_val: int, r2_val: int, expected: int) -> None:
         """Test OR rule with specific concrete cases."""
         bytestring = encode_instruction(JNOpcode.OR_R1_R2)
         cpu = JNCpu()
@@ -881,7 +910,7 @@ class TestJNConcreteValueValidation:
             (0b1111, 0b1111, 0b0000),  # 15 ^ 15 = 0
         ],
     )
-    def test_xor_concrete_cases(self, r1_val, r2_val, expected):
+    def test_xor_concrete_cases(self, r1_val: int, r2_val: int, expected: int) -> None:
         """Test XOR rule with specific concrete cases."""
         bytestring = encode_instruction(JNOpcode.XOR_R1_R2)
         cpu = JNCpu()
@@ -902,7 +931,7 @@ class TestJNConcreteValueValidation:
             (0b1010, 0b0101, 0b1111),  # 10 + 5 = 15
         ],
     )
-    def test_add_concrete_cases(self, r1_val, r2_val, expected):
+    def test_add_concrete_cases(self, r1_val: int, r2_val: int, expected: int) -> None:
         """Test ADD rule with specific concrete cases."""
         bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
         cpu = JNCpu()
@@ -921,13 +950,19 @@ class TestJNImmediateInstructions:
     """Test that immediate instructions use correct state format."""
 
     @pytest.mark.parametrize(('opcode', 'immediate'), IMMEDIATE_INSTRUCTIONS)
-    def test_immediate_instructions_exclude_r2(self, opcode, immediate, jn_instruction_data):
+    def test_immediate_instructions_exclude_r2(
+        self,
+        opcode: JNOpcode,
+        immediate: int,
+        jn_instruction_data: _JNInstructionCache,
+    ) -> None:
         """Test that all immediate instructions exclude R2 from state format."""
         bytestring = encode_instruction(opcode, immediate)
 
         # Use cached data if available
         if (opcode, immediate) in jn_instruction_data:
-            observations = jn_instruction_data[(opcode, immediate)]['observations']
+            data = jn_instruction_data[(opcode, immediate)]
+            observations = data.observations
         else:
             # Create state format without R2
             state_format = [JN_REG_R1(), JN_REG_NZCV()]
@@ -939,7 +974,7 @@ class TestJNImmediateInstructions:
             reg_names = [r.name for r in obs.state_format]
             assert 'R2' not in reg_names, f'{opcode.name} should not include R2'
 
-    def test_immediate_instruction_observation_count(self, jn_instruction_data):
+    def test_immediate_instruction_observation_count(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test that immediate instructions generate correct number of observations.
 
         Immediate: 8 bits (R1=4, NZCV=4) = 256 states
@@ -952,7 +987,8 @@ class TestJNImmediateInstructions:
         observations_imm = obs_engine_imm.observe_insn()
 
         # Register instruction - use cached data
-        observations_reg = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]['observations']
+        data_reg = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]
+        observations_reg = data_reg.observations
 
         # Immediate should have fewer observations (256 vs 4096)
         assert len(observations_imm) < len(
@@ -968,25 +1004,25 @@ class TestJNImmediateInstructions:
 class TestJNEdgeCases:
     """Test edge cases and boundary conditions."""
 
-    def test_and_r1_r2_with_zero_r2(self, jn_instruction_data):
+    def test_and_r1_r2_with_zero_r2(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test AND R1, R2 behavior when R2=0.
 
         When R2=0, result is always 0 regardless of R1.
         This tests if conditions properly capture this behavior.
         """
         data = jn_instruction_data[(JNOpcode.AND_R1_R2, None)]
-        rule = data['rule']
+        rule = data.rule
 
         # Rule should explain this edge case
         assert len(rule.pairs) > 0
 
-    def test_and_r1_r2_with_all_ones(self, jn_instruction_data):
+    def test_and_r1_r2_with_all_ones(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test AND R1, R2 behavior when both are 0xF.
 
         When both are all 1s, taint should propagate unconditionally.
         """
         data = jn_instruction_data[(JNOpcode.AND_R1_R2, None)]
-        rule = data['rule']
+        rule = data.rule
 
         # Should have valid rule
         assert len(rule.pairs) > 0
@@ -1020,7 +1056,14 @@ class TestJNEdgeCases:
         (JNOpcode.OR_R1_IMM, 0xC, 0b0000, 0b0000, 0b1100, 'OR R1, #0xC gives 0xC'),
     ],
 )
-def test_taint_blocking_conditions(opcode, immediate, r1_value, r2_value, expected_output, description):
+def test_taint_blocking_conditions(
+    opcode: JNOpcode,
+    immediate: Optional[int],
+    r1_value: int,
+    r2_value: int,
+    expected_output: int,
+    description: str,
+) -> None:
     """Test that operations produce expected outputs that may block taint propagation.
 
     This verifies data-dependent blocking conditions:
@@ -1130,14 +1173,14 @@ def test_taint_blocking_conditions(opcode, immediate, r1_value, r2_value, expect
     ],
 )
 def test_inferred_rules_capture_taint_blocking(
-    opcode,
-    immediate,
-    blocking_state,
-    tainted_input_bits,
-    expected_untainted_output_bits,
-    description,
-    jn_instruction_data,
-):
+    opcode: JNOpcode,
+    immediate: Optional[int],
+    blocking_state: CpuRegisterMap,
+    tainted_input_bits: list[BitPosition],
+    expected_untainted_output_bits: list[BitPosition],
+    description: str,
+    jn_instruction_data: _JNInstructionCache,
+) -> None:
     """End-to-end test that inferred rules correctly predict when taint does NOT propagate.
 
     This is a REAL end-to-end test that:
@@ -1163,7 +1206,7 @@ def test_inferred_rules_capture_taint_blocking(
 
     # Use cached data for register instructions to avoid recomputation
     data = jn_instruction_data[(opcode, immediate)]
-    internal_rule = data['rule']
+    internal_rule = data.rule
 
     # Convert to TaintRule for simulation
     taint_rule = internal_rule.convert2squirrel('JN', bytestring)
@@ -1306,7 +1349,7 @@ class TestJNNZCVFlags:
         assert c == 0, f'C flag should be 0 for logical ops, got {c}'
         assert v == 0, f'V flag should be 0 for logical ops, got {v}'
 
-    def test_nzcv_taint_propagation_all_ops(self, jn_instruction_data):
+    def test_nzcv_taint_propagation_all_ops(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test that NZCV flags properly capture taint from all operations.
 
         NZCV flags should be tainted by:
@@ -1316,16 +1359,15 @@ class TestJNNZCVFlags:
         """
         for opcode in [JNOpcode.ADD_R1_R2, JNOpcode.OR_R1_R2, JNOpcode.AND_R1_R2, JNOpcode.XOR_R1_R2]:
             data = jn_instruction_data[(opcode, None)]
-            rule = data['rule']
+            rule = data.rule
 
             # Check that NZCV bits (8-11) receive taint from R1 and R2
             for input_bit in range(8):  # R1 (0-3) and R2 (4-7)
                 found_nzcv_flow = False
                 for pair in rule.pairs:
-                    if isinstance(pair.output_bits, dict) and input_bit in pair.output_bits:
-                        outputs = pair.output_bits[input_bit]
+                    if pair.input_bit == BitPosition(input_bit):
                         # Check if any NZCV bit (8-11) is in outputs
-                        nzcv_outputs = [b for b in outputs if 8 <= b <= 11]
+                        nzcv_outputs = [b for b in pair.output_bits if 8 <= b <= 11]
                         if nzcv_outputs:
                             found_nzcv_flow = True
                             break
@@ -1370,7 +1412,7 @@ class TestJNNZCVFlags:
         nzcv = output[JN_REG_NZCV()]
         assert nzcv & 1 == 1, 'V flag (bit 0) should be set'
 
-    def test_nzcv_taint_from_specific_bits(self, jn_instruction_data):
+    def test_nzcv_taint_from_specific_bits(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test that specific NZCV flag bits get taint from expected sources.
 
         For ADD R1, R2:
@@ -1379,15 +1421,14 @@ class TestJNNZCVFlags:
         - C flag depends on carry out (all bits contribute)
         - V flag depends on sign bits and result
         """
-        rule = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)]['rule']
+        rule = jn_instruction_data[(JNOpcode.ADD_R1_R2, None)].rule
 
         # Verify that all R1 and R2 bits can affect NZCV
         for input_reg_bit in range(8):  # R1[0-3] and R2[0-3]
             nzcv_affected = set()
             for pair in rule.pairs:
-                if isinstance(pair.output_bits, dict) and input_reg_bit in pair.output_bits:
-                    outputs = pair.output_bits[BitPosition(input_reg_bit)]
-                    for out_bit in outputs:
+                if pair.input_bit == BitPosition(input_reg_bit):
+                    for out_bit in pair.output_bits:
                         if 8 <= out_bit <= 11:
                             nzcv_affected.add(out_bit)
 
@@ -1501,24 +1542,22 @@ class TestJNSubInstruction:
         v_flag = state_after[JN_REG_NZCV()] & 1
         assert v_flag == 1
 
-    def test_sub_taint_propagation(self, jn_instruction_data):
+    def test_sub_taint_propagation(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test that SUB R1, R2 correctly propagates taint from both operands."""
         # Use cached rule
         data = jn_instruction_data[(JNOpcode.SUB_R1_R2, None)]
-        rule = data['rule']
+        rule = data.rule
 
         # SUB should propagate taint from both R1 and R2 to result in R1
-        input_bits = set()
+        input_bits: set[BitPosition] = set()
         for pair in rule.pairs:
-            if isinstance(pair.output_bits, dict):
-                for input_bit in pair.output_bits:
-                    input_bits.add(input_bit)
+            input_bits.add(pair.input_bit)
 
         # Should see taint from R1[0-3] and R2[4-7]
         assert any(0 <= bit <= 3 for bit in input_bits), 'Should see R1 bits as inputs'
         assert any(4 <= bit <= 7 for bit in input_bits), 'Should see R2 bits as inputs'
 
-    def test_sub_immediate_taint_propagation(self, jn_instruction_data):
+    def test_sub_immediate_taint_propagation(self, jn_instruction_data: _JNInstructionCache) -> None:
         """Test that SUB R1, imm propagates taint from R1 only (to R1 output).
 
         Note: NZCV flags may show dependencies on all state bits, which is expected
@@ -1526,16 +1565,14 @@ class TestJNSubInstruction:
         """
         # Use cached rule
         data = jn_instruction_data[(JNOpcode.SUB_R1_IMM, 0x5)]
-        rule = data['rule']
+        rule = data.rule
 
         # Check R1 output bits specifically (bits 0-3)
         r1_output_dependencies = set()
         for pair in rule.pairs:
-            if isinstance(pair.output_bits, dict):
-                for input_bit, outputs in pair.output_bits.items():
-                    for output_bit in outputs:
-                        if 0 <= output_bit <= 3:  # R1 output bits
-                            r1_output_dependencies.add(input_bit)
+            for output_bit in pair.output_bits:
+                if 0 <= output_bit <= 3:  # R1 output bits
+                    r1_output_dependencies.add(pair.input_bit)
 
         # R1 output should depend on R1 input (bits 0-3)
         assert any(0 <= bit <= 3 for bit in r1_output_dependencies), 'R1 output should depend on R1 inputs'
@@ -1548,12 +1585,16 @@ class TestJNSubInstruction:
 
 
 @pytest.mark.parametrize(('opcode', 'immediate'), ALL_JN_INSTRUCTIONS)
-def test_R2_is_always_unconditionnal(jn_instruction_data, opcode, immediate):
+def test_R2_is_always_unconditionnal(
+    jn_instruction_data: _JNInstructionCache,
+    opcode: JNOpcode,
+    immediate: Optional[int],
+) -> None:
     """Test that R2's bits are unconditionally propagated to themselves (R2[i] -> R2[i])."""
     # Use cached data
     data = jn_instruction_data[(opcode, immediate)]
-    rule = data['rule']
-    observations = data['observations']
+    rule = data.rule
+    observations = data.observations
 
     # Check that R2 bits (4-7) unconditionally propagate to themselves
     if immediate is not None:
@@ -1564,72 +1605,73 @@ def test_R2_is_always_unconditionnal(jn_instruction_data, opcode, immediate):
 
     # For each R2 bit as input, check if it propagates to itself unconditionally
     for pair in rule.pairs:
-        for r2_input_bit in range(4, 8):
+        r2_input_bit = pair.input_bit
+        if 4 <= r2_input_bit <= 7:
+            # This pair has r2_input_bit as input
+            # Check if it propagates to itself (R2[i] -> R2[i])
             if r2_input_bit in pair.output_bits:
-                # This pair has r2_input_bit as input
-                outputs = pair.output_bits[r2_input_bit]
-                # Check if it propagates to itself (R2[i] -> R2[i])
-                if r2_input_bit in outputs:
-                    # R2[i] -> R2[i] should be unconditional
-                    assert pair.condition is None or len(pair.condition.condition_ops) == 0, (
-                        f'{opcode.name}: R2 bit {r2_input_bit} -> {r2_input_bit} should be unconditional, '
-                        f'but has condition {pair.condition}'
-                    )
+                # R2[i] -> R2[i] should be unconditional
+                assert pair.condition is None or (
+                    pair.condition.condition_ops is not None and len(pair.condition.condition_ops) == 0
+                ), (
+                    f'{opcode.name}: R2 bit {r2_input_bit} -> {r2_input_bit} should be unconditional, '
+                    f'but has condition {pair.condition}'
+                )
 
 
-def test_or_R1_condition(jn_instruction_data):
+def test_or_R1_condition(jn_instruction_data: _JNInstructionCache) -> None:
     """Test that OR R1, R2 has correct condition for R1 input bits affecting R1 output bits."""
     # Use cached data
     data = jn_instruction_data[(JNOpcode.OR_R1_R2, None)]
-    rule = data['rule']
+    rule = data.rule
 
     # Check that R1 input bits (0-3) have correct condition when affecting R1 output bits
     for pair in rule.pairs:
-        for input_bit, outputs in pair.output_bits.items():
-            # Only check R1 input bits (0-3)
-            if 0 <= input_bit <= 3:
-                for output_bit in outputs:
-                    if 0 <= output_bit <= 3:  # R1 output bits
-                        # For OR: R1[i] affects R1[i] when R2[i] = 0
-                        # R2[i] is at bit position (input_bit + 4)
-                        assert pair.condition is not None
-                        r2_bit = input_bit + 4
-                        expected_condition = TaintCondition(
-                            LogicType.DNF,
-                            frozenset([(1 << r2_bit, 0)]),
-                            None,
-                        )
+        input_bit = pair.input_bit
+        # Only check R1 input bits (0-3)
+        if 0 <= input_bit <= 3:
+            for output_bit in pair.output_bits:
+                if 0 <= output_bit <= 3:  # R1 output bits
+                    # For OR: R1[i] affects R1[i] when R2[i] = 0
+                    # R2[i] is at bit position (input_bit + 4)
+                    assert pair.condition is not None
+                    r2_bit = input_bit + 4
+                    expected_condition = TaintCondition(
+                        LogicType.DNF,
+                        frozenset([(1 << r2_bit, 0)]),
+                        None,
+                    )
 
-                        assert pair.condition == expected_condition, (
-                            f'OR R1, R2: Input bit {input_bit} -> Output bit {output_bit} has incorrect condition. '
-                            f'Expected {expected_condition}, got {pair.condition}'
-                        )
+                    assert pair.condition == expected_condition, (
+                        f'OR R1, R2: Input bit {input_bit} -> Output bit {output_bit} has incorrect condition. '
+                        f'Expected {expected_condition}, got {pair.condition}'
+                    )
 
 
-def test_and_R1_condition(jn_instruction_data):
+def test_and_R1_condition(jn_instruction_data: _JNInstructionCache) -> None:
     """Test that AND R1, R2 has correct condition for R1 input bits affecting R1 output bits."""
     # Use cached data
     data = jn_instruction_data[(JNOpcode.AND_R1_R2, None)]
-    rule = data['rule']
+    rule = data.rule
 
     # Check that R1 input bits (0-3) have correct condition when affecting R1 output bits
     for pair in rule.pairs:
-        for input_bit, outputs in pair.output_bits.items():
-            # Only check R1 input bits (0-3)
-            if 0 <= input_bit <= 3:
-                for output_bit in outputs:
-                    if 0 <= output_bit <= 3:  # R1 output bits
-                        # For AND: R1[i] affects R1[i] when R2[i] = 1
-                        # R2[i] is at bit position (input_bit + 4)
-                        assert pair.condition is not None
-                        r2_bit = input_bit + 4
-                        expected_condition = TaintCondition(
-                            LogicType.DNF,
-                            frozenset([(1 << r2_bit, 1 << r2_bit)]),
-                            None,
-                        )
+        input_bit = pair.input_bit
+        # Only check R1 input bits (0-3)
+        if 0 <= input_bit <= 3:
+            for output_bit in pair.output_bits:
+                if 0 <= output_bit <= 3:  # R1 output bits
+                    # For AND: R1[i] affects R1[i] when R2[i] = 1
+                    # R2[i] is at bit position (input_bit + 4)
+                    assert pair.condition is not None
+                    r2_bit = input_bit + 4
+                    expected_condition = TaintCondition(
+                        LogicType.DNF,
+                        frozenset([(1 << r2_bit, 1 << r2_bit)]),
+                        None,
+                    )
 
-                        assert pair.condition == expected_condition, (
-                            f'AND R1, R2: Input bit {input_bit} -> Output bit {output_bit} has incorrect condition. '
-                            f'Expected {expected_condition}, got {pair.condition}'
-                        )
+                    assert pair.condition == expected_condition, (
+                        f'AND R1, R2: Input bit {input_bit} -> Output bit {output_bit} has incorrect condition. '
+                        f'Expected {expected_condition}, got {pair.condition}'
+                    )

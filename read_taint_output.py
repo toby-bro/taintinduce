@@ -182,17 +182,7 @@ def read_rule(rule_file: str) -> None:
         print(f'   │ CONDITION: {condition_desc}')
 
         # Display dataflow statistics
-        dataflow = pair.output_bits
-        if isinstance(dataflow, dict):
-            num_input_bits = len(dataflow)
-            total_propagations = sum(len(outputs) for outputs in dataflow.values())
-            print('   │')
-            print(f'   │ DATAFLOW: {num_input_bits} input bits → {total_propagations} total propagations')
-
-            # Show the actual taint propagations
-            _print_dataflow_propagations(dataflow)
-        else:
-            print(f'   │ DATAFLOW: {dataflow}')
+        print(f'   │ DATAFLOW: [{pair.input_bit}] → {pair.output_bits}')
 
         print('   └─────────────────────────────────────────────────────────\n')
 

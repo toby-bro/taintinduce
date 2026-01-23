@@ -10,7 +10,6 @@ from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
 from taintinduce.state.state import Observation
 from taintinduce.types import (
     BitPosition,
-    Dataflow,
     ObservationDependency,
 )
 
@@ -38,17 +37,20 @@ separate different taint propagation behaviors based on input state.
 logger = logging.getLogger(__name__)
 
 
-def _log_unconditional_warnings(condition: TaintCondition | None, dataflow: Dataflow) -> None:
+def _log_unconditional_warnings(
+    condition: TaintCondition | None,
+    input_bit: BitPosition,
+    output_bits: frozenset[BitPosition],
+) -> None:
     """Log warnings for unconditional 1-to-many flows."""
     is_empty = condition is None or (condition.condition_ops is not None and len(condition.condition_ops) == 0)
     if not is_empty:
         return
 
-    for input_bit, output_bits in dataflow.items():
-        if len(output_bits) > 1:
-            logger.warning(
-                f'No condition for input bit {input_bit} -> {len(output_bits)} output bits (full dataflow)',
-            )
+    if len(output_bits) > 1:
+        logger.warning(
+            f'No condition for input bit {input_bit} -> {len(output_bits)} output bits (full dataflow)',
+        )
 
 
 def _build_dataflows_from_unitary_conditions(
@@ -71,21 +73,16 @@ def _build_dataflows_from_unitary_conditions(
     # Process each input bit's conditions
     for input_bit, pairs in per_bit_conditions.items():
         for pair in pairs:
-            # Convert frozenset output_bits to Dataflow for this input bit
-            if isinstance(pair.output_bits, frozenset):
-                dataflow = Dataflow()
-                dataflow[input_bit] = pair.output_bits
-
-                # Log warnings for unconditional 1-to-many flows
-                _log_unconditional_warnings(pair.condition, dataflow)
-
-                result.append(
-                    ConditionDataflowPair(condition=pair.condition, output_bits=dataflow),
+            # Log warnings for unconditional 1-to-many flows
+            _log_unconditional_warnings(pair.condition, input_bit, pair.output_bits)
+            if pair.input_bit != input_bit:
+                raise Exception(
+                    f'Input bit mismatch: expected {input_bit}, got {pair.input_bit} in ConditionDataflowPair',
                 )
-            elif isinstance(pair.output_bits, dict):
-                # Already a Dataflow
-                _log_unconditional_warnings(pair.condition, pair.output_bits)
-                result.append(pair)
+
+            result.append(
+                ConditionDataflowPair(condition=pair.condition, input_bit=input_bit, output_bits=pair.output_bits),
+            )
 
     return result
 

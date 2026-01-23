@@ -226,57 +226,46 @@ def get_rule_data():
     pairs_data = []
     for idx, pair in enumerate(current_rule.pairs):
         # Get ALL flows (no truncation)
-        sample_flows = []
-        dataflow_list = []
+        sample_flows: list[dict[str, str]] = []
+        dataflow_list: list[dict[str, object]] = []
 
-        if isinstance(pair.output_bits, dict):
-            for input_bit, output_bits in pair.output_bits.items():
-                # Convert input bit position to register name
-                in_info = bitpos_to_reg_bit(input_bit, current_rule.format.registers)
-                input_label = (
-                    f"{in_info['name']}[{in_info['bit']}]" if in_info['type'] == 'reg' else f'bit[{input_bit}]'
-                )
+        # Convert input bit position to register name
+        in_info = bitpos_to_reg_bit(pair.input_bit, current_rule.format.registers)
+        input_label = f"{in_info['name']}[{in_info['bit']}]" if in_info['type'] == 'reg' else f'bit[{pair.input_bit}]'
 
-                # Convert output bit positions to register names
-                output_labels = []
-                for out_bit in sorted(output_bits):
-                    out_info = bitpos_to_reg_bit(out_bit, current_rule.format.registers)
-                    out_label = (
-                        f"{out_info['name']}[{out_info['bit']}]" if out_info['type'] == 'reg' else f'bit[{out_bit}]'
-                    )
-                    output_labels.append(out_label)
+        # Convert output bit positions to register names
+        output_labels = []
+        for out_bit in sorted(pair.output_bits):
+            out_info = bitpos_to_reg_bit(out_bit, current_rule.format.registers)
+            out_label = f"{out_info['name']}[{out_info['bit']}]" if out_info['type'] == 'reg' else f'bit[{out_bit}]'
+            output_labels.append(out_label)
 
-                outputs_str = ', '.join(output_labels)
-                sample_flows.append(
-                    {
-                        'input': input_label,
-                        'outputs': outputs_str,
-                    },
-                )
+        outputs_str = ', '.join(output_labels)
+        sample_flows.append(
+            {
+                'input': input_label,
+                'outputs': outputs_str,
+            },
+        )
 
-            # Also prepare structured dataflow for graph
-            # BitPosition is just an integer offset - need to map to register+bit
-            for input_bit_pos, output_bits in pair.output_bits.items():
-                for out_bit_pos in output_bits:
-                    # Convert integer BitPosition to (register, bit) using format
-                    out_info = bitpos_to_reg_bit(out_bit_pos, current_rule.format.registers)
-                    in_info = bitpos_to_reg_bit(input_bit_pos, current_rule.format.registers)
+        # Also prepare structured dataflow for graph
+        # BitPosition is just an integer offset - need to map to register+bit
+        for out_bit_pos in pair.output_bits:
+            # Convert integer BitPosition to (register, bit) using format
+            out_info = bitpos_to_reg_bit(out_bit_pos, current_rule.format.registers)
+            in_info = bitpos_to_reg_bit(pair.input_bit, current_rule.format.registers)
 
-                    dataflow_list.append(
-                        {
-                            'output_bit': out_info,
-                            'input_bits': [in_info],
-                            'condition': format_condition_human_readable(pair.condition),
-                            'is_unconditional': pair.condition is None,
-                            'pair_index': idx,
-                        },
-                    )
+            dataflow_list.append(
+                {
+                    'output_bit': out_info,
+                    'input_bits': [in_info],
+                    'condition': format_condition_human_readable(pair.condition),
+                    'is_unconditional': pair.condition is None,
+                    'pair_index': idx,
+                },
+            )
 
-            num_dataflows = len(pair.output_bits)
-            total_propagations = sum(len(outputs) for outputs in pair.output_bits.values())
-        else:
-            num_dataflows = 0
-            total_propagations = 0
+        num_dataflows = len(pair.output_bits)
 
         pairs_data.append(
             {
@@ -285,7 +274,6 @@ def get_rule_data():
                 'condition_readable': format_condition_human_readable(pair.condition),
                 'is_unconditional': pair.condition is None,
                 'num_dataflows': num_dataflows,
-                'total_propagations': total_propagations,
                 'sample_flows': sample_flows,
                 'dataflow': dataflow_list,
             },

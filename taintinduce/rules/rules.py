@@ -5,7 +5,7 @@ from typing import Optional
 from taintinduce.isa.register import Register
 from taintinduce.memory import MemorySlot
 from taintinduce.serialization import SerializableMixin
-from taintinduce.types import BitPosition, Dataflow
+from taintinduce.types import BitPosition
 
 from .conditions import LogicType, TaintCondition
 
@@ -19,26 +19,32 @@ class ConditionDataflowPair:
                      For full dataflows, a Dataflow mapping input bits to output bit sets.
     """
 
-    def __init__(self, condition: Optional[TaintCondition], output_bits: frozenset[BitPosition] | Dataflow):
+    def __init__(
+        self,
+        condition: Optional[TaintCondition],
+        input_bit: BitPosition,
+        output_bits: frozenset[BitPosition],
+    ):
         self.condition = condition
+        self.input_bit = input_bit
         self.output_bits = output_bits
 
     def __repr__(self) -> str:
-        return f'ConditionDataflowPair(condition={self.condition}, output_bits={self.output_bits})'
+        return f'ConditionDataflowPair(condition={self.condition}, [{self.input_bit}] -> [{self.output_bits}])'
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ConditionDataflowPair):
             return NotImplemented
-        return self.condition == other.condition and self.output_bits == other.output_bits
+        return (
+            self.condition == other.condition
+            and self.input_bit == other.input_bit
+            and self.output_bits == other.output_bits
+        )
 
     def __hash__(self) -> int:
         # Convert output_bits to a hashable form
-        if isinstance(self.output_bits, dict):
-            # For Dataflow, convert to frozen items
-            output_hash = hash(frozenset(self.output_bits.items()))
-        else:
-            output_hash = hash(self.output_bits)
-        return hash((self.condition, output_hash))
+        output_hash = hash(self.output_bits)
+        return hash((self.condition, self.input_bit, output_hash))
 
 
 class TaintRuleFormat:
@@ -99,17 +105,11 @@ class TaintRule(SerializableMixin):
         # Deep copy dataflows - output_bits should always be a Dataflow for TaintRule
         self.pairs = []
         for pair in pairs:
-            dataflow_copy = Dataflow()
-            if isinstance(pair.output_bits, dict):
-                dataflow = pair.output_bits
-                for src_pos in dataflow:
-                    dataflow_copy[src_pos] = dataflow[src_pos].copy()
-            else:
-                raise TypeError(f'TaintRule expects Dataflow in output_bits, got {type(pair.output_bits)}')
             self.pairs.append(
                 ConditionDataflowPair(
                     condition=pair.condition,
-                    output_bits=dataflow_copy,
+                    input_bit=pair.input_bit,
+                    output_bits=pair.output_bits,
                 ),
             )
 
@@ -130,10 +130,7 @@ class TaintRule(SerializableMixin):
                 return False
             my_df = self.pairs[i].output_bits
             other_df = value.pairs[i].output_bits
-            if isinstance(my_df, dict) and isinstance(other_df, dict):
-                if not all(my_df.get(k) == other_df.get(k) for k in set(my_df.keys()) | set(other_df.keys())):
-                    return False
-            elif my_df != other_df:
+            if my_df != other_df:
                 return False
         return True
 
@@ -141,11 +138,7 @@ class TaintRule(SerializableMixin):
         pairs_hash = tuple(
             (
                 pair.condition,
-                (
-                    frozenset((k, frozenset(v)) for k, v in pair.output_bits.items())
-                    if isinstance(pair.output_bits, dict)
-                    else pair.output_bits
-                ),
+                pair.output_bits,
             )
             for pair in self.pairs
         )
@@ -219,6 +212,7 @@ class GlobalRule(SerializableMixin):
             pairs_list.append(
                 ConditionDataflowPair(
                     condition=condition,
+                    input_bit=pair.input_bit,
                     output_bits=pair.output_bits,
                 ),
             )
@@ -234,9 +228,7 @@ class GlobalRule(SerializableMixin):
             mystr_list.append('{}'.format(pair.condition))
             mystr_list.append('')
             mystr_list.append('Dataflows: &lt;in bit&gt; &rarr; &lt;out bit&gt;')
-            dataflow = pair.output_bits
             # dataflow should be a Dataflow (dict-like) at this point
-            if isinstance(dataflow, dict):
-                for def_bit in dataflow:
-                    mystr_list.append('{} &rarr; {}'.format(def_bit, dataflow[def_bit]))
+            for output_bit in pair.output_bits:
+                mystr_list.append('{} &rarr; {}'.format(pair.input_bit, output_bit))
         return '<br/>'.join(mystr_list)

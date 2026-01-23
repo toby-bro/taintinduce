@@ -2,13 +2,11 @@
 
 from taintinduce.inference_engine.validation import (
     check_condition_satisfied,
-    check_dataflow_matches,
     validate_condition,
 )
 from taintinduce.rules.conditions import LogicType, TaintCondition
-from taintinduce.rules.rules import ConditionDataflowPair
 from taintinduce.state.state import State
-from taintinduce.types import BitPosition, Dataflow, StateValue
+from taintinduce.types import StateValue
 
 
 def test_check_condition_satisfied_unconditional():
@@ -38,33 +36,6 @@ def test_check_condition_satisfied_not_matching():
     condition = TaintCondition(LogicType.DNF, frozenset([(0x1, 0x1)]))
     state = State(num_bits=64, state_value=StateValue(0x0))
     assert not check_condition_satisfied(condition, state)
-
-
-def test_check_dataflow_matches_dict():
-    """Test dataflow matching with dictionary output_bits."""
-    dataflow = Dataflow({BitPosition(32): frozenset([BitPosition(64)])})
-    pair = ConditionDataflowPair(condition=None, output_bits=dataflow)
-
-    # Matching case
-    assert check_dataflow_matches(pair, BitPosition(32), frozenset([BitPosition(64)]))
-
-    # Non-matching output bits
-    assert not check_dataflow_matches(pair, BitPosition(32), frozenset([BitPosition(65)]))
-
-    # Non-matching input bit
-    assert not check_dataflow_matches(pair, BitPosition(33), frozenset([BitPosition(64)]))
-
-
-def test_check_dataflow_matches_frozenset():
-    """Test dataflow matching with frozenset output_bits."""
-    output_bits = frozenset([BitPosition(64)])
-    pair = ConditionDataflowPair(condition=None, output_bits=output_bits)
-
-    # Matching case
-    assert check_dataflow_matches(pair, BitPosition(32), frozenset([BitPosition(64)]))
-
-    # Non-matching case
-    assert not check_dataflow_matches(pair, BitPosition(32), frozenset([BitPosition(65)]))
 
 
 def test_validate_condition_empty():
