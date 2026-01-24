@@ -78,7 +78,7 @@ def gen_obs(
 def taintinduce_infer(archstring: str, bytestring: str) -> tuple[InsnInfo, list[Observation], TaintRule]:
     insninfo = gen_insninfo(archstring, bytestring)
     obs_list, _obs_engine = gen_obs(archstring, bytestring, insninfo.state_format)
-    rule = infer(obs_list)
+    rule = infer(obs_list, output_induction=False)
     taintrule = rule.convert2squirrel(archstring, bytestring)
     return insninfo, obs_list, taintrule
 
@@ -124,6 +124,12 @@ def main() -> None:
         default=0,
         help='Increase verbosity: -v for warnings, -vv for info, -vvv for debug',
     )
+    parser.add_argument(
+        '--output-induction',
+        type=bool,
+        default=False,
+        help='Remove inputs when included in other output flows',
+    )
 
     args = parser.parse_args()
     _configure_logging(args.verbose)
@@ -161,7 +167,7 @@ def main() -> None:
         with open(obs_path, 'w') as f:
             json.dump(obs_list, f, cls=TaintInduceEncoder)
 
-    rule = infer(obs_list)
+    rule = infer(obs_list, output_induction=args.output_induction)
     taintrule = rule.convert2squirrel(args.arch, args.bytestring)
     if args.output_dir:
         with open(rule_path, 'w') as myfile:

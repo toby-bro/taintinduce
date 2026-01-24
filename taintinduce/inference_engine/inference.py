@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 def infer(
     observations: list[Observation],
+    output_induction: bool = False,
 ) -> GlobalRule:
     """Infers the dataflow of the instruction using the obesrvations.
 
@@ -63,6 +64,7 @@ def infer(
     observation_dependencies = observation_processor.extract_observation_dependencies(observations)
     per_bit_conditions = infer_flow_conditions(
         observation_dependencies,
+        output_induction,
     )
 
     if len(per_bit_conditions) == 0:
@@ -89,6 +91,7 @@ def infer(
 
 def infer_flow_conditions(
     observation_dependencies: list[ObservationDependency],
+    output_induction: bool,
 ) -> dict[BitPosition, list[ConditionDataflowPair]]:
     """Infer conditions for dataflows for each input bit independently.
 
@@ -131,10 +134,13 @@ def infer_flow_conditions(
             wave_number += 1
 
             # Identify output bits ready for this wave (all subset dependencies satisfied)
-            ready_output_bits = _identify_ready_output_bits_by_subset_dependency(
-                remaining_output_bits,
-                output_to_inputs,
-            )
+            if output_induction:
+                ready_output_bits = _identify_ready_output_bits_by_subset_dependency(
+                    remaining_output_bits,
+                    output_to_inputs,
+                )
+            else:
+                ready_output_bits = remaining_output_bits
 
             if not ready_output_bits:
                 logger.error(f'Deadlock: {len(remaining_output_bits)} output bits remain but none are ready')
@@ -238,10 +244,17 @@ def _process_output_wave_parallel(
         return output_bit, results_for_output
 
     wave_results: dict[BitPosition, list[ConditionDataflowPair]] = {}
-    with ThreadPoolExecutor() as executor:
-        futures = {executor.submit(process_single_output, ob): ob for ob in ready_output_bits}
-        for future in as_completed(futures):
-            output_bit, results = future.result()
-            wave_results[output_bit] = results
+
+    in_debugger = False
+    if in_debugger or len(ready_output_bits) == 1:
+        for output_bit in ready_output_bits:
+            ob, results = process_single_output(output_bit)
+            wave_results[ob] = results
+    else:
+        with ThreadPoolExecutor() as executor:
+            futures = {executor.submit(process_single_output, ob): ob for ob in ready_output_bits}
+            for future in as_completed(futures):
+                output_bit, results = future.result()
+                wave_results[output_bit] = results
 
     return wave_results

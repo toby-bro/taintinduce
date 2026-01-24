@@ -62,6 +62,9 @@ class State(SerializableMixin):
         else:
             raise Exception('Invalid arguments to State constructor!')
 
+    def __repr__(self) -> str:
+        return f'State(num_bits={self.num_bits}, state_value={hex(self.state_value)})'
+
     def __str__(self) -> str:
         """Produces the corresponding bit string for the given state.
 

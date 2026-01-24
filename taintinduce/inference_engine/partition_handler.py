@@ -17,6 +17,116 @@ logger = logging.getLogger(__name__)
 INCLUSION_THRESHOLD = 2  # Minimum count to exclude input bits covered by output refs
 
 
+def _evaluate_dependencies(
+    output_bit: BitPosition,
+    state: State,
+    output_to_inputs: dict[BitPosition, frozenset[BitPosition]],
+    inputs_to_flows: dict[BitPosition, list[ConditionDataflowPair]],
+    taint_cache: dict[BitPosition, int],
+    visiting: set[BitPosition],
+) -> None:
+    """Recursively evaluate all output bit dependencies.
+
+    Args:
+        output_bit: The output bit whose dependencies to evaluate
+        state: The input state
+        output_to_inputs: Mapping from output bits to their input bits
+        inputs_to_flows: Mapping from input bits to their flows
+        taint_cache: Memoization cache
+        visiting: Set for cycle detection
+    """
+    influencing_inputs = output_to_inputs.get(output_bit, frozenset())
+    for input_bit in influencing_inputs:
+        if input_bit not in inputs_to_flows:
+            continue
+        for pair in inputs_to_flows[input_bit]:
+            if pair.output_bit != output_bit:
+                continue
+            if not (pair.condition and hasattr(pair.condition, 'output_bit_refs')):
+                continue
+            for ref in pair.condition.output_bit_refs:
+                # Recursively evaluate dependency
+                _evaluate_output_bit_recursive(
+                    ref.output_bit,
+                    state,
+                    output_to_inputs,
+                    inputs_to_flows,
+                    taint_cache,
+                    visiting,
+                )
+
+
+def _evaluate_output_bit_recursive(
+    output_bit: BitPosition,
+    state: State,
+    output_to_inputs: dict[BitPosition, frozenset[BitPosition]],
+    inputs_to_flows: dict[BitPosition, list[ConditionDataflowPair]],
+    taint_cache: dict[BitPosition, int],
+    visiting: set[BitPosition],
+) -> int:
+    """Recursively evaluate if an output bit is tainted, with memoization.
+
+    Uses depth-first search to evaluate dependencies before evaluating the current bit.
+    Detects circular dependencies via the visiting set.
+
+    Args:
+        output_bit: The output bit to evaluate
+        state: The input state
+        output_to_inputs: Mapping from output bits to their input bits
+        inputs_to_flows: Mapping from input bits to their flows
+        taint_cache: Memoization cache for already-evaluated bits
+        visiting: Set of bits currently being evaluated (for cycle detection)
+
+    Returns:
+        1 if tainted, 0 if not tainted
+
+    Raises:
+        RuntimeError: If circular dependency is detected
+    """
+    # Check cache first
+    if output_bit in taint_cache:
+        return taint_cache[output_bit]
+
+    # Detect circular dependency
+    if output_bit in visiting:
+        raise RuntimeError(f'Circular dependency detected involving output bit {output_bit}')
+
+    visiting.add(output_bit)
+
+    try:
+        # First, recursively evaluate any output bits that this bit's conditions depend on
+        _evaluate_dependencies(output_bit, state, output_to_inputs, inputs_to_flows, taint_cache, visiting)
+
+        # Now build current output state from cache
+        output_state_value = StateValue(0)
+        for cached_bit, taint_value in taint_cache.items():
+            if taint_value:
+                output_state_value = StateValue(output_state_value | (1 << cached_bit))
+
+        output_state = State(
+            num_bits=max(output_bit + 1, state.num_bits),
+            state_value=output_state_value,
+        )
+
+        # Evaluate this bit's taint state
+        influencing_inputs = output_to_inputs.get(output_bit, frozenset())
+        found_condition = is_output_tainted(
+            state,
+            output_state,
+            inputs_to_flows,
+            influencing_inputs,
+            output_bit,
+        )
+        taint_value = 1 if found_condition else 0
+
+        # Cache and return
+        taint_cache[output_bit] = taint_value
+        return taint_value
+
+    finally:
+        visiting.remove(output_bit)
+
+
 def evaluate_output_bit_taint_states(
     state: State,
     output_bit_refs: frozenset[OutputBitRef],
@@ -30,9 +140,14 @@ def evaluate_output_bit_taint_states(
     "taint by induction" where previous output taint states become inputs to
     later conditions.
 
+    Uses recursive DFS with memoization to efficiently evaluate only the needed
+    output bits and their dependencies. The cache is per-state, so different
+    input states get independent evaluations.
+
     Args:
         state: The current input state
         output_bit_refs: Output bits to evaluate
+        output_to_inputs: Mapping from output bits to their input bits
         all_conditions: List of ConditionDataflowPair objects
 
     Returns:
@@ -40,40 +155,69 @@ def evaluate_output_bit_taint_states(
     """
     if len(output_bit_refs) == 0:
         return {}
-    taint_states: dict[BitPosition, int] = {}
+
+    # Build mapping from input bits to their flows
     inputs_to_flows: dict[BitPosition, list[ConditionDataflowPair]] = {}
     for pair in all_conditions:
         if pair.input_bit not in inputs_to_flows.keys():
             inputs_to_flows[pair.input_bit] = []
         inputs_to_flows[pair.input_bit].append(pair)
 
+    # Use recursive DFS with memoization to evaluate each output bit
+    # IMPORTANT: Cache is per-state - create fresh cache for each call
+    taint_cache: dict[BitPosition, int] = {}
+    visiting: set[BitPosition] = set()
+
     for output_ref in output_bit_refs:
-        output_bit = output_ref.output_bit
+        _evaluate_output_bit_recursive(
+            output_ref.output_bit,
+            state,
+            output_to_inputs,
+            inputs_to_flows,
+            taint_cache,
+            visiting,
+        )
 
-        # Find which conditions influence this output bit
-        influencing_inputs = output_to_inputs[output_bit]
-        found_condition = is_output_tainted(state, inputs_to_flows, influencing_inputs)
-        taint_states[output_bit] = 1 if found_condition else 0
-
-    return taint_states
+    # Return only the bits we were asked to evaluate
+    return {ref.output_bit: taint_cache[ref.output_bit] for ref in output_bit_refs}
 
 
 def is_output_tainted(
     state: State,
+    output_state: State,
     inputs_to_flows: dict[BitPosition, list[ConditionDataflowPair]],
     influencing_inputs: frozenset[BitPosition],
+    target_output_bit: BitPosition,
 ) -> bool:
+    """Check if a target output bit is tainted given input and output states.
+
+    Args:
+        state: The input state
+        output_state: The accumulated output state (for evaluating output_bit_refs)
+        inputs_to_flows: Mapping from input bits to their condition-dataflow pairs
+        influencing_inputs: Input bits that influence the target output bit
+        target_output_bit: The output bit we're checking
+
+    Returns:
+        True if the target output bit should be tainted, False otherwise
+    """
     for input_bit in influencing_inputs:
+        if input_bit not in inputs_to_flows:
+            continue
+
         for pair in inputs_to_flows[input_bit]:
+            # Only consider flows that target our output bit
+            if pair.output_bit != target_output_bit:
+                continue
+
             condition = pair.condition
 
             if condition is None:
                 # Unconditional flow - always tainted
                 return True
 
-            # Evaluate condition against current state
-            # Count bits in state to create State object
-            is_tainted = condition.eval(state)
+            # Evaluate condition against current state and output state
+            is_tainted = condition.eval(state, output_state)
             if is_tainted:
                 return True
 
@@ -126,11 +270,6 @@ def augment_states_with_output_bit_taints(
         relevant_input_bits,
     )
 
-    if augmented_propagating & augmented_non_propagating:
-        raise RuntimeError(
-            'Augmented propagating and non-propagating states overlap; condition generation will fail.',
-        )
-
     return augmented_propagating, augmented_non_propagating, output_bit_list
 
 
@@ -145,20 +284,39 @@ def _augment_states(
     augmented_statevalues: set[StateValue] = set()
     for state in states:
         # Evaluate output bit taint states
-        taint_states = evaluate_output_bit_taint_states(
-            state,
+        augmented_state = augment_state_with_taint(
             output_bit_refs,
             output_to_inputs,
             all_conditions,
+            output_bit_list,
+            relevant_input_bits,
+            state,
         )
-        # Extract simplified states and append taint values to state (higher bits)
-        augmented_state = unitary_flow_processor.extract_relevant_bits_from_state(state, relevant_input_bits)
-
-        for i, output_bit_pos in enumerate(output_bit_list):
-            taint_value = taint_states[output_bit_pos]
-            augmented_state = StateValue(augmented_state | (taint_value << (len(relevant_input_bits) + i)))
         augmented_statevalues.add(augmented_state)
     return augmented_statevalues
+
+
+def augment_state_with_taint(
+    output_bit_refs: frozenset[OutputBitRef],
+    output_to_inputs: dict[BitPosition, frozenset[BitPosition]],
+    all_conditions: list[ConditionDataflowPair],
+    output_bit_list: list[BitPosition],
+    relevant_input_bits: frozenset[BitPosition],
+    state: State,
+) -> StateValue:
+    taint_states = evaluate_output_bit_taint_states(
+        state,
+        output_bit_refs,
+        output_to_inputs,
+        all_conditions,
+    )
+    # Extract simplified states and append taint values to state (higher bits)
+    augmented_state = unitary_flow_processor.extract_relevant_bits_from_state(state, relevant_input_bits)
+
+    for i, output_bit_pos in enumerate(output_bit_list):
+        taint_value = taint_states[output_bit_pos]
+        augmented_state = StateValue(augmented_state | (taint_value << (len(relevant_input_bits) + i)))
+    return augmented_state
 
 
 def get_non_redundant_inputs_and_relevant_output_refs(
