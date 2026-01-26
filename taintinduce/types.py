@@ -59,10 +59,10 @@ class Dataflow(
 BehaviorPattern = NewType('BehaviorPattern', set[BitPosition])
 
 
-class MutatedInputStates(
+class MutatedStates(
     dict[
         BitPosition,
-        'State',
+        tuple['State', 'State'],
     ],
 ):
     """Maps input bit position -> mutated input State."""
@@ -73,24 +73,28 @@ class MutatedInputStates(
 
     def get_input_state(self, bitpos: BitPosition) -> 'State':
         """Get the mutated input State for a given bit position."""
-        return self[bitpos]
+        return self[bitpos][0]
+
+    def get_output_state(self, bitpos: BitPosition) -> 'State':
+        """Get the mutated output State for a given bit position."""
+        return self[bitpos][1]
 
 
 class ObservationDependency:
     """Holds dataflow and mutated inputs for a single observation."""
 
     dataflow: Dataflow
-    mutated_inputs: MutatedInputStates
+    mutated_states: MutatedStates
     original_output: 'State'
 
     def __init__(
         self,
         dataflow: Dataflow,
-        mutated_inputs: MutatedInputStates,
+        mutated_states: MutatedStates,
         original_output: 'State',
     ) -> None:
         self.dataflow = dataflow
-        self.mutated_inputs = mutated_inputs
+        self.mutated_states = mutated_states
         self.original_output = original_output
 
 

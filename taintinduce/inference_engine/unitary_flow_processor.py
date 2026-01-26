@@ -51,7 +51,7 @@ def collect_states_for_unitary_flow(
     observation_dependencies: list[ObservationDependency],
     input_bit: BitPosition,
     output_bit: BitPosition,
-) -> tuple[set[State], set[State]]:
+) -> tuple[set[tuple[State, State]], set[tuple[State, State]]]:
     """Collect states that trigger/don't trigger propagation for a unitary flow.
 
     This function analyzes observations to determine which input states cause propagation:
@@ -66,11 +66,11 @@ def collect_states_for_unitary_flow(
 
     Returns:
         Tuple of (propagating_states, non_propagating_states)
-        - propagating_states: States where mutating input_bit affects output_bit
-        - non_propagating_states: States where mutating input_bit doesn't affect output_bit
-    """
-    propagating_states: set[State] = set()
-    non_propagating_states: set[State] = set()
+        - propagating_states: Set of (input_state, output_state) tuples where mutating input_bit affects output_bit
+        - non_propagating_states: Set of (input_state, output_state) tuples where mutating input_bit doesn't affect output_bit
+    """  # noqa: E501
+    propagating_states: set[tuple[State, State]] = set()
+    non_propagating_states: set[tuple[State, State]] = set()
 
     for obs_dep in observation_dependencies:
         # Check if this observation has data for the input bit
@@ -78,10 +78,11 @@ def collect_states_for_unitary_flow(
             continue
 
         # Get the mutated input state for this input bit
-        if input_bit not in obs_dep.mutated_inputs.mutated_bits():
+        if input_bit not in obs_dep.mutated_states.mutated_bits():
             continue
 
-        mutated_input_state = obs_dep.mutated_inputs[input_bit]
+        mutated_input_state = obs_dep.mutated_states.get_input_state(input_bit)
+        mutated_output_state = obs_dep.mutated_states.get_output_state(input_bit)
 
         # Check if this input bit affects the output bit in this observation
         # obs_dep.dataflow[input_bit] contains the set of output bits that CHANGED
@@ -90,10 +91,10 @@ def collect_states_for_unitary_flow(
 
         if output_bit in affected_outputs:
             # Flipping input_bit caused output_bit to change → propagating
-            propagating_states.add(mutated_input_state)
+            propagating_states.add((mutated_input_state, mutated_output_state))
         else:
             # Flipping input_bit did NOT cause output_bit to change → non-propagating
-            non_propagating_states.add(mutated_input_state)
+            non_propagating_states.add((mutated_input_state, mutated_output_state))
 
     return propagating_states, non_propagating_states
 
@@ -123,6 +124,43 @@ def extract_relevant_bits_from_state(
     return StateValue(result)
 
 
+def _transpose_input_bits(
+    mask: int,
+    value: int,
+    sorted_input_positions: list[BitPosition],
+) -> tuple[int, int]:
+    """Transpose input bits from simplified to original positions."""
+    new_mask = 0
+    new_value = 0
+    for simplified_pos in range(len(sorted_input_positions)):
+        if not (mask & (1 << simplified_pos)):
+            continue
+        original_pos = sorted_input_positions[simplified_pos]
+        new_mask |= 1 << original_pos
+        if value & (1 << simplified_pos):
+            new_value |= 1 << original_pos
+    return new_mask, new_value
+
+
+def _preserve_output_bits(
+    mask: int,
+    value: int,
+    start_pos: int,
+    num_bits: int,
+) -> tuple[int, int]:
+    """Preserve output bits in their simplified positions."""
+    new_mask = 0
+    new_value = 0
+    for i in range(num_bits):
+        simplified_pos = start_pos + i
+        if not (mask & (1 << simplified_pos)):
+            continue
+        new_mask |= 1 << simplified_pos
+        if value & (1 << simplified_pos):
+            new_value |= 1 << simplified_pos
+    return new_mask, new_value
+
+
 def transpose_condition_bits(
     condition_ops: frozenset[tuple[int, int]],
     input_bit_positions: frozenset[BitPosition],
@@ -131,51 +169,43 @@ def transpose_condition_bits(
     """Transpose condition from simplified bit positions back to original positions.
 
     This function maps conditions from a simplified coordinate space back to the
-    original bit positions. It handles both input bits (which stay as regular
-    bit positions) and output bits (which remain as-is since they're used for
-    taint-by-induction evaluation).
+    original bit positions. It handles:
+    - Input bits: mapped back to original positions
+    - Output taint bits: preserved in simplified positions for taint-by-induction
+    - Output value bits: preserved in simplified positions for value-based conditions
+
+    The simplified bit space is organized as:
+    [input_bits | output_taint_bits | output_value_bits]
 
     Args:
         condition_ops: Condition in simplified coordinates as (mask, value) tuples
         input_bit_positions: The original input bit positions
-        output_bit_positions: The output bit positions (if any) for taint-by-induction.
-                             These are in the higher bit range of the simplified space.
+        sorted_output_positions: The output bit positions for taint-by-induction and values.
+                                These are in the higher bit range of the simplified space.
 
     Returns:
         Condition transposed to original bit positions as (mask, value) tuples.
-        Output bit positions are preserved in their higher bit range.
+        Output taint and value bit positions are preserved in their higher bit range.
     """
-    # Sort input positions to get the mapping from simplified -> original
     sorted_input_positions = sorted(input_bit_positions)
     num_input_bits = len(sorted_input_positions)
-
-    # Build output position mapping if provided
+    num_output_bits = len(sorted_output_positions)
 
     transposed_clauses: set[tuple[int, int]] = set()
 
     for mask, value in condition_ops:
-        # Build mask and value in original coordinates
-        new_mask = 0
-        new_value = 0
-
         # Map input bits [0..num_input_bits-1] back to original positions
-        for simplified_pos in range(num_input_bits):
-            if mask & (1 << simplified_pos):
-                original_pos = sorted_input_positions[simplified_pos]
-                new_mask |= 1 << original_pos
-                if value & (1 << simplified_pos):
-                    new_value |= 1 << original_pos
+        new_mask, new_value = _transpose_input_bits(mask, value, sorted_input_positions)
 
-        # Map output bits [num_input_bits..num_input_bits+num_output_bits-1]
-        # Keep them in the same relative positions (they're used for evaluation)
-        for i, _output_pos in enumerate(sorted_output_positions):
-            simplified_pos = num_input_bits + i
-            if mask & (1 << simplified_pos):
-                # Output bits stay in their simplified positions since they're
-                # evaluated differently (via OutputBitRef in TaintCondition)
-                new_mask |= 1 << simplified_pos
-                if value & (1 << simplified_pos):
-                    new_value |= 1 << simplified_pos
+        # Preserve output taint bits [num_input_bits..num_input_bits+num_output_bits-1]
+        taint_mask, taint_value = _preserve_output_bits(mask, value, num_input_bits, num_output_bits)
+        new_mask |= taint_mask
+        new_value |= taint_value
+
+        # Preserve output value bits [num_input_bits+num_output_bits..num_input_bits+2*num_output_bits-1]
+        value_mask, value_value = _preserve_output_bits(mask, value, num_input_bits + num_output_bits, num_output_bits)
+        new_mask |= value_mask
+        new_value |= value_value
 
         transposed_clauses.add((new_mask, new_value))
 

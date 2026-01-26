@@ -62,6 +62,7 @@ def infer(
     assert all(obs.state_format == state_format for obs in observations)
 
     observation_dependencies = observation_processor.extract_observation_dependencies(observations)
+
     per_bit_conditions = infer_flow_conditions(
         observation_dependencies,
         output_induction,

@@ -7,7 +7,7 @@ from taintinduce.state.state import Observation, State
 from taintinduce.types import (
     BitPosition,
     Dataflow,
-    MutatedInputStates,
+    MutatedStates,
     ObservationDependency,
 )
 
@@ -22,7 +22,7 @@ def extract_observation_dependencies(
     for observation in observations:
         # single_obs_dep contains the dependency for a single observation
         obs_dep = Dataflow()
-        obs_mutate_in = MutatedInputStates()
+        obs_mutated_states = MutatedStates()
         seed_in, seed_out = observation.seed_io
         for mutate_in, mutate_out in observation.mutated_ios:
             if len(seed_in.diff(mutate_in)) != 1:
@@ -32,9 +32,9 @@ def extract_observation_dependencies(
                 raise Exception(f'Duplicate bit flip position detected: {bitflip_pos}')
             bitchanges_pos = seed_out.diff(mutate_out)
             obs_dep[bitflip_pos] = bitchanges_pos
-            obs_mutate_in[bitflip_pos] = mutate_in
+            obs_mutated_states[bitflip_pos] = (mutate_in, mutate_out)
         obs_deps.append(
-            ObservationDependency(dataflow=obs_dep, mutated_inputs=obs_mutate_in, original_output=seed_in),
+            ObservationDependency(dataflow=obs_dep, mutated_states=obs_mutated_states, original_output=seed_in),
         )
     return obs_deps
 
@@ -50,10 +50,10 @@ def link_affected_outputs_to_their_input_states(
     for observation in observation_dependencies:
         if (
             mutated_input_bit in observation.dataflow.inputs()
-            and mutated_input_bit in observation.mutated_inputs.mutated_bits()
+            and mutated_input_bit in observation.mutated_states.mutated_bits()
         ):
             partitions[observation.dataflow.get_modified_outputs(mutated_input_bit)].add(
-                observation.mutated_inputs.get_input_state(mutated_input_bit),
+                observation.mutated_states.get_input_state(mutated_input_bit),
             )
 
     return partitions

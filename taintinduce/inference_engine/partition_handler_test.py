@@ -492,8 +492,10 @@ class TestAugmentStatesWithOutputBitTaints:
         """Should augment states with evaluated output bit taint values."""
         state1 = State(num_bits=8, state_value=StateValue(0b00000001))
         state2 = State(num_bits=8, state_value=StateValue(0b00000000))
-        propagating_states = {state1}
-        non_propagating_states = {state2}
+        output_state1 = State(num_bits=16, state_value=StateValue(0b00000000))
+        output_state2 = State(num_bits=16, state_value=StateValue(0b00000000))
+        propagating_states = {(state1, output_state1)}
+        non_propagating_states = {(state2, output_state2)}
         relevant_input_bits = frozenset([BitPosition(0)])
         output_bit_refs = frozenset([OutputBitRef(BitPosition(10))])
         output_to_inputs = {
@@ -522,8 +524,9 @@ class TestAugmentStatesWithOutputBitTaints:
     def test_handles_multiple_output_refs(self) -> None:
         """Should handle multiple output bit refs."""
         state = State(num_bits=8, state_value=StateValue(0b00000001))
-        propagating_states = {state}
-        non_propagating_states: set[State] = set()
+        output_state = State(num_bits=16, state_value=StateValue(0b00000000))
+        propagating_states = {(state, output_state)}
+        non_propagating_states: set[tuple[State, State]] = set()
         relevant_input_bits = frozenset([BitPosition(0)])
         output_bit_refs = frozenset([OutputBitRef(BitPosition(10)), OutputBitRef(BitPosition(11))])
         output_to_inputs = {

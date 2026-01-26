@@ -21,7 +21,7 @@ from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EFLAGS
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
 from taintinduce.state.state import Observation, State
-from taintinduce.types import BitPosition, Dataflow, MutatedInputStates, ObservationDependency, StateValue
+from taintinduce.types import BitPosition, Dataflow, MutatedStates, ObservationDependency, StateValue
 
 # ============================================================================
 # Fixtures
@@ -231,14 +231,14 @@ class TestLinkAffectedOutputsToTheirInputStates:
         dataflow2 = Dataflow()
         dataflow2[BitPosition(32)] = frozenset([BitPosition(32), BitPosition(34)])
 
-        mutated_inputs1 = MutatedInputStates()
-        mutated_inputs1[BitPosition(32)] = state1
+        mutated_inputs1 = MutatedStates()
+        mutated_inputs1[BitPosition(32)] = (state1, state1)
 
-        mutated_inputs2 = MutatedInputStates()
-        mutated_inputs2[BitPosition(32)] = state2
+        mutated_inputs2 = MutatedStates()
+        mutated_inputs2[BitPosition(32)] = (state2, state2)
 
-        obs_dep1 = ObservationDependency(dataflow=dataflow1, mutated_inputs=mutated_inputs1, original_output=state1)
-        obs_dep2 = ObservationDependency(dataflow=dataflow2, mutated_inputs=mutated_inputs2, original_output=state2)
+        obs_dep1 = ObservationDependency(dataflow=dataflow1, mutated_states=mutated_inputs1, original_output=state1)
+        obs_dep2 = ObservationDependency(dataflow=dataflow2, mutated_states=mutated_inputs2, original_output=state2)
 
         result = observation_processor.link_affected_outputs_to_their_input_states(
             [obs_dep1, obs_dep2],
@@ -259,10 +259,10 @@ class TestLinkAffectedOutputsToTheirInputStates:
         dataflow1[BitPosition(32)] = frozenset([BitPosition(32)])
         dataflow1[BitPosition(33)] = frozenset([BitPosition(33)])
 
-        mutated_inputs1 = MutatedInputStates()
-        mutated_inputs1[BitPosition(32)] = state1
+        mutated_inputs1 = MutatedStates()
+        mutated_inputs1[BitPosition(32)] = (state1, state1)
 
-        obs_dep1 = ObservationDependency(dataflow=dataflow1, mutated_inputs=mutated_inputs1, original_output=state1)
+        obs_dep1 = ObservationDependency(dataflow=dataflow1, mutated_states=mutated_inputs1, original_output=state1)
 
         # Only get results for bit 32
         result = observation_processor.link_affected_outputs_to_their_input_states([obs_dep1], BitPosition(32))

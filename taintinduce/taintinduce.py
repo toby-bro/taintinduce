@@ -126,7 +126,7 @@ def main() -> None:
     )
     parser.add_argument(
         '--output-induction',
-        type=bool,
+        action='store_true',
         default=False,
         help='Remove inputs when included in other output flows',
     )

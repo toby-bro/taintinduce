@@ -224,23 +224,100 @@ def is_output_tainted(
     return False
 
 
+def _compute_augmented_state(
+    input_state: State,
+    output_state: State,
+    output_bit_refs: frozenset[OutputBitRef],
+    output_to_inputs: dict[BitPosition, frozenset[BitPosition]],
+    all_conditions: list[ConditionDataflowPair],
+    output_bit_list: list[BitPosition],
+    relevant_input_bits: frozenset[BitPosition],
+) -> StateValue:
+    """Compute augmented state for a single (input_state, output_state) pair."""
+    # Evaluate output bit taint states
+    augmented_state = augment_state_with_taint(
+        output_bit_refs,
+        output_to_inputs,
+        all_conditions,
+        output_bit_list,
+        relevant_input_bits,
+        input_state,
+    )
+
+    # Extract and concatenate output values directly from output_state
+    output_value = StateValue(0)
+    for i, output_bit_pos in enumerate(output_bit_list):
+        bit_value = (output_state.state_value >> output_bit_pos) & 1
+        output_value = StateValue(output_value | (bit_value << i))
+
+    # Concatenate output values after taint bits
+    num_taint_bits = len(output_bit_list)
+    return StateValue(augmented_state | (output_value << (len(relevant_input_bits) + num_taint_bits)))
+
+
+def _build_state_mapping(
+    states: set[tuple[State, State]],
+    output_bit_refs: frozenset[OutputBitRef],
+    output_to_inputs: dict[BitPosition, frozenset[BitPosition]],
+    all_conditions: list[ConditionDataflowPair],
+    output_bit_list: list[BitPosition],
+    relevant_input_bits: frozenset[BitPosition],
+) -> dict[StateValue, list[tuple[State, State]]]:
+    """Build reverse mapping from augmented states to original (input, output) state pairs."""
+    mapping: dict[StateValue, list[tuple[State, State]]] = {}
+    for input_state, output_state in states:
+        augmented = _compute_augmented_state(
+            input_state,
+            output_state,
+            output_bit_refs,
+            output_to_inputs,
+            all_conditions,
+            output_bit_list,
+            relevant_input_bits,
+        )
+        if augmented not in mapping:
+            mapping[augmented] = []
+        mapping[augmented].append((input_state, output_state))
+    return mapping
+
+
+def _log_duplicate_state(
+    dup_state: StateValue,
+    prop_mapping: dict[StateValue, list[tuple[State, State]]],
+    non_prop_mapping: dict[StateValue, list[tuple[State, State]]],
+) -> None:
+    """Log details about a duplicate state appearing in both propagating and non-propagating sets."""
+    logger.error(f'  Duplicate augmented state: {hex(dup_state)}')
+    logger.error(f'    Propagating sources ({len(prop_mapping[dup_state])}):')
+    for input_st, output_st in prop_mapping[dup_state][:3]:  # Show first 3
+        logger.error(f'      input={hex(input_st.state_value)}, output={hex(output_st.state_value)}')
+    if len(prop_mapping[dup_state]) > 3:
+        logger.error(f'      ... and {len(prop_mapping[dup_state]) - 3} more')
+
+    logger.error(f'    Non-propagating sources ({len(non_prop_mapping[dup_state])}):')
+    for input_st, output_st in non_prop_mapping[dup_state][:3]:  # Show first 3
+        logger.error(f'      input={hex(input_st.state_value)}, output={hex(output_st.state_value)}')
+    if len(non_prop_mapping[dup_state]) > 3:
+        logger.error(f'      ... and {len(non_prop_mapping[dup_state]) - 3} more')
+
+
 def augment_states_with_output_bit_taints(
-    propagating_states: set[State],
-    non_propagating_states: set[State],
+    propagating_states: set[tuple[State, State]],
+    non_propagating_states: set[tuple[State, State]],
     relevant_input_bits: frozenset[BitPosition],
     output_bit_refs: frozenset[OutputBitRef],
     output_to_inputs: dict[BitPosition, frozenset[BitPosition]],
     all_conditions: list[ConditionDataflowPair],
 ) -> tuple[set[StateValue], set[StateValue], list[BitPosition]]:
-    """Augment simplified states with output bit taint values.
+    """Augment simplified states with output bit taint values and actual output values.
 
     For taint by induction, we evaluate the taint state of referenced output bits
     and append them as additional bits to the state representation before
-    condition generation.
+    condition generation. We also append the actual output bit values.
 
     Args:
-        propagating_states: States where input bit affects output bit
-        non_propagating_states: States where input bit doesn't affect output bit
+        propagating_states: Set of (input_state, output_state) tuples where input bit affects output bit
+        non_propagating_states: Set of (input_state, output_state) tuples where input bit doesn't affect output bit
         relevant_input_bits: Input bit positions for the current flow
         output_bit_refs: Output bits to include in condition
         all_conditions: List of ConditionDataflowPair objects
@@ -270,11 +347,44 @@ def augment_states_with_output_bit_taints(
         relevant_input_bits,
     )
 
+    intersection = augmented_propagating & augmented_non_propagating
+    if not intersection:
+        return augmented_propagating, augmented_non_propagating, output_bit_list
+
+    logger.error(f'Intersection between propagating and non-propagating states: {len(intersection)} duplicate(s)')
+
+    # Build reverse mappings to find which original states map to duplicate augmented states
+    prop_mapping = _build_state_mapping(
+        propagating_states,
+        output_bit_refs,
+        output_to_inputs,
+        all_conditions,
+        output_bit_list,
+        relevant_input_bits,
+    )
+
+    non_prop_mapping = _build_state_mapping(
+        non_propagating_states,
+        output_bit_refs,
+        output_to_inputs,
+        all_conditions,
+        output_bit_list,
+        relevant_input_bits,
+    )
+
+    # Log details about duplicate states
+    for dup_state in sorted(intersection):
+        logger.error('Relevant input bits: ' + ', '.join(str(bit) for bit in sorted(relevant_input_bits)))
+        logger.error(
+            'Output bit refs: ' + ', '.join(str(ref) for ref in sorted([ref.output_bit for ref in output_bit_refs])),
+        )
+        _log_duplicate_state(dup_state, prop_mapping, non_prop_mapping)
+
     return augmented_propagating, augmented_non_propagating, output_bit_list
 
 
 def _augment_states(
-    states: set[State],
+    states: set[tuple[State, State]],
     output_bit_refs: frozenset[OutputBitRef],
     output_to_inputs: dict[BitPosition, frozenset[BitPosition]],
     all_conditions: list[ConditionDataflowPair],
@@ -282,7 +392,7 @@ def _augment_states(
     relevant_input_bits: frozenset[BitPosition],
 ) -> set[StateValue]:
     augmented_statevalues: set[StateValue] = set()
-    for state in states:
+    for input_state, output_state in states:
         # Evaluate output bit taint states
         augmented_state = augment_state_with_taint(
             output_bit_refs,
@@ -290,8 +400,19 @@ def _augment_states(
             all_conditions,
             output_bit_list,
             relevant_input_bits,
-            state,
+            input_state,
         )
+
+        # Extract and concatenate output values directly from output_state
+        output_value = StateValue(0)
+        for i, output_bit_pos in enumerate(output_bit_list):
+            bit_value = (output_state.state_value >> output_bit_pos) & 1
+            output_value = StateValue(output_value | (bit_value << i))
+
+        # Concatenate output values after taint bits
+        num_taint_bits = len(output_bit_list)
+        augmented_state = StateValue(augmented_state | (output_value << (len(relevant_input_bits) + num_taint_bits)))
+
         augmented_statevalues.add(augmented_state)
     return augmented_statevalues
 
@@ -459,8 +580,8 @@ def handle_multiple_partitions_output_centric(
     condition_gen = condition_generator.ConditionGenerator()
 
     try:
-        # Use espresso on augmented bit space (input bits + output bit taint values)
-        total_num_bits = len(relevant_input_bits) + len(ordered_interesting_outputs)
+        # Use espresso on augmented bit space (input bits + output bit taint values + output bit values)
+        total_num_bits = len(relevant_input_bits) + (2 * len(ordered_interesting_outputs))
         partitions = {1: simplified_propagating, 0: simplified_non_propagating}
         dnf_condition = condition_gen.espresso.minimize(total_num_bits, 1, 'fr', partitions)
 

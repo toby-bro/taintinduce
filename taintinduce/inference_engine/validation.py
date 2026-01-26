@@ -99,7 +99,7 @@ def _validate_observation_dependency_worker(
 
     for input_bit, output_bits in obs_dep.dataflow.items():
         total += 1
-        input_state = obs_dep.mutated_inputs.get_input_state(input_bit)
+        input_state = obs_dep.mutated_states.get_input_state(input_bit)
 
         # Collect all outputs from pairs that match this input_bit and satisfy the condition
         explained_outputs: set[BitPosition] = set()
