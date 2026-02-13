@@ -1,6 +1,7 @@
 """Partition handling functions for dataflow inference."""
 
 import logging
+from math import inf
 
 from taintinduce.rules.conditions import LogicType, OutputBitRef, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair
@@ -14,7 +15,7 @@ from taintinduce.types import (
 from . import condition_generator, unitary_flow_processor
 
 logger = logging.getLogger(__name__)
-INCLUSION_THRESHOLD = 2  # Minimum count to exclude input bits covered by output refs
+INCLUSION_THRESHOLD = inf  # Minimum count to exclude input bits covered by output refs
 
 
 def _evaluate_dependencies(

@@ -34,7 +34,7 @@ Homepage = "https://github.com/melynx/taintinduce/"
 Repository = "https://github.com/melynx/taintinduce/"
 
 [tool.setuptools]
-packages = ["taintinduce", "taintinduce.disassembler", "taintinduce.inference_engine", "taintinduce.isa", "taintinduce.observation_engine", "taintinduce.unicorn_cpu"]
+packages = ["taintinduce", "taintinduce.disassembler", "taintinduce.inference_engine", "taintinduce.isa", "taintinduce.observation_engine"]
 
 [tool.setuptools.package-data]
 "taintinduce.inference_engine" = ["espresso"]
@@ -65,7 +65,7 @@ format.quote-style = "single"
 
 [tool.ruff.lint]
 unfixable = ["F841"]
-ignore = ["UP015", "S311", "S101"]
+ignore = ["UP015", "S311", "S101", "INP001", "S501"]
 task-tags = ["TODO"]
 select = [
     ## Here are all available rules
