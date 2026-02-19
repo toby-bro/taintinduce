@@ -15,6 +15,11 @@ if TYPE_CHECKING:
 
 
 class Architecture(StrEnum):
+    """
+    Supported architectures for TaintInduce.
+    Can take values 'X86', 'JN', 'ARM64', 'AMD64'.
+    """
+
     X86 = 'X86'
     JN = 'JN'
     ARM64 = 'ARM64'

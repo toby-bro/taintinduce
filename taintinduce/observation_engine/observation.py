@@ -22,7 +22,7 @@ from taintinduce.observation_engine.strategy import (
     ZeroWalk,
 )
 from taintinduce.state.state import Observation, State
-from taintinduce.state.state_utils import regs2bits
+from taintinduce.state.state_utils import bits2regs, regs2bits
 from taintinduce.types import Architecture, CpuRegisterMap
 
 from .strategy import ByteBlocks, SeedVariation, Strategy
@@ -195,6 +195,66 @@ def encode_instruction_bytes(bytecode: bytes, archstring: Architecture) -> str:
         return ''.join(f'{b:X}' for b in bytecode)
     # For other architectures, use standard hex encoding
     return bytecode.hex()
+
+
+def _simple_map_executor(
+    seed: CpuRegisterMap,
+    archstring: Architecture,
+    bytestring: str,
+    state_format: list[Register],
+    cpu: Optional[CPU] = None,
+) -> CpuRegisterMap:
+    """Execute an instruction from a given seed state and return the output state.
+
+    Args:
+        seed: Input CPU register map to use as the initial state
+        archstring: Architecture name (X86, AMD64, ARM64, JN, etc.)
+        bytestring: Hex string representation of the instruction
+        state_format: List of registers defining the CPU state format
+        cpu: Optional CPU instance to reuse; a new one is created if not provided
+
+    Returns:
+        Output CPU register map after execution, or None if execution failed
+    """
+    if cpu is None:
+        cpu = CPUFactory.create_cpu(archstring)
+        mem_regs = {x for x in state_format if 'MEM' in x.name}
+        cpu.set_memregs(mem_regs)
+
+    bytecode = decode_instruction_bytes(bytestring, archstring)
+    cpu.set_cpu_state(seed)
+    try:
+        _, output_state = cpu.execute(bytecode)
+        return output_state
+    except (UcError, OutOfRangeException) as e:
+        raise RuntimeError(f'Execution failed: {e}') from e
+
+
+def simple_state_executor(
+    seed: State,
+    archstring: Architecture,
+    bytestring: str,
+    state_format: list[Register],
+    cpu: Optional[CPU] = None,
+) -> State:
+    """Execute an instruction from a given State and return the output State.
+
+    Converts the input State to a CpuRegisterMap, executes the instruction,
+    and converts the resulting CpuRegisterMap back to a State.
+
+    Args:
+        seed: Input State to use as the initial state
+        archstring: Architecture name (X86, AMD64, ARM64, JN, etc.)
+        bytestring: Hex string representation of the instruction
+        state_format: List of registers defining the CPU state format
+        cpu: Optional CPU instance to reuse; a new one is created if not provided
+
+    Returns:
+        Output State after execution, or None if execution failed
+    """
+    seed_regs = bits2regs(seed, state_format)
+    output_regs = _simple_map_executor(seed_regs, archstring, bytestring, state_format, cpu)
+    return regs2bits(output_regs, state_format)
 
 
 class ConditionTargetedStrategy(Strategy):
