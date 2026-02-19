@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Sequence
 
 from taintinduce.isa.register import Register
-from taintinduce.types import CpuRegisterMap
+from taintinduce.types import Architecture, CpuRegisterMap
 
 
 class CPU(ABC):
@@ -95,8 +95,8 @@ class CPU(ABC):
 
 class CPUFactory:
     @staticmethod
-    def create_cpu(arch: str) -> CPU:
-        if arch == 'JN':
+    def create_cpu(arch: Architecture) -> CPU:
+        if arch == Architecture.JN:
             from taintinduce.cpu.jn_cpu import JNCpu  # noqa: PLC0415
 
             return JNCpu()

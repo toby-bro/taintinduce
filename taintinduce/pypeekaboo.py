@@ -333,6 +333,10 @@ class MemInfo(object):
 
 
 class PyPeekaboo(object):
+
+    arch_str: str
+    bytemap: dict[int, list[int]]
+
     def __init__(self, trace_path):
         # ensure that path points to a directory...
         assert os.path.isdir(trace_path)

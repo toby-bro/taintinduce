@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-
 import argparse
 import json
 from xmlrpc.server import SimpleXMLRPCServer
 
 from taintinduce.serialization import TaintInduceEncoder
+from taintinduce.types import Architecture
 
 from .taintinduce import taintinduce_infer
 
 
-def gen_obs_rule(archstring: str, bytestring: str) -> tuple[str, list[str], str]:
+def gen_obs_rule(archstring: Architecture, bytestring: str) -> tuple[str, list[str], str]:
     print('Inferring ({}) - {}'.format(archstring, bytestring))
     insninfo, obs_list, rule = taintinduce_infer(archstring, bytestring)
     obs_str_list = [json.dumps(x, cls=TaintInduceEncoder) for x in obs_list]

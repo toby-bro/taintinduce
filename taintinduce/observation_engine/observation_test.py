@@ -12,6 +12,7 @@ from taintinduce.isa.x86_registers import (
 )
 from taintinduce.observation_engine.observation import ObservationEngine
 from taintinduce.state.state import Observation
+from taintinduce.types import Architecture
 
 
 class TestObservationGenerationMocked:
@@ -20,7 +21,7 @@ class TestObservationGenerationMocked:
     def test_x86_observe_insn_called(self, mocker):
         """Test that X86 observe_insn is called with correct strategy."""
         bytestring = '25FF00FFaa'
-        dis = Disassembler('X86', bytestring)
+        dis = Disassembler(Architecture.X86, bytestring)
 
         # Create a mock observation with state transitions
         mock_obs = mocker.MagicMock(spec=Observation)
@@ -33,7 +34,7 @@ class TestObservationGenerationMocked:
             return_value=[mock_obs],
         )
 
-        obs_engine = ObservationEngine(bytestring, 'X86', dis.insn_info.state_format)
+        obs_engine = ObservationEngine(bytestring, Architecture.X86, dis.insn_info.state_format)
         observations = obs_engine.observe_insn()
 
         # Verify it was called once
@@ -44,7 +45,7 @@ class TestObservationGenerationMocked:
     def test_amd64_observe_insn_called(self, mocker):
         """Test that AMD64 observe_insn is called with correct strategy."""
         bytestring = '25FF00FFaa'
-        dis = Disassembler('AMD64', bytestring)
+        dis = Disassembler(Architecture.AMD64, bytestring)
 
         # Create a mock observation with state transitions
         mock_obs = mocker.MagicMock(spec=Observation)
@@ -57,7 +58,7 @@ class TestObservationGenerationMocked:
             return_value=[mock_obs],
         )
 
-        obs_engine = ObservationEngine(bytestring, 'AMD64', dis.insn_info.state_format)
+        obs_engine = ObservationEngine(bytestring, Architecture.AMD64, dis.insn_info.state_format)
         observations = obs_engine.observe_insn()
 
         # Verify it was called once
@@ -68,7 +69,7 @@ class TestObservationGenerationMocked:
     def test_gen_seeds_called_with_strategy(self, mocker):
         """Test that _gen_seeds is called with correct parameters."""
         bytestring = '25FF00FFaa'
-        dis = Disassembler('X86', bytestring)
+        dis = Disassembler(Architecture.X86, bytestring)
         state_format = dis.insn_info.state_format
 
         # Mock _gen_seeds to return immediately
@@ -80,17 +81,17 @@ class TestObservationGenerationMocked:
             return_value=[(mock_seed_in, mock_seed_out)],
         )
 
-        obs_engine = ObservationEngine(bytestring, 'X86', state_format)
-        seeds = obs_engine._gen_seeds(bytestring, 'X86', state_format)
+        obs_engine = ObservationEngine(bytestring, Architecture.X86, state_format)
+        seeds = obs_engine._gen_seeds(bytestring, Architecture.X86, state_format)
 
         # Verify it was called once with correct args
-        mock_gen_seeds.assert_called_once_with(bytestring, 'X86', state_format)
+        mock_gen_seeds.assert_called_once_with(bytestring, Architecture.X86, state_format)
         assert len(seeds) == 1
 
     def test_gen_observation_called_with_seed(self, mocker):
         """Test that _gen_observation is called with seed."""
         bytestring = '25FF00FFaa'
-        dis = Disassembler('AMD64', bytestring)
+        dis = Disassembler(Architecture.AMD64, bytestring)
         state_format = dis.insn_info.state_format
 
         # Mock _gen_observation to return immediately
@@ -102,12 +103,12 @@ class TestObservationGenerationMocked:
             return_value=mock_obs,
         )
 
-        obs_engine = ObservationEngine(bytestring, 'AMD64', state_format)
+        obs_engine = ObservationEngine(bytestring, Architecture.AMD64, state_format)
         mock_seed = (mocker.MagicMock(), mocker.MagicMock())
-        obs = obs_engine._gen_observation(bytestring, 'AMD64', state_format, mock_seed)
+        obs = obs_engine._gen_observation(bytestring, Architecture.AMD64, state_format, mock_seed)
 
         # Verify it was called once
-        mock_gen_obs.assert_called_once_with(bytestring, 'AMD64', state_format, mock_seed)
+        mock_gen_obs.assert_called_once_with(bytestring, Architecture.AMD64, state_format, mock_seed)
         assert len(obs.mutated_ios) > 0
 
 
@@ -117,7 +118,7 @@ class TestActualExecution:
     def test_x86_and_instruction_execution(self):
         """Test that X86 AND instruction produces correct output."""
         bytecode = bytes.fromhex('25FF00FFaa')  # AND EAX, 0xaaff00ff
-        cpu = UnicornCPU('X86')
+        cpu = UnicornCPU(Architecture.X86)
 
         eax_reg = X86_REG_EAX()
         eflags_reg = X86_REG_EFLAGS()
@@ -132,7 +133,7 @@ class TestActualExecution:
     def test_amd64_and_instruction_execution(self):
         """Test that AMD64 AND instruction produces correct output."""
         bytecode = bytes.fromhex('25FF00FFaa')  # AND EAX, 0xaaff00ff
-        cpu = UnicornCPU('AMD64')
+        cpu = UnicornCPU(Architecture.AMD64)
 
         rax_reg = X86_REG_RAX()
         eflags_reg = X86_REG_EFLAGS()
@@ -147,7 +148,7 @@ class TestActualExecution:
     def test_x86_bit_flip_changes_output(self):
         """Test that flipping input bit changes output for X86."""
         bytecode = bytes.fromhex('25FF00FFaa')
-        cpu = UnicornCPU('X86')
+        cpu = UnicornCPU(Architecture.X86)
 
         eax_reg = X86_REG_EAX()
         eflags_reg = X86_REG_EFLAGS()
@@ -167,7 +168,7 @@ class TestActualExecution:
     def test_amd64_bit_flip_changes_output(self):
         """Test that flipping input bit changes output for AMD64."""
         bytecode = bytes.fromhex('25FF00FFaa')
-        cpu = UnicornCPU('AMD64')
+        cpu = UnicornCPU(Architecture.AMD64)
 
         rax_reg = X86_REG_RAX()
         eflags_reg = X86_REG_EFLAGS()
@@ -187,7 +188,7 @@ class TestActualExecution:
     def test_arm64_add_instruction_execution(self):
         """Test that ARM64 ADD instruction produces correct output."""
         bytecode = bytes.fromhex('00080091')  # add x0, x0, #0x02
-        cpu = UnicornCPU('ARM64')
+        cpu = UnicornCPU(Architecture.ARM64)
 
         x0_reg = ARM64_REG_X0()
         nzcv_reg = ARM64_REG_NZCV()
@@ -202,7 +203,7 @@ class TestActualExecution:
     def test_arm64_and_instruction_execution(self):
         """Test that ARM64 AND instruction produces correct output."""
         bytecode = bytes.fromhex('000c1c12')  # and w0, w0, #0xf0
-        cpu = UnicornCPU('ARM64')
+        cpu = UnicornCPU(Architecture.ARM64)
 
         x0_reg = ARM64_REG_X0()
         nzcv_reg = ARM64_REG_NZCV()
@@ -217,7 +218,7 @@ class TestActualExecution:
     def test_arm64_bit_flip_changes_output(self):
         """Test that flipping input bit changes output for ARM64."""
         bytecode = bytes.fromhex('00080091')  # add x0, x0, #0x02
-        cpu = UnicornCPU('ARM64')
+        cpu = UnicornCPU(Architecture.ARM64)
 
         x0_reg = ARM64_REG_X0()
         nzcv_reg = ARM64_REG_NZCV()
@@ -237,7 +238,7 @@ class TestActualExecution:
     def test_arm64_instruction_state_changes(self):
         """Test that ARM64 instructions produce actual state changes (not no-ops)."""
         bytecode = bytes.fromhex('00080091')  # add x0, x0, #0x02
-        cpu = UnicornCPU('ARM64')
+        cpu = UnicornCPU(Architecture.ARM64)
 
         x0_reg = ARM64_REG_X0()
         nzcv_reg = ARM64_REG_NZCV()

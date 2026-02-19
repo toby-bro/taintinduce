@@ -23,12 +23,12 @@ from taintinduce.observation_engine.strategy import (
 )
 from taintinduce.state.state import Observation, State
 from taintinduce.state.state_utils import regs2bits
-from taintinduce.types import CpuRegisterMap
+from taintinduce.types import Architecture, CpuRegisterMap
 
 from .strategy import ByteBlocks, SeedVariation, Strategy
 
 
-def decode_instruction_bytes(bytestring: str, archstring: str) -> bytes:
+def decode_instruction_bytes(bytestring: str, archstring: Architecture) -> bytes:
     """Decode instruction bytestring to bytes based on architecture.
 
     Args:
@@ -47,7 +47,7 @@ def decode_instruction_bytes(bytestring: str, archstring: str) -> bytes:
 
 def _gen_observation_worker(
     bytestring: str,
-    archstring: str,
+    archstring: Architecture,
     state_format: list[Register],
     seed_io: tuple[CpuRegisterMap, CpuRegisterMap],
 ) -> Observation:
@@ -102,7 +102,7 @@ def _gen_observation_worker(
 
 def _gen_random_seed_io_worker(
     bytestring: str,
-    archstring: str,
+    archstring: Architecture,
     state_format: list[Register],
     seed_variation: SeedVariation,
     num_tries: int = 255,
@@ -142,7 +142,7 @@ def _gen_random_seed_io_worker(
 
 def _gen_exhaustive_seed_worker(
     bytestring: str,
-    archstring: str,
+    archstring: Architecture,
     state_format: list[Register],
     state_val: int,
 ) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:
@@ -180,7 +180,7 @@ def _gen_exhaustive_seed_worker(
         return None
 
 
-def encode_instruction_bytes(bytecode: bytes, archstring: str) -> str:
+def encode_instruction_bytes(bytecode: bytes, archstring: Architecture) -> str:
     """Encode instruction bytes to hex string based on architecture.
 
     Args:
@@ -321,24 +321,24 @@ class ObservationEngine(object):
     arch: ISA
     bytestring: str
     cpu: CPU
-    archstring: str
+    archstring: Architecture
     state_format: list[Register]
     DEBUG_LOG: bool
 
-    def __init__(self, bytestring: str, archstring: str, state_format: list[Register]) -> None:
-        match archstring:
-            case 'X86':
+    def __init__(self, bytestring: str, arch: Architecture, state_format: list[Register]) -> None:
+        match arch:
+            case Architecture.X86:
                 self.arch = X86()
-            case 'AMD64':
+            case Architecture.AMD64:
                 self.arch = AMD64()
-            case 'ARM64':
+            case Architecture.ARM64:
                 self.arch = ARM64()
-            case 'JN':
+            case Architecture.JN:
                 self.arch = JN()
             case _:
-                raise Exception('Unsupported architecture: {}'.format(archstring))
+                raise Exception('Unsupported architecture: {}'.format(arch))
 
-        self.cpu = CPUFactory.create_cpu(archstring)
+        self.cpu = CPUFactory.create_cpu(arch)
         mem_regs = {x for x in state_format if 'MEM' in x.name}
         self.cpu.set_memregs(mem_regs)
 
@@ -348,7 +348,7 @@ class ObservationEngine(object):
         print('')
 
         self.bytestring = bytestring
-        self.archstring = archstring
+        self.archstring = arch
         self.state_format = state_format
         self.DEBUG_LOG = False
 
@@ -403,7 +403,7 @@ class ObservationEngine(object):
     def _gen_observation(
         self,
         bytestring: str,
-        archstring: str,
+        archstring: Architecture,
         state_format: list[Register],
         seed_io: tuple[CpuRegisterMap, CpuRegisterMap],
     ) -> Observation:
@@ -452,7 +452,7 @@ class ObservationEngine(object):
     def _gen_seeds(
         self,
         bytestring: str,
-        archstring: str,
+        archstring: Architecture,
         state_format: list[Register],
         strategies: Optional[list[Strategy]] = None,
     ) -> list[tuple[CpuRegisterMap, CpuRegisterMap]]:
@@ -533,7 +533,7 @@ class ObservationEngine(object):
     def _gen_exhaustive_seeds(
         self,
         bytestring: str,
-        archstring: str,
+        archstring: Architecture,
         state_format: list[Register],
     ) -> list[tuple[CpuRegisterMap, CpuRegisterMap]]:
         """Generate all possible seed states exhaustively for small state spaces.
@@ -577,7 +577,7 @@ class ObservationEngine(object):
     def _gen_seed_io(
         self,
         bytestring: str,
-        archstring: str,
+        archstring: Architecture,
         seed_in: CpuRegisterMap,
         num_tries: int = 255,
     ) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:
@@ -616,7 +616,7 @@ class ObservationEngine(object):
     def _gen_random_seed_io(
         self,
         bytestring: str,
-        archstring: str,
+        archstring: Architecture,
         seed_variation: SeedVariation,
         num_tries: int = 255,
     ) -> tuple[CpuRegisterMap, CpuRegisterMap] | None:

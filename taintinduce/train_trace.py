@@ -14,6 +14,8 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+from taintinduce.types import Architecture
+
 from .pypeekaboo import PyPeekaboo
 from .serialization import TaintInduceEncoder
 from .taintinduce import taintinduce_infer
@@ -26,22 +28,22 @@ class RuleDatabase:
         self.rules_dir = Path(rules_dir)
         self.rules_dir.mkdir(parents=True, exist_ok=True)
 
-    def get_rule_path(self, arch: str, bytestring: str) -> Path:
+    def get_rule_path(self, arch: Architecture, bytestring: str) -> Path:
         """Get the path for a rule file."""
         return self.rules_dir / f'{bytestring}_{arch}_rule.json'
 
-    def has_rule(self, arch: str, bytestring: str) -> bool:
+    def has_rule(self, arch: Architecture, bytestring: str) -> bool:
         """Check if a rule already exists."""
         return self.get_rule_path(arch, bytestring).exists()
 
-    def save_rule(self, arch: str, bytestring: str, rule_data: dict[str, Any]) -> None:
+    def save_rule(self, arch: Architecture, bytestring: str, rule_data: dict[str, Any]) -> None:
         """Save a taint rule to disk."""
         rule_path = self.get_rule_path(arch, bytestring)
         with open(rule_path, 'w') as f:
             json.dump(rule_data, f, cls=TaintInduceEncoder, indent=2)
         print(f'Saved rule: {rule_path}')
 
-    def check_and_generate_rules(self, arch: str, insn_set: set[str], num_threads: int = 1) -> None:
+    def check_and_generate_rules(self, arch: Architecture, insn_set: set[str], num_threads: int = 1) -> None:
         """Check which instructions need rules and generate them."""
         missing_rules: list[str] = []
         for bytestring in insn_set:
@@ -61,12 +63,12 @@ class RuleDatabase:
         else:
             self._generate_rules_multiprocess(arch, missing_rules, num_threads)
 
-    def _generate_rules_single_process(self, arch: str, missing_rules: list[str]) -> None:
+    def _generate_rules_single_process(self, arch: Architecture, missing_rules: list[str]) -> None:
         """Generate rules using a single process."""
         for i, bytestring in enumerate(missing_rules, 1):
             self._generate_rule(arch, bytestring, i, len(missing_rules))
 
-    def _generate_rules_multiprocess(self, arch: str, missing_rules: list[str], num_threads: int) -> None:
+    def _generate_rules_multiprocess(self, arch: Architecture, missing_rules: list[str], num_threads: int) -> None:
         """Generate rules using multiple processes."""
         executor = ProcessPoolExecutor(
             max_workers=num_threads,
@@ -114,7 +116,7 @@ class RuleDatabase:
                     print(f'Warning: Failed to terminate worker process: {e}')
             sys.exit(1)
 
-    def _generate_rule(self, arch: str, bytestring: str, index: int, total: int) -> None:
+    def _generate_rule(self, arch: Architecture, bytestring: str, index: int, total: int) -> None:
         """Generate a single rule (thread-safe)."""
         try:
             print(f'\n[{index}/{total}] Processing {bytestring}...')
@@ -139,7 +141,7 @@ def _worker_init():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
-def _generate_rule_worker(arch: str, bytestring: str, index: int, total: int, rules_dir: str) -> None:
+def _generate_rule_worker(arch: Architecture, bytestring: str, index: int, total: int, rules_dir: str) -> None:
     """Worker function for multiprocessing (must be at module level)."""
     # Suppress verbose output from worker processes to avoid stdout/stderr conflicts
     # tqdm writes to stderr when stdout is redirected, so we must suppress both
@@ -215,7 +217,7 @@ def main() -> None:
 
     # Check and generate rules
     rule_db = RuleDatabase(args.output_dir)
-    rule_db.check_and_generate_rules(peekaboo.arch_str, insn_set, args.threads)
+    rule_db.check_and_generate_rules(Architecture[peekaboo.arch_str], insn_set, args.threads)
 
     print(f'\nDone! Rules stored in: {args.output_dir}')
 

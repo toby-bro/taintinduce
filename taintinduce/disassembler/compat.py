@@ -17,6 +17,7 @@ from capstone import (
 from taintinduce.disassembler.exceptions import ParseInsnException
 from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex_string
 from taintinduce.observation_engine.observation import encode_instruction_bytes
+from taintinduce.types import Architecture
 
 
 class JNInsnWrapper:
@@ -43,7 +44,7 @@ class SquirrelDisassemblerJN:
         """Disassemble JN bytecode and return wrapped instruction object."""
         # Convert bytes to hex string if needed
         if isinstance(bytecode, bytes):
-            bytecode = encode_instruction_bytes(bytecode, 'JN')
+            bytecode = encode_instruction_bytes(bytecode, Architecture.JN)
 
         try:
             jn_insn = decode_jn_hex_string(str(bytecode))
@@ -60,9 +61,9 @@ class SquirrelDisassemblerCapstone:
 
     def __init__(self, arch_str: str) -> None:
         self.arch_mapping: dict[str, tuple[int, int]] = {
-            'X86': (CS_ARCH_X86, CS_MODE_32),
-            'AMD64': (CS_ARCH_X86, CS_MODE_64),
-            'ARM64': (CS_ARCH_ARM64, CS_MODE_ARM),
+            Architecture.X86: (CS_ARCH_X86, CS_MODE_32),
+            Architecture.AMD64: (CS_ARCH_X86, CS_MODE_64),
+            Architecture.ARM64: (CS_ARCH_ARM64, CS_MODE_ARM),
             'ARM32': (CS_ARCH_ARM, CS_MODE_ARM),
         }
         self.arch_str = arch_str
@@ -97,6 +98,6 @@ class SquirrelDisassemblerZydis(SquirrelDisassemblerCapstone):
 
     def __new__(cls, arch_str: str):  # type: ignore[no-untyped-def]
         """Create appropriate disassembler based on architecture."""
-        if arch_str == 'JN':
+        if arch_str == Architecture.JN:
             return SquirrelDisassemblerJN(arch_str)
         return super().__new__(cls)

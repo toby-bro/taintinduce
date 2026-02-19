@@ -13,7 +13,7 @@ from taintinduce.isa.arm64 import ARM64
 from taintinduce.isa.isa import ISA
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86 import X86
-from taintinduce.types import CpuRegisterMap
+from taintinduce.types import Architecture, CpuRegisterMap
 
 from .cpu import CPU
 
@@ -118,7 +118,7 @@ class OutOfRangeException(Exception):
 class UnicornCPU(CPU):
     arch: ISA
 
-    def __init__(self, archstring: str, debug: bool = False) -> None:
+    def __init__(self, archstring: Architecture, debug: bool = False) -> None:
         self.debug: bool = debug
         match archstring:
             case 'X86':
@@ -560,7 +560,7 @@ class UnicornCPU(CPU):
 
 
 def main() -> None:
-    cpu = UnicornCPU('X86')
+    cpu = UnicornCPU(Architecture.X86)
     # cpu.identify_memops('\x8b\x45\x08')
     # cpu.identify_memops('\xa4')
     # cpu.identify_memops('\x48\xa7')

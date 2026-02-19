@@ -7,7 +7,7 @@ from taintinduce.isa.jn_registers import JN_REG_NZCV, JN_REG_R1, JN_REG_R2
 from taintinduce.observation_engine.observation import ObservationEngine
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
-from taintinduce.types import BitPosition
+from taintinduce.types import Architecture, BitPosition
 
 
 def test_validation_detects_incomplete_rule():
@@ -16,7 +16,7 @@ def test_validation_detects_incomplete_rule():
     state_format = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
     bytestring = encode_instruction(JNOpcode.XOR_R1_R2, None)
 
-    obs_engine = ObservationEngine(bytestring, 'JN', state_format)
+    obs_engine = ObservationEngine(bytestring, Architecture.JN, state_format)
     observations = obs_engine.observe_insn()
 
     # Extract observation dependencies
@@ -50,7 +50,7 @@ def test_validation_detects_wrong_condition():
     state_format = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
     bytestring = encode_instruction(JNOpcode.OR_R1_R2, None)
 
-    obs_engine = ObservationEngine(bytestring, 'JN', state_format)
+    obs_engine = ObservationEngine(bytestring, Architecture.JN, state_format)
     observations = obs_engine.observe_insn()
 
     # Extract observation dependencies

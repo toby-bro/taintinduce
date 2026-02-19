@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import argparse
 import binascii
 import json
@@ -18,6 +17,7 @@ from taintinduce.rules.rules import TaintRule
 # Replaced squirrel imports with our own serialization
 from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder
 from taintinduce.state.state import Observation
+from taintinduce.types import Architecture
 
 
 def query_yes_no(question: str, default: Optional[str] = 'yes') -> bool:
@@ -50,7 +50,7 @@ def query_yes_no(question: str, default: Optional[str] = 'yes') -> bool:
         sys.stdout.write("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
 
 
-def gen_insninfo(archstring: str, bytestring: str, emu_verify: bool = True) -> InsnInfo:
+def gen_insninfo(archstring: Architecture, bytestring: str, emu_verify: bool = True) -> InsnInfo:
     insninfo = Disassembler(archstring, bytestring).insn_info
     # JN doesn't use UnicornCPU emulation
     if emu_verify and archstring != 'JN':
@@ -67,7 +67,7 @@ def gen_insninfo(archstring: str, bytestring: str, emu_verify: bool = True) -> I
 
 
 def gen_obs(
-    archstring: str,
+    archstring: Architecture,
     bytestring: str,
     state_format: list[Register],
 ) -> tuple[list[Observation], observation_engine.ObservationEngine]:
@@ -75,7 +75,7 @@ def gen_obs(
     return obs_engine.observe_insn(), obs_engine
 
 
-def taintinduce_infer(archstring: str, bytestring: str) -> tuple[InsnInfo, list[Observation], TaintRule]:
+def taintinduce_infer(archstring: Architecture, bytestring: str) -> tuple[InsnInfo, list[Observation], TaintRule]:
     insninfo = gen_insninfo(archstring, bytestring)
     obs_list, _obs_engine = gen_obs(archstring, bytestring, insninfo.state_format)
     rule = infer(obs_list, output_induction=False)

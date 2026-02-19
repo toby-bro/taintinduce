@@ -33,7 +33,7 @@ from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EBX, X86_REG_EFLA
 from taintinduce.observation_engine.observation import ObservationEngine
 from taintinduce.rules.rules import GlobalRule
 from taintinduce.state.state import Observation
-from taintinduce.types import BitPosition, ObservationDependency
+from taintinduce.types import Architecture, BitPosition, ObservationDependency
 
 
 @dataclass
@@ -57,7 +57,7 @@ class _X86InstructionCache:
         if key not in self._cache:
             # key is the hex instruction (e.g., '23C3' for AND EAX, EBX, '0BC3' for OR EAX, EBX)
             bytestring = key
-            obs_engine = ObservationEngine(bytestring, 'X86', self._state_format)
+            obs_engine = ObservationEngine(bytestring, Architecture.X86, self._state_format)
             observations = obs_engine.observe_insn()
             obs_deps = extract_observation_dependencies(observations)
 

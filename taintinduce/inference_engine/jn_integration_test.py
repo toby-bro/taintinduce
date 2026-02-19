@@ -49,7 +49,7 @@ from taintinduce.observation_engine.observation import (
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import GlobalRule
 from taintinduce.state.state import Observation
-from taintinduce.types import BitPosition, CpuRegisterMap, ObservationDependency
+from taintinduce.types import Architecture, BitPosition, CpuRegisterMap, ObservationDependency
 from taintinduce.visualizer.taint_simulator import simulate_taint_propagation
 
 
@@ -160,7 +160,7 @@ class _JNInstructionCache:
                 state_format = self._state_format_long
             else:
                 state_format = self._state_format_short
-            obs_engine = ObservationEngine(bytestring, 'JN', state_format)
+            obs_engine = ObservationEngine(bytestring, Architecture.JN, state_format)
             observations = obs_engine.observe_insn()
             obs_deps = extract_observation_dependencies(observations)
 
@@ -220,10 +220,10 @@ def test_decode_roundtrip(opcode: JNOpcode, immediate: Optional[int]) -> None:
     hex_string = encode_instruction(opcode, immediate)
 
     # Convert hex string to bytes (via decode_instruction_bytes)
-    bytecode = decode_instruction_bytes(hex_string, 'JN')
+    bytecode = decode_instruction_bytes(hex_string, Architecture.JN)
 
     # Convert bytes back to hex string
-    hex_from_bytes = encode_instruction_bytes(bytecode, 'JN')
+    hex_from_bytes = encode_instruction_bytes(bytecode, Architecture.JN)
 
     # Decode hex string to instruction
     decoded_instruction = decode_jn_hex(hex_from_bytes)
@@ -250,7 +250,7 @@ def test_observation_generation(
     """Test observation generation for all JN instructions."""
     bytestring = encode_instruction(opcode, immediate)
     state_format = jn_state_format_immediate if immediate is not None else jn_state_format
-    obs_engine = ObservationEngine(bytestring, 'JN', state_format)
+    obs_engine = ObservationEngine(bytestring, Architecture.JN, state_format)
     observations = obs_engine.observe_insn()
 
     # Should generate observations
@@ -260,7 +260,7 @@ def test_observation_generation(
     for obs in observations:
         assert obs.state_format == state_format
         assert obs.bytestring == bytestring
-        assert obs.archstring == 'JN'
+        assert obs.archstring == Architecture.JN
 
         # Verify immediate instructions exclude R2
         if immediate is not None:
@@ -965,7 +965,7 @@ class TestJNImmediateInstructions:
         else:
             # Create state format without R2
             state_format = [JN_REG_R1(), JN_REG_NZCV()]
-            obs_engine = ObservationEngine(bytestring, 'JN', state_format)
+            obs_engine = ObservationEngine(bytestring, Architecture.JN, state_format)
             observations = obs_engine.observe_insn()
 
         # Verify no R2 in state format
@@ -982,7 +982,7 @@ class TestJNImmediateInstructions:
         # Immediate instruction
         bytestring_imm = encode_instruction(JNOpcode.ADD_R1_IMM, 0xA)
         state_format_imm = [JN_REG_R1(), JN_REG_NZCV()]
-        obs_engine_imm = ObservationEngine(bytestring_imm, 'JN', state_format_imm)
+        obs_engine_imm = ObservationEngine(bytestring_imm, Architecture.JN, state_format_imm)
         observations_imm = obs_engine_imm.observe_insn()
 
         # Register instruction - use cached data
@@ -1208,7 +1208,7 @@ def test_inferred_rules_capture_taint_blocking(
     internal_rule = data.rule
 
     # Convert to TaintRule for simulation
-    taint_rule = internal_rule.convert2squirrel('JN', bytestring)
+    taint_rule = internal_rule.convert2squirrel(Architecture.JN, bytestring)
 
     # Build input state value from blocking_state dict
     input_state_value = 0

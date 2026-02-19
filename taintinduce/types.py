@@ -4,6 +4,7 @@ This module contains all type aliases used throughout the codebase
 to make complex type signatures more readable.
 """
 
+from enum import StrEnum
 from typing import TYPE_CHECKING, NamedTuple, NewType
 
 from taintinduce.isa.register import Register
@@ -11,6 +12,13 @@ from taintinduce.isa.register import Register
 # Forward declarations for circular type hints
 if TYPE_CHECKING:
     from taintinduce.state.state import State
+
+
+class Architecture(StrEnum):
+    X86 = 'X86'
+    JN = 'JN'
+    ARM64 = 'ARM64'
+    AMD64 = 'AMD64'
 
 
 # CPU state representation as register-value mapping

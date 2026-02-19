@@ -5,7 +5,7 @@ from typing import Optional
 from taintinduce.isa.register import Register
 from taintinduce.memory import MemorySlot
 from taintinduce.serialization import SerializableMixin
-from taintinduce.types import BitPosition
+from taintinduce.types import Architecture, BitPosition
 
 from .conditions import LogicType, TaintCondition
 
@@ -59,13 +59,17 @@ class TaintRuleFormat:
     This is distinct from state_format (list[Register]) used for State decoding.
     """
 
+    arch: Architecture
+    registers: list[Register]
+    mem_slots: list[MemorySlot]
+
     def __init__(
         self,
-        arch: str,
+        arch: Architecture,
         registers: list[Register],
         mem_slots: list[MemorySlot],
     ) -> None:
-        self.arch: str = arch
+        self.arch: Architecture = arch
         self.registers: list[Register] = registers or []
         self.mem_slots: list[MemorySlot] = mem_slots or []
 
@@ -199,7 +203,7 @@ class GlobalRule(SerializableMixin):
             self.state_format = state_format
             self.pairs = pairs
 
-    def convert2squirrel(self, archstring: str, bytestring: str) -> TaintRule:
+    def convert2squirrel(self, archstring: Architecture, bytestring: str) -> TaintRule:
         """Convert internal representation to TaintRule format."""
         reg_list: list[Register] = []
         mem_list: list[MemorySlot] = []

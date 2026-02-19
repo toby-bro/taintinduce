@@ -15,12 +15,13 @@ from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex_string
 from taintinduce.isa.jn_registers import JN_REG_NZCV, JN_REG_R1, JN_REG_R2
 from taintinduce.isa.register import CondRegister, Register
 from taintinduce.serialization import SerializableMixin
+from taintinduce.types import Architecture
 
 
 class InsnInfo(SerializableMixin):
     """Instruction information including state format and conditional register."""
 
-    archstring: str
+    archstring: Architecture
     bytestring: str
     state_format: list[Register]
     cond_reg: CondRegister
@@ -28,7 +29,7 @@ class InsnInfo(SerializableMixin):
     def __init__(
         self,
         *,
-        archstring: Optional[str] = None,
+        archstring: Optional[Architecture] = None,
         bytestring: Optional[str] = None,
         state_format: Optional[list[Register]] = None,
         cond_reg: Optional[CondRegister] = None,
@@ -47,7 +48,12 @@ class InsnInfo(SerializableMixin):
             self.cond_reg = cond_reg
 
 
-ARCH_DICT = {'X86': x86.X86(), 'AMD64': amd64.AMD64(), 'ARM64': arm64.ARM64(), 'JN': jn.JN()}
+ARCH_DICT = {
+    Architecture.X86: x86.X86(),
+    Architecture.AMD64: amd64.AMD64(),
+    Architecture.ARM64: arm64.ARM64(),
+    Architecture.JN: jn.JN(),
+}
 
 
 class Disassembler(object):
@@ -55,10 +61,10 @@ class Disassembler(object):
     cs_reg_set: list[Register]
     insn_info: InsnInfo
 
-    def __init__(self, arch_str: str, bytestring: str) -> None:  # noqa: C901
+    def __init__(self, arch_str: Architecture, bytestring: str) -> None:  # noqa: C901
         """Initialize wrapper over Capstone CsInsn or Cs.
 
-        arch_str (str)          - the architecture of the instruction (currently
+        arch_str (Architecture) - the architecture of the instruction (currently
                             supported: X86, AMD64, ARM64, JN)
         bytestring (str)        - the hex string corresponding to the instruction
                             bytes
@@ -72,7 +78,7 @@ class Disassembler(object):
         self.bytestring = bytestring
 
         # JN doesn't use Capstone disassembler
-        if arch_str == 'JN':
+        if arch_str == Architecture.JN:
             # Decode the instruction to check if it has an immediate operand
             jn_insn = decode_jn_hex_string(bytestring)
             print(f'Disassembling {arch_str} instruction: {bytestring}')
@@ -119,12 +125,12 @@ class Disassembler(object):
             # Check if operand is a register (type varies by architecture)
             if hasattr(operand, 'type'):
                 # Import the constants for register operand type check
-                if arch_str in ('X86', 'AMD64'):
+                if arch_str in (Architecture.X86, Architecture.AMD64):
 
                     if operand.type == X86_OP_REG:
                         reg_name = dis.md.reg_name(operand.reg).upper()
                         self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
-                elif arch_str == 'ARM64':
+                elif arch_str == Architecture.ARM64:
 
                     if operand.type == ARM64_OP_REG:
                         reg_name = dis.md.reg_name(operand.reg).upper()

@@ -10,7 +10,7 @@ from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex
 from taintinduce.isa.jn_registers import JN_REG_NZCV, JN_REG_R1, JN_REG_R2
 from taintinduce.isa.register import Register
 from taintinduce.observation_engine.observation import encode_instruction_bytes
-from taintinduce.types import CpuRegisterMap
+from taintinduce.types import Architecture, CpuRegisterMap
 
 from .cpu import CPU
 
@@ -78,7 +78,7 @@ class JNCpu(CPU):
             Tuple of (state_before, state_after)
         """
         # Decode instruction
-        hex_string = encode_instruction_bytes(bytecode, 'JN')
+        hex_string = encode_instruction_bytes(bytecode, Architecture.JN)
         instruction = decode_jn_hex(hex_string)
 
         # Save state before

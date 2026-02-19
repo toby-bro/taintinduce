@@ -4,7 +4,7 @@ from typing import Generator, Optional
 
 from taintinduce.isa.register import Register
 from taintinduce.serialization import SerializableMixin
-from taintinduce.types import BitPosition, StateValue
+from taintinduce.types import Architecture, BitPosition, StateValue
 
 
 def bit_position_iterator(start: int = 0) -> Generator[BitPosition, None, None]:
@@ -120,7 +120,7 @@ class Observation(SerializableMixin):
     seed_io: tuple[State, State]
     mutated_ios: frozenset[tuple[State, State]]
     bytestring: str
-    archstring: str
+    archstring: Architecture
     state_format: list[Register]
 
     def __init__(
@@ -128,7 +128,7 @@ class Observation(SerializableMixin):
         iopair: Optional[tuple[State, State]] = None,
         mutated_iopairs: Optional[frozenset[tuple[State, State]]] = None,
         bytestring: Optional[str] = None,
-        archstring: Optional[str] = None,
+        archstring: Optional[Architecture] = None,
         state_format: Optional[list[Register]] = None,
         repr_str: Optional[str] = None,
     ) -> None:

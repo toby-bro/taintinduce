@@ -21,7 +21,7 @@ from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EFLAGS
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
 from taintinduce.state.state import Observation, State
-from taintinduce.types import BitPosition, Dataflow, MutatedInputStates, ObservationDependency, StateValue
+from taintinduce.types import Architecture, BitPosition, Dataflow, MutatedInputStates, ObservationDependency, StateValue
 
 # ============================================================================
 # Fixtures
@@ -82,7 +82,7 @@ def simple_observation(state_format):
         iopair=(seed_in, seed_out),
         mutated_iopairs=frozenset([(mutate_in, mutate_out)]),
         bytestring='test',
-        archstring='X86',
+        archstring=Architecture.X86,
         state_format=state_format,
     )
 
@@ -101,7 +101,7 @@ def conditional_observation(state_format):
         iopair=(seed_in, seed_out),
         mutated_iopairs=frozenset([(mutate_in, mutate_out)]),
         bytestring='test',
-        archstring='X86',
+        archstring=Architecture.X86,
         state_format=state_format,
     )
 
@@ -196,7 +196,7 @@ class TestExtractObservationDependencies:
             iopair=(seed_in, seed_out),
             mutated_iopairs=frozenset([(mutate_in, mutate_out)]),
             bytestring='test',
-            archstring='X86',
+            archstring=Architecture.X86,
             state_format=state_format,
         )
 
@@ -413,7 +413,7 @@ class TestInferenceEngineIntegration:
             iopair=(seed_in, seed_out),
             mutated_iopairs=frozenset([(mutate_in, mutate_out)]),
             bytestring='test',
-            archstring='X86',
+            archstring=Architecture.X86,
             state_format=state_format,
         )
 
@@ -451,7 +451,7 @@ class TestInferenceEngineIntegration:
             iopair=(seed_in1, seed_out1),
             mutated_iopairs=frozenset([(mutate_in1, mutate_out1)]),
             bytestring='test',
-            archstring='X86',
+            archstring=Architecture.X86,
             state_format=state_format,
         )
 
@@ -459,7 +459,7 @@ class TestInferenceEngineIntegration:
             iopair=(seed_in2, seed_out2),
             mutated_iopairs=frozenset([(mutate_in2, mutate_out2)]),
             bytestring='test',
-            archstring='X86',
+            archstring=Architecture.X86,
             state_format=state_format,
         )
 
