@@ -24,11 +24,13 @@ from flask import Flask, jsonify, request, send_file
 from taintinduce.cpu.cpu import CPUFactory
 from taintinduce.disassembler.compat import SquirrelDisassemblerZydis
 from taintinduce.isa.register import Register
+from taintinduce.mreplica.cell import Cell as MReplicaCell
+from taintinduce.mreplica.mrepica import MReplica
 from taintinduce.rules.conditions import LogicType, OutputBitRef, TaintCondition
 from taintinduce.rules.rules import TaintRule
 from taintinduce.serialization import TaintInduceDecoder
-from taintinduce.state.state import check_ones
-from taintinduce.types import CpuRegisterMap
+from taintinduce.state.state import State, check_ones
+from taintinduce.types import CpuRegisterMap, StateValue
 
 # Import visualizer helper modules
 from taintinduce.visualizer.taint_simulator import (
@@ -46,6 +48,9 @@ app = Flask(__name__, static_folder=str(SCRIPT_DIR / 'static'))
 # Global rule storage
 current_rule: TaintRule | None = None
 rule_file_path: str = ''
+
+# Global M-Replica storage
+current_mreplica: MReplica | None = None
 
 
 def evaluate_condition(condition: TaintCondition | None, state_value: int) -> bool:
@@ -552,6 +557,203 @@ def simulate_detailed():
         return jsonify({'error': f'Invalid input: {e!s}'}), 400
     except Exception as e:
         return jsonify({'error': f'Simulation failed: {e!s}'}), 500
+
+
+# ──────────────────────────────────────────────────────────────
+# M-Replica API helpers
+# ──────────────────────────────────────────────────────────────
+
+
+def _make_mreplica_if_needed() -> MReplica:
+    """Return the current M-Replica, creating one from the loaded rule if needed."""
+    global current_mreplica  # noqa: PLW0603
+    if current_mreplica is None:
+        if current_rule is None:
+            raise ValueError('No rule loaded')
+        current_mreplica = MReplica(
+            hex_instruction=current_rule.bytestring,
+            architecture=current_rule.format.arch,
+            state_format=current_rule.format.registers,
+        )
+    return current_mreplica
+
+
+def _total_bits() -> int:
+    """Total number of state bits from the loaded rule."""
+    if current_rule is None:
+        raise ValueError('No rule loaded')
+    return sum(reg.bits for reg in current_rule.format.registers)
+
+
+def _reg_values_from_int(state_val: int) -> dict[str, dict[int, int]]:
+    """Convert flat integer state value to per-register bit dicts."""
+    if current_rule is None:
+        raise ValueError('No rule loaded')
+    return extract_bits_from_state(state_val, current_rule.format)
+
+
+def _cells_as_json(replica: MReplica) -> list[dict[str, int]]:
+    """Serialize cells to JSON-friendly list sorted by (mask, value)."""
+    return sorted(
+        [{'mask': c.mask, 'value': c.value} for c in replica.cells],
+        key=lambda c: (c['mask'], c['value']),
+    )
+
+
+@app.route('/api/mreplica', methods=['GET'])
+def get_mreplica_state():
+    """Return the current M-Replica cells and basic metadata."""
+    if current_mreplica is None or not current_mreplica.cells:
+        return jsonify({'cells': [], 'num_cells': 0})
+    return jsonify(
+        {
+            'cells': _cells_as_json(current_mreplica),
+            'num_cells': len(current_mreplica.cells),
+            'hex_instruction': current_mreplica.hex_instruction,
+            'architecture': str(current_mreplica.architecture),
+        },
+    )
+
+
+@app.route('/api/mreplica/reset', methods=['POST'])
+def reset_mreplica():
+    """Clear all cells from the M-Replica."""
+    global current_mreplica  # noqa: PLW0603
+    if current_rule is None:
+        return jsonify({'error': 'No rule loaded'}), 400
+    current_mreplica = MReplica(
+        hex_instruction=current_rule.bytestring,
+        architecture=current_rule.format.arch,
+        state_format=current_rule.format.registers,
+    )
+    return jsonify({'success': True, 'num_cells': 0})
+
+
+@app.route('/api/mreplica/add-cell', methods=['POST'])
+def add_mreplica_cell():
+    """Add a single cell (mask, value) to the M-Replica."""
+    if current_rule is None:
+        return jsonify({'error': 'No rule loaded'}), 400
+    data = request.json
+    mask = int(data['mask'])
+    value = int(data['value'])
+    replica = _make_mreplica_if_needed()
+    replica.new_cell(mask=mask, value=value)
+    return jsonify({'success': True, 'num_cells': len(replica.cells)})
+
+
+@app.route('/api/mreplica/delete-cell', methods=['POST'])
+def delete_mreplica_cell():
+    """Remove a cell identified by (mask, value) from the M-Replica."""
+    if current_mreplica is None:
+        return jsonify({'error': 'No M-Replica'}), 400
+    data = request.json
+    mask = int(data['mask'])
+    value = int(data['value'])
+    cell_to_remove = MReplicaCell(
+        value=value,
+        mask=mask,
+        hex_instruction=current_mreplica.hex_instruction,
+        architecture=current_mreplica.architecture,
+        state_format=current_mreplica.state_format,
+    )
+    current_mreplica.cells.discard(cell_to_remove)
+    return jsonify({'success': True, 'num_cells': len(current_mreplica.cells)})
+
+
+@app.route('/api/mreplica/make-full', methods=['POST'])
+def make_full_mreplica_endpoint():
+    """Replace all cells with the full M-Replica for given bits_mask."""
+    if current_rule is None:
+        return jsonify({'error': 'No rule loaded'}), 400
+    data = request.json
+    bits_mask = int(data['bits_mask'])
+    try:
+        n_bits = _total_bits()
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    bits_state = State(num_bits=n_bits, state_value=StateValue(bits_mask))
+    replica = _make_mreplica_if_needed()
+    replica.make_full_m_replica(bits_state)
+    return jsonify({'success': True, 'num_cells': len(replica.cells)})
+
+
+@app.route('/api/mreplica/simulate', methods=['POST'])
+def simulate_mreplica_endpoint():
+    """Run M-Replica simulation + real instruction execution on an input state."""
+    if current_rule is None:
+        return jsonify({'error': 'No rule loaded'}), 400
+    replica = _make_mreplica_if_needed()
+    data = request.json
+    input_val = int(data.get('input_state', 0))
+    try:
+        n_bits = _total_bits()
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    input_state = State(num_bits=n_bits, state_value=StateValue(input_val))
+
+    # Collect per-cell outputs
+    cell_results: list[dict[str, Any]] = []
+    all_output_vals: list[int] = []
+    for cell in replica.cells:
+        out = cell.get_output(input_state)
+        all_output_vals.append(out.state_value)
+        cell_results.append({'mask': cell.mask, 'value': cell.value, 'output': out.state_value})
+    cell_results.sort(key=lambda c: (c['mask'], c['value']))
+
+    # Mark cells whose output differs from at least one other cell
+    for cr in cell_results:
+        cr['contributes_to_taint'] = any(o != cr['output'] for o in all_output_vals)
+
+    # Taint output via MReplica.simulate
+    taint_state = replica.simulate(input_state)
+
+    # Real instruction output
+    register_values = _reg_values_from_int(input_val)
+    real_output = _get_output_register_values(register_values, current_rule, rule_file_path)
+
+    return jsonify(
+        {
+            'taint_output': taint_state.state_value,
+            'taint_output_hex': hex(taint_state.state_value),
+            'cell_results': cell_results,
+            'real_output': real_output,
+            'num_bits': n_bits,
+            'register_format': [{'name': reg.name, 'bits': reg.bits} for reg in current_rule.format.registers],
+        },
+    )
+
+
+@app.route('/api/mreplica/adapt', methods=['POST'])
+def adapt_mreplica():
+    """Build full M-Replica from tainted bits (one active bit per tainted bit position)."""
+    if current_rule is None:
+        return jsonify({'error': 'No rule loaded'}), 400
+    data = request.json
+    # tainted_bits: list of [register_name, bit_index]
+    tainted_bits_list: list[list[Any]] = data.get('tainted_bits', [])
+
+    # Convert (reg, bit) pairs to a flat integer mask
+    bits_mask = 0
+    bit_offset = 0
+    for reg in current_rule.format.registers:
+        for bit_idx in range(reg.bits):
+            if [reg.name, bit_idx] in tainted_bits_list or [reg.name, str(bit_idx)] in tainted_bits_list:
+                bits_mask |= 1 << (bit_offset + bit_idx)
+        bit_offset += reg.bits
+
+    try:
+        n_bits = _total_bits()
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    bits_state = State(num_bits=n_bits, state_value=StateValue(bits_mask))
+    replica = _make_mreplica_if_needed()
+    replica.make_full_m_replica(bits_state)
+    return jsonify({'success': True, 'num_cells': len(replica.cells), 'bits_mask': bits_mask})
+
+
+# ──────────────────────────────────────────────────────────────
 
 
 def main():

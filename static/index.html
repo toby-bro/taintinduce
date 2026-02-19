@@ -99,6 +99,7 @@
         </button>
         <button class="tab" onclick="switchTab('tests')">✅ Test Cases</button>
         <button class="tab" onclick="switchTab('graph')">🕸️ Graph View</button>
+        <button class="tab" onclick="switchTab('mreplica'); initMReplicaTab()">🧬 M-Replica</button>
       </div>
 
       <div id="overview-tab" class="tab-content active">
@@ -368,6 +369,124 @@
         <div class="test-cases" id="test-cases"></div>
       </div>
 
+      <!-- ═══════════════════════  M-REPLICA TAB  ═══════════════════════ -->
+      <div id="mreplica-tab" class="tab-content">
+        <div class="mr-page">
+
+          <!-- ── Top control bar ─────────────────────────────────── -->
+          <div class="mr-topbar">
+            <h2 style="margin:0;font-size:1.4em">🧬 M-Replica Simulator</h2>
+            <div class="mr-topbar-controls">
+              <!-- Input mode -->
+              <div style="display:flex;gap:4px">
+                <button id="mrBtnBits" class="btn mr-sm-btn" style="background:#667eea"
+                        onclick="mrSwitchInputMode('bits')">Bit-by-Bit</button>
+                <button id="mrBtnHex"  class="btn mr-sm-btn" style="background:#e0e0e0;color:#333"
+                        onclick="mrSwitchInputMode('hex')">Hex</button>
+              </div>
+              <div class="mr-divider"></div>
+              <!-- Mode toggle -->
+              <button id="mrBtnToggleMode" class="btn mr-sm-btn" style="background:#ff9800"
+                      onclick="mrToggleMode()">🎨 Taint Mode</button>
+              <!-- Adapt (visible in taint mode only) -->
+              <button id="mrBtnAdapt" class="btn mr-sm-btn" style="background:#e84393;display:none"
+                      onclick="mrAdaptToTaint()"
+                      title="Build a full M-Replica covering exactly the currently tainted bits">
+                🔗 Adapt M-Replica to Taint
+              </button>
+              <div class="mr-divider"></div>
+              <!-- Bulk taint controls -->
+              <button class="btn mr-sm-btn" style="background:#ff9800" onclick="mrTaintAll()">Taint All</button>
+              <button class="btn mr-sm-btn" style="background:#757575" onclick="mrClearTaint()">Clear Taint</button>
+            </div>
+          </div>
+
+          <!-- Mode description -->
+          <p id="mrModeDesc" style="color:#ff9800;font-size:13px;margin:4px 0 12px 4px">
+            Click bits to mark them as tainted (orange). Use "Adapt M-Replica" to generate cells from the current taint selection.
+          </p>
+
+          <!-- ── Two-column layout ───────────────────────────────── -->
+          <div class="mr-columns">
+
+            <!-- LEFT: input + cell manager -->
+            <div class="mr-left-panel">
+
+              <!-- Hex input -->
+              <div id="mr-hex-input-mode" style="display:none;margin-bottom:14px;padding:14px;background:white;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.08)">
+                <h4 style="margin:0 0 8px;color:#667eea">Input State (Hex)</h4>
+                <input type="text" id="mr-input-hex" placeholder="0x0" value="0x0"
+                       oninput="mrUpdateBitsFromHex()"
+                       style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-family:monospace"/>
+              </div>
+
+              <!-- Bit-by-bit input -->
+              <div id="mr-bit-input-mode">
+                <h3 style="margin:0 0 10px">Input Registers</h3>
+                <div id="mr-register-inputs"></div>
+              </div>
+
+              <!-- ── Cell Manager ─────────────────────────────────── -->
+              <div style="margin-top:24px;padding:16px;background:white;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.08)">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                  <h3 style="margin:0">Cells</h3>
+                  <div style="display:flex;gap:6px">
+                    <button class="btn mr-sm-btn" style="background:#28a745" onclick="mrAddCellDialog()">+ Add Cell</button>
+                    <button class="btn mr-sm-btn" style="background:#dc3545" onclick="mrResetCells()">🗑 Clear All</button>
+                  </div>
+                </div>
+                <div id="mr-cell-list"></div>
+
+                <!-- Make Full -->
+                <div style="margin-top:16px;padding:12px;background:#f8f9fa;border-radius:6px;border:1px solid #dee2e6">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                    <strong style="font-size:14px">Make Full M-Replica</strong>
+                    <button class="btn mr-sm-btn" style="background:#764ba2" onclick="mrMakeFullDialog()">⚡ Generate</button>
+                  </div>
+                  <p style="font-size:12px;color:#888;margin:0 0 8px">Select the bits to enumerate (2ⁿ cells will be created):</p>
+                  <div id="mr-makebit-selector"></div>
+                </div>
+              </div>
+
+            </div><!-- /left -->
+
+            <!-- RIGHT: visualisation + output -->
+            <div class="mr-right-panel">
+
+              <!-- Matrix visualiser section -->
+              <div id="mr-matrix-section" class="mr-matrix-section">
+                <div class="mr-matrix-toolbar">
+                  <span style="font-weight:600;font-size:14px">Bit × Cell Matrix</span>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <button class="mr-icon-btn" onclick="mrZoomIn()"  title="Zoom in">＋</button>
+                    <button class="mr-icon-btn" onclick="mrZoomOut()" title="Zoom out">－</button>
+                    <button class="mr-icon-btn" onclick="mrZoomReset()" title="Reset zoom">⊙</button>
+                    <div id="mr-fs-enter" style="display:flex">
+                      <button class="mr-icon-btn" onclick="mrEnterFullscreen()" title="Full screen (Esc to exit)">⛶</button>
+                    </div>
+                    <div id="mr-fs-exit" style="display:none">
+                      <button class="mr-icon-btn" onclick="mrExitFullscreen()" title="Exit full screen (Esc)">✕ Exit</button>
+                    </div>
+                  </div>
+                </div>
+                <div id="mr-matrix-container" class="mr-matrix-container">
+                  <div id="mr-matrix-wrapper" style="transform-origin:top left;will-change:transform">
+                    <svg id="mr-matrix-svg" style="display:block"></svg>
+                  </div>
+                </div>
+                <p style="font-size:11px;color:#aaa;margin:4px 8px 0">
+                  Scroll to zoom · Drag to pan · Each row = one cell · Orange column = tainted input
+                </p>
+              </div>
+
+              <!-- Output panel -->
+              <div id="mr-output-panel" style="display:none;margin-top:20px;padding:16px;background:white;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.08)"></div>
+
+            </div><!-- /right -->
+          </div><!-- /columns -->
+        </div><!-- /mr-page -->
+      </div><!-- /mreplica-tab -->
+
       <div id="graph-tab" class="tab-content">
         <div class="graph-container">
           <h2>Taint Flow Visualization</h2>
@@ -452,5 +571,6 @@
     <script src="/static/graph.js"></script>
     <script src="/static/simulator.js"></script>
     <script src="/static/visualizer-new.js"></script>
+    <script src="/static/mreplica.js"></script>
   </body>
 </html>

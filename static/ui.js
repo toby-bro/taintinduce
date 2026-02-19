@@ -130,4 +130,8 @@ function updateAllDisplays(data) {
   if (simulationResults) {
     simulationResults.classList.remove("show");
   }
+  // Initialize M-Replica tab
+  if (typeof onMReplicaRuleLoaded === "function") {
+    onMReplicaRuleLoaded();
+  }
 }
