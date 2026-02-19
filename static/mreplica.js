@@ -7,6 +7,7 @@ let mrCells = []; // [{mask, value}] – mirrors backend
 let mrInputMode = "bits"; // 'bits' | 'hex'
 let mrIsTaintMode = true; // true = taint marking, false = value editing
 let mrTaintBits = new Set(); // "reg:bit" strings
+let mrAutoAdapt = false; // when true: adapt M-Replica on every taint change
 let mrFocusedCell = null; // {register, bit} for edit-mode keyboard nav
 
 let mrZoom = 1;
@@ -69,6 +70,14 @@ function mrToggleMode() {
       "Click a bit then type 0/1. Arrow keys and Enter to navigate.";
     desc.style.color = "#667eea";
     adaptBtn.style.display = "none";
+    // Reset auto-adapt when leaving taint mode
+    if (mrAutoAdapt) {
+      mrAutoAdapt = false;
+      adaptBtn.textContent = "🔗 Auto-Adapt: OFF";
+      adaptBtn.style.background = "#e84393";
+      adaptBtn.style.outline = "none";
+      adaptBtn.style.boxShadow = "none";
+    }
     // Clear focus
     if (mrFocusedCell) {
       const el = document.querySelector(
@@ -136,6 +145,28 @@ function mrToggleTaintBit(reg, bit) {
     el && el.classList.add("mr-tainted");
   }
   mrRunSimulation();
+  mrAdaptIfAuto();
+}
+
+function mrToggleAutoAdapt() {
+  mrAutoAdapt = !mrAutoAdapt;
+  const btn = document.getElementById("mrBtnAdapt");
+  if (mrAutoAdapt) {
+    btn.textContent = "🔗 Auto-Adapt: ON";
+    btn.style.background = "#e84393";
+    btn.style.outline = "3px solid #fff";
+    btn.style.boxShadow = "0 0 8px #e84393";
+    mrAdaptToTaint(); // apply immediately
+  } else {
+    btn.textContent = "🔗 Auto-Adapt: OFF";
+    btn.style.background = "#9e4370";
+    btn.style.outline = "none";
+    btn.style.boxShadow = "none";
+  }
+}
+
+function mrAdaptIfAuto() {
+  if (mrAutoAdapt) mrAdaptToTaint();
 }
 
 function mrFocusBitCell(reg, bit) {
@@ -175,6 +206,7 @@ function mrTaintAll() {
     }
   });
   mrRunSimulation();
+  mrAdaptIfAuto();
 }
 
 function mrClearTaint() {
@@ -183,6 +215,7 @@ function mrClearTaint() {
     .querySelectorAll(".mr-bit-cell")
     .forEach((el) => el.classList.remove("mr-tainted"));
   mrRunSimulation();
+  mrAdaptIfAuto();
 }
 
 function mrTaintReg(regName) {
@@ -206,6 +239,7 @@ function mrTaintReg(regName) {
     }
   }
   mrRunSimulation();
+  mrAdaptIfAuto();
 }
 
 function mrClearReg(regName) {
