@@ -7,15 +7,13 @@ name = "taintinduce"
 version = "0.1.2"
 description = "TaintInduce - Automate creation of taint propagation rules for unknown instruction sets"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [
     {name = "Chua Zheng Leong", email = "czl@iiyume.org"}
 ]
 license = {text = "MIT"}
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
