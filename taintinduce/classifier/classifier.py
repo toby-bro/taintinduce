@@ -1,8 +1,11 @@
+import logging
 from typing import Set
 
 from taintinduce.isa.register import CondRegister, Register
 from taintinduce.state.state import Observation
 from taintinduce.types import BitPosition
+
+logger = logging.getLogger(__name__)
 
 
 def _get_flag_bits(obs: Observation) -> Set[BitPosition]:
@@ -390,12 +393,16 @@ def classify_instruction(obs_list: list[Observation]) -> str:
     if not has_outputs:
         return 'No Data Outputs'
 
+    logger.info('Checking monotonic...')
     if is_monotonic(obs_list):
         return 'Monotonic'
+    logger.info('Not monotonic, checking transportable...')
     if is_transportable(obs_list):
         return 'Transportable'
+    logger.info('Not transportable, checking translatable...')
     if is_translatable(obs_list):
         return 'Translatable'
+    logger.info('Not translatable, checking conditionally transportable...')
     if is_cond_transportable(obs_list):
         return 'Conditionally Transportable'
     return 'Unknown'
