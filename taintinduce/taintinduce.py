@@ -8,8 +8,10 @@ import sys
 from typing import Optional
 
 import taintinduce.observation_engine.observation as observation_engine
+from taintinduce.classifier.classifier import classify_instruction
 from taintinduce.cpu.cpu import CPUFactory
 from taintinduce.disassembler.insn_info import Disassembler, InsnInfo
+from taintinduce.inference_engine import observation_processor
 from taintinduce.inference_engine.inference import infer
 from taintinduce.isa.register import Register
 from taintinduce.rules.rules import TaintRule
@@ -166,6 +168,12 @@ def main() -> None:
             return
         with open(obs_path, 'w') as f:
             json.dump(obs_list, f, cls=TaintInduceEncoder)
+
+
+    _deps = observation_processor.extract_observation_dependencies(obs_list)
+    category = classify_instruction(obs_list)
+    print(f'Instruction CellIFT Category: {category}')
+
 
     rule = infer(obs_list, output_induction=args.output_induction)
     taintrule = rule.convert2squirrel(args.arch, args.bytestring)
