@@ -18,12 +18,10 @@ def bit_position_iterator(start: int = 0) -> Generator[BitPosition, None, None]:
 def check_ones(value: int) -> frozenset[BitPosition]:
     """Obtains the position of bits that are set."""
     result_set: set[BitPosition] = set()
-    bit_position_iterator_instance = bit_position_iterator(0)
     while value:
-        pos = next(bit_position_iterator_instance)
-        if value & 1:
-            result_set.add(pos)
-        value >>= 1
+        lsb = value & -value
+        result_set.add(BitPosition(lsb.bit_length() - 1))
+        value &= value - 1
     return frozenset(result_set)
 
 
