@@ -159,7 +159,7 @@ def init_input_csv():
 def assemble_instruction(arch: Architecture, decoded: str) -> str:
     try:
         cpu = CPUFactory.create_cpu(arch)
-        encoding, _count = cpu.ks.asm(decoded)
+        encoding, _count = cpu.ks.asm(decoded)  # type: ignore[attr-defined]
         if encoding:
             return bytes(encoding).hex()
     except Exception as e:
