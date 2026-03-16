@@ -1,8 +1,8 @@
 from typing import Optional
 
 from capstone import CsInsn
-from capstone.arm64 import ARM64_OP_REG
-from capstone.x86 import X86_OP_REG
+from capstone.arm64 import ARM64_OP_MEM, ARM64_OP_REG
+from capstone.x86 import X86_OP_MEM, X86_OP_REG
 
 from taintinduce.disassembler.compat import SquirrelDisassemblerZydis
 from taintinduce.disassembler.exceptions import (
@@ -130,11 +130,26 @@ class Disassembler(object):
                     if operand.type == X86_OP_REG:
                         reg_name = dis.md.reg_name(operand.reg).upper()
                         self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
+                    elif operand.type == X86_OP_MEM:
+                        if getattr(operand.mem, 'base', 0) != 0:
+                            reg_name = dis.md.reg_name(operand.mem.base).upper()
+                            self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
+                        if getattr(operand.mem, 'index', 0) != 0:
+                            reg_name = dis.md.reg_name(operand.mem.index).upper()
+                            self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
+
                 elif arch_str == Architecture.ARM64:
 
                     if operand.type == ARM64_OP_REG:
                         reg_name = dis.md.reg_name(operand.reg).upper()
                         self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
+                    elif operand.type == ARM64_OP_MEM:
+                        if getattr(operand.mem, 'base', 0) != 0:
+                            reg_name = dis.md.reg_name(operand.mem.base).upper()
+                            self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
+                        if getattr(operand.mem, 'index', 0) != 0:
+                            reg_name = dis.md.reg_name(operand.mem.index).upper()
+                            self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
 
         # we don't fuck around with FPSW cause unicorn can't write stuff in it
         for reg in self.cs_reg_set:
