@@ -1,0 +1,118 @@
+X86|01d8|add eax, ebx|
+X86|29d8|sub eax, ebx|
+X86|0fafc3|imul eax, ebx|
+X86|31d8|xor eax, ebx|
+X86|89d8|mov eax, ebx|
+X86|8d44cb05|lea eax, [ebx + ecx*8 + 5]|
+X86|21d8|and eax, ebx|
+X86|09d8|or eax, ebx|
+X86|c1e002|shl eax, 2|
+X86|c1e802|shr eax, 2|
+X86|c1f802|sar eax, 2|
+X86|c1c802|ror eax, 2|
+X86|c1c002|rol eax, 2|
+X86|f7d0|not eax|
+X86|f7d8|neg eax|
+X86|40|inc eax|
+X86|48|dec eax|
+X86|50|push eax|
+X86|58|pop eax|
+X86|39d8|cmp eax, ebx|
+X86|85d8|test eax, ebx|
+X86|90|nop|
+X86|8918|mov [eax], ebx|
+X86|8b03|mov eax, [ebx]|
+X86|99|cdq|
+X86|98|cwde|
+X86|0fb6c3|movzx eax, bl|
+X86|0fbec3|movsx eax, bl|
+X86|93|xchg eax, ebx|
+X86|0f44c3|cmovz eax, ebx|
+X86|0f45c3|cmovnz eax, ebx|
+X86|0f94c0|setz al|
+X86|0fa3d8|bt eax, ebx|
+X86|0fc8|bswap eax|
+X86|fd|std|
+X86|fc|cld|
+X86|c3|ret|
+AMD64|4801d8|add rax, rbx|
+AMD64|4829d8|sub rax, rbx|
+AMD64|480fafc3|imul rax, rbx|
+AMD64|4831d8|xor rax, rbx|
+AMD64|4889d8|mov rax, rbx|
+AMD64|488d44cb05|lea rax, [rbx + rcx*8 + 5]|
+AMD64|4821d8|and rax, rbx|
+AMD64|4809d8|or rax, rbx|
+AMD64|48c1e002|shl rax, 2|
+AMD64|48c1e802|shr rax, 2|
+AMD64|48c1f802|sar rax, 2|
+AMD64|48c1c802|ror rax, 2|
+AMD64|48c1c002|rol rax, 2|
+AMD64|48f7d0|not rax|
+AMD64|48f7d8|neg rax|
+AMD64|48ffc0|inc rax|
+AMD64|48ffc8|dec rax|
+AMD64|50|push rax|
+AMD64|58|pop rax|
+AMD64|4839d8|cmp rax, rbx|
+AMD64|4885d8|test rax, rbx|
+AMD64|90|nop|
+AMD64|488918|mov qword ptr [rax], rbx|
+AMD64||mov rsi, [rdi]|
+AMD64||cqo|
+AMD64||movzx rax, bl|
+AMD64||movzx rax, bx|
+AMD64||movsx rax, bl|
+AMD64||movsx rax, bx|
+AMD64||movsxd rax, ebx|
+AMD64||xchg rax, rbx|
+AMD64||cmovz rax, rbx|
+AMD64||cmovnz rax, rbx|
+AMD64||setz al|
+AMD64||bswap rax|
+AMD64||std|
+AMD64||cld|
+AMD64||ret|
+AMD64||syscall|
+ARM64||ret|
+ARM64||brk #0|
+ARM64||autibsp|
+ARM64||eor x0, x1, x2|
+ARM64||sub x0, x1, x2|
+ARM64||cset x0, eq|
+ARM64||cmn x0, x1|
+ARM64||ldur x0, [x1, #-4]|
+ARM64||add x0, x1, x2, lsl #2|
+ARM64||csel x0, x1, x2, eq|
+ARM64||orr x0, x1, x2|
+ARM64||paciza x0|
+ARM64||ldr x0, [x1, x2]|
+ARM64||strb w0, [x1]|
+ARM64||ldp d0, d1, [x1]|
+ARM64||sxtw x0, w1|
+ARM64||and x0, x1, x2|
+ARM64||tbnz x0, #3, . + 8|
+ARM64||tbz x0, #3, . + 8|
+ARM64||stp x0, x1, [x2, #16]!|
+ARM64||add x0, x1, x2|
+ARM64||ldp x0, x1, [x2], #16|
+ARM64||stp d0, d1, [x1]|
+ARM64||retab|
+ARM64||pacibsp|
+ARM64||cbnz x0, . + 8|
+ARM64||cmp x0, x1|
+ARM64||ldrb w0, [x1]|
+ARM64||adrp x0, 0|
+ARM64||ldr x0, [sp]|
+ARM64||stp x0, x1, [sp]|
+ARM64||ldp x0, x1, [sp]|
+ARM64||adr x0, 0|
+ARM64||cbz x0, . + 8|
+ARM64||b . + 4|
+ARM64||str x0, [x1]|
+ARM64||b.eq . + 4|
+ARM64||mov x0, #1|
+ARM64||nop|
+ARM64||ldr x0, [x1]|
+ARM64||bl . + 8|
+ARM64||mov x0, x1|
