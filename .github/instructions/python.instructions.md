@@ -18,6 +18,7 @@ applyTo: "**/*.py"
   - keep the code as modular as possible
   - make small functions for logic
   - make variable and function names explicit so as not to need comments / docstring
+- Prevent regressions by adding unit tests for each bug you fix, and for each new feature you add.
 
 ## Writing tests
 
