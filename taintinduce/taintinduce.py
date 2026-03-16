@@ -8,11 +8,13 @@ import sys
 from typing import Optional
 
 import taintinduce.observation_engine.observation as observation_engine
+from taintinduce.classifier.categories import InstructionCategory
 from taintinduce.classifier.classifier import classify_instruction
 from taintinduce.cpu.cpu import CPUFactory
 from taintinduce.disassembler.insn_info import Disassembler, InsnInfo
 from taintinduce.inference_engine import observation_processor
 from taintinduce.inference_engine.inference import infer
+from taintinduce.instrumentation.instrument import instrument_instruction
 from taintinduce.isa.register import Register
 from taintinduce.rules.rules import TaintRule
 
@@ -169,26 +171,36 @@ def main() -> None:
         with open(obs_path, 'w') as f:
             json.dump(obs_list, f, cls=TaintInduceEncoder)
 
-
     _deps = observation_processor.extract_observation_dependencies(obs_list)
     category = classify_instruction(obs_list)
-    print(f'Instruction CellIFT Category: {category}')
+    print(f'Instruction CellIFT Category: {category.name}')
 
+    if category is not InstructionCategory.UNKNOWN:
+        circuit = instrument_instruction(obs_list, category)
+        print('======== Generated Instrumentation ========')
+        print(circuit)
+        print('=========================================')
 
-    rule = infer(obs_list, output_induction=args.output_induction)
-    taintrule = rule.convert2squirrel(args.arch, args.bytestring)
-    if args.output_dir:
-        with open(rule_path, 'w') as myfile:
-            json.dump(taintrule, myfile, cls=TaintInduceEncoder, indent=2)
+        instrument_path = os.path.join(args.output_dir, args.bytestring + '_' + args.arch + '_instrumentation.json')
+        with open(instrument_path, 'w') as f:
+            json.dump(circuit, f, cls=TaintInduceEncoder, indent=2)
+        print(f'Writing instrumentation to {instrument_path}\n')
 
-    # Verify serialization round-trip
-    serialized = json.dumps(taintrule, cls=TaintInduceEncoder)
-    deserialized = json.loads(serialized, cls=TaintInduceDecoder)
-    if taintrule != deserialized:
-        print('Serialization round-trip failed!')
-        return
-    print('Writing rule to {}'.format(rule_path))
-    print('')
+    else:
+        rule = infer(obs_list, output_induction=args.output_induction)
+        taintrule = rule.convert2squirrel(args.arch, args.bytestring)
+        if args.output_dir:
+            with open(rule_path, 'w') as myfile:
+                json.dump(taintrule, myfile, cls=TaintInduceEncoder, indent=2)
+
+        # Verify serialization round-trip
+        serialized = json.dumps(taintrule, cls=TaintInduceEncoder)
+        deserialized = json.loads(serialized, cls=TaintInduceDecoder)
+        if taintrule != deserialized:
+            print('Serialization round-trip failed!')
+            return
+        print('Writing rule to {}'.format(rule_path))
+        print('')
 
 
 if __name__ == '__main__':

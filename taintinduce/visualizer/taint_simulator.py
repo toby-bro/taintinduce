@@ -6,6 +6,7 @@ Reuses core TaintInduce logic for condition evaluation and dataflow application.
 
 from typing import Any
 
+from taintinduce.instrumentation.ast import LogicCircuit
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, TaintRule, TaintRuleFormat
 
@@ -180,7 +181,7 @@ def _process_dataflow_for_pair(
 
 
 def simulate_taint_propagation(
-    rule: TaintRule,
+    rule: TaintRule | LogicCircuit,
     input_state: int,
     tainted_bits: set[tuple[str, int]],  # Set of (register_name, bit_index) tuples
 ) -> dict[str, Any]:
@@ -197,10 +198,22 @@ def simulate_taint_propagation(
             - tainted_outputs: Set of (register_name, bit_index) tuples for tainted output bits
             - dataflows: List of all active dataflows showing taint propagation paths
     """
+    if isinstance(rule, LogicCircuit):
+        # Convert set of (reg, bit) to dict of reg -> bitmask
+        tainted_outputs, all_dataflows = evaluate_taint_propagation_for_circuit(rule, tainted_bits)
+
+        return {
+            'matching_pairs': list(range(len(rule.assignments))),
+            'tainted_outputs': list(tainted_outputs),
+            'dataflows': all_dataflows,
+            'num_tainted_inputs': len(tainted_bits),
+            'num_tainted_outputs': len(tainted_outputs),
+        }
+
     # Find matching pairs
     matching_pairs = []
-    all_dataflows: list[dict[str, Any]] = []
-    tainted_outputs: set[tuple[str, int]] = set()
+    all_dataflows = []
+    tainted_outputs = set()
 
     # Convert tainted_bits to global bit positions
     tainted_positions = _convert_tainted_bits_to_positions(tainted_bits, rule.format)
@@ -237,6 +250,41 @@ def simulate_taint_propagation(
         'num_tainted_inputs': len(tainted_bits),
         'num_tainted_outputs': len(tainted_outputs),
     }
+
+
+def evaluate_taint_propagation_for_circuit(
+    rule: LogicCircuit,
+    tainted_bits: set[tuple[str, int]],
+) -> tuple[set[tuple[str, int]], list[dict[str, Any]]]:
+    input_taint: dict[str, int] = {}
+    for reg, bit in tainted_bits:
+        input_taint[reg] = input_taint.get(reg, 0) | (1 << bit)
+
+        # Evaluate using AST logic
+    output_taint = rule.evaluate(input_taint)
+
+    # Convert dict of reg -> bitmask back to set of (reg, bit)
+    tainted_outputs = set()
+    for reg, bitmask in output_taint.items():
+        for bit in range(256):  # Max register size approximation
+            if bitmask & (1 << bit):
+                tainted_outputs.add((reg, bit))
+
+        # Mock dataflows since it's just pure assignments
+    all_dataflows = []
+    for idx, assignment in enumerate(rule.assignments):
+        for dep in assignment.dependencies:
+            dep_mask = input_taint.get(dep.name, 0)
+            if dep_mask:
+                all_dataflows.append(
+                    {
+                        'input_bit': (dep.name, -1),  # abstract bit
+                        'output_bit': (assignment.target.name, -1),
+                        'pair_index': idx,
+                    },
+                )
+
+    return tainted_outputs, all_dataflows
 
 
 def _global_bit_to_reg_bit(

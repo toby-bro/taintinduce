@@ -1,5 +1,5 @@
-from taintinduce.classifier.classifier import classify_instruction, is_mapped, is_translatable
 from taintinduce.classifier.categories import InstructionCategory
+from taintinduce.classifier.classifier import classify_instruction, is_mapped, is_translatable
 from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EBX
 from taintinduce.state.state import Observation, State
 from taintinduce.types import Architecture, StateValue
@@ -314,7 +314,6 @@ def test_classify_avalanche():
 
     res = classify_instruction([obs])
     assert res == InstructionCategory.AVALANCHE
-    assert 'EAX' in res
 
 
 def test_classify_not_translatable_multiple_flips():
