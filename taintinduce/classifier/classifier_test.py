@@ -1,4 +1,4 @@
-from taintinduce.classifier.classifier import classify_instruction, is_mapped
+from taintinduce.classifier.classifier import classify_instruction, is_mapped, is_translatable
 from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EBX
 from taintinduce.state.state import Observation, State
 from taintinduce.types import Architecture, StateValue
@@ -314,3 +314,32 @@ def test_classify_avalanche():
     res = classify_instruction([obs])
     assert 'Avalanche' in res
     assert 'EAX' in res
+
+
+def test_classify_not_translatable_multiple_flips():
+    # Simulates a scenario like 'imul' where a constant offset exists for the lowest bit,
+    # but a single input bit flips multiple output bits in the destination register.
+    # This must not be classified as Translatable.
+    s_in = State(32, StateValue(0))
+    s_out = State(32, StateValue(0))
+
+    # Bit 0 flip causes Bit 1 AND Bit 2 to flip (e.g. out_xor = 6)
+    m_in1 = State(32, StateValue(1))
+    m_out1 = State(32, StateValue(6))  # 0b110 -> 2 bits flipped in EAX
+
+    # Bit 1 flip causes Bit 2 AND Bit 3 to flip (e.g. out_xor = 12)
+    m_in2 = State(32, StateValue(2))
+    m_out2 = State(32, StateValue(12)) # 0b1100 -> 2 bits flipped in EAX
+
+    obs = Observation(
+        (s_in, s_out),
+        frozenset([(m_in1, m_out1), (m_in2, m_out2)]),
+        'test_imul_sim',
+        Architecture.X86,
+        [X86_REG_EAX()],
+    )
+
+    # It should correctly drop past mapping, monotonic, transportable, translatable.
+    # We want to specifically ensure is_translatable rejects it.
+    assert is_translatable([obs]) is False
+

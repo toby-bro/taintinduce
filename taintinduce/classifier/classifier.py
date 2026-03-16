@@ -253,12 +253,25 @@ def is_translatable(obs_list: list[Observation]) -> bool:  # noqa: C901
 
         for _in_reg, local_flips in flips_by_in_reg.items():
             deltas = set()
+            is_valid_data_operand = True
+
             for in_local, out_bits in local_flips.items():
+
+                # Check for structural shift validity: a data operand bit should not flip multiple target bits.
+                out_regs: dict[str, int] = {}
+                for b in out_bits:
+                    _, b_reg = get_local_bit(b, layout)
+                    out_regs[b_reg] = out_regs.get(b_reg, 0) + 1
+
+                if any(count > 1 for count in out_regs.values()):
+                    is_valid_data_operand = False
+                    break
+
                 out_locals = [get_local_bit(b, layout)[0] for b in out_bits]
                 primary_out = min(out_locals) if out_locals else 0
                 deltas.add(primary_out - in_local)
 
-            if len(deltas) == 1:
+            if is_valid_data_operand and len(deltas) == 1:
                 valid_data_operand_found = True
                 delta = next(iter(deltas))
                 if delta != 0:
