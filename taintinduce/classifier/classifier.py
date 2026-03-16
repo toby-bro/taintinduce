@@ -330,28 +330,32 @@ def is_mapped(obs_list: list[Observation]) -> bool:  # noqa: C901
             out_xor &= ~flag_mask
 
             if out_xor == 0:
-                if in_bit in in_to_out and in_to_out[in_bit] is not None:
+                if in_bit in in_to_out and in_to_out[in_bit] != 0:
                     return False
-                in_to_out[in_bit] = None
+                in_to_out[in_bit] = 0
             else:
-                if (out_xor & (out_xor - 1)) != 0:
-                    return False
-                out_bit = out_xor.bit_length() - 1
-
                 if in_bit in in_to_out:
-                    if in_to_out[in_bit] != out_bit:
+                    if in_to_out[in_bit] != out_xor:
                         return False
                 else:
-                    in_to_out[in_bit] = out_bit
+                    in_to_out[in_bit] = out_xor
 
-                if out_bit in out_to_in:
-                    if out_to_in[out_bit] != in_bit:
-                        return False
-                else:
-                    out_to_in[out_bit] = in_bit
-                    has_mapping = True
+                    temp_out = out_xor
+                    while temp_out:
+                        lsb = temp_out & -temp_out
+                        out_bit = lsb.bit_length() - 1
+
+                        if out_bit in out_to_in:
+                            if out_to_in[out_bit] != in_bit:
+                                return False
+                        else:
+                            out_to_in[out_bit] = in_bit
+                            has_mapping = True
+
+                        temp_out &= temp_out - 1
 
     return has_mapping
+
 
 def classify_instruction(obs_list: list[Observation]) -> str:  # noqa: C901
     has_outputs = False

@@ -9,10 +9,16 @@ def test_classify_monotonic():
     seed_in = State(64, StateValue(0))
     seed_out = State(64, StateValue(0))
 
-    # OR instruction
-    mut_in1 = State(64, StateValue(1))
-    mut_out1 = State(64, StateValue(1))
-    obs = Observation((seed_in, seed_out), frozenset([(mut_in1, mut_out1)]), '00', Architecture.X86, state_fmt)
+    # OR instruction: Two different inputs map to the SAME output
+    mut_in1 = State(64, StateValue(1))  # eax[0] flipped
+    mut_out1 = State(64, StateValue(1))  # out[0] flipped
+
+    mut_in2 = State(64, StateValue(1 << 32))  # ebx[0] flipped
+    mut_out2 = State(64, StateValue(1))  # out[0] flipped
+
+    obs = Observation(
+        (seed_in, seed_out), frozenset([(mut_in1, mut_out1), (mut_in2, mut_out2)]), '00', Architecture.X86, state_fmt
+    )
 
     assert classify_instruction([obs]) == 'Monotonic'
 
@@ -219,15 +225,22 @@ def test_classify_mapped_add_fail():
 
 
 def test_classify_mapped_carry_fail():
-    # We need: ONE input flip causes TWO output flips
+    # If 1 input causes 2 output flips, but a SECOND input ALSO causes a flip in those outputs
+    # Examples: Arithmetic ADD triggers carry cascades.
     s_in = State(64, StateValue(0))
     s_out = State(64, StateValue(0))
-    m_in = State(64, StateValue(1))
-    m_out = State(64, StateValue(3))  # Y_0 and Y_1 both flipped by X_0!
+
+    # Input 0 flips Output 0, 1 (like AL, BL where AL generates carry to BL)
+    m_in1 = State(64, StateValue(1))
+    m_out1 = State(64, StateValue(3))  # Y_0 and Y_1 flipped by X_0!
+
+    # Input 1 flips Output 1
+    m_in2 = State(64, StateValue(2))
+    m_out2 = State(64, StateValue(2))  # Y_1 flipped by X_1!
 
     obs = Observation(
         (s_in, s_out),
-        frozenset([(m_in, m_out)]),
+        frozenset([(m_in1, m_out1), (m_in2, m_out2)]),
         'test_carry',
         Architecture.X86,
         [X86_REG_EAX(), X86_REG_EBX()],
