@@ -306,7 +306,54 @@ def is_cond_transportable(obs_list: list[Observation]) -> bool:
     return False
 
 
-def classify_instruction(obs_list: list[Observation]) -> str:
+def is_mapped(obs_list: list[Observation]) -> bool:  # noqa: C901
+    if not obs_list:
+        return False
+
+    flag_bits = _get_flag_bits(obs_list[0]) if obs_list else set()
+    flag_mask = sum(1 << b for b in flag_bits)
+
+    in_to_out: dict[int, int | None] = {}
+    out_to_in: dict[int, int] = {}
+
+    has_mapping = False
+
+    for obs in obs_list:
+        seed_in, seed_out = obs.seed_io
+        for mutate_in, mutate_out in obs.mutated_ios:
+            in_xor = seed_in.state_value ^ mutate_in.state_value
+            if in_xor == 0 or (in_xor & (in_xor - 1)) != 0:
+                continue
+            in_bit = in_xor.bit_length() - 1
+
+            out_xor = seed_out.state_value ^ mutate_out.state_value
+            out_xor &= ~flag_mask
+
+            if out_xor == 0:
+                if in_bit in in_to_out and in_to_out[in_bit] is not None:
+                    return False
+                in_to_out[in_bit] = None
+            else:
+                if (out_xor & (out_xor - 1)) != 0:
+                    return False
+                out_bit = out_xor.bit_length() - 1
+
+                if in_bit in in_to_out:
+                    if in_to_out[in_bit] != out_bit:
+                        return False
+                else:
+                    in_to_out[in_bit] = out_bit
+
+                if out_bit in out_to_in:
+                    if out_to_in[out_bit] != in_bit:
+                        return False
+                else:
+                    out_to_in[out_bit] = in_bit
+                    has_mapping = True
+
+    return has_mapping
+
+def classify_instruction(obs_list: list[Observation]) -> str:  # noqa: C901
     has_outputs = False
     flag_bits = _get_flag_bits(obs_list[0]) if obs_list else set()
     flag_mask = sum(1 << b for b in flag_bits)
@@ -323,7 +370,10 @@ def classify_instruction(obs_list: list[Observation]) -> str:
     if not has_outputs:
         return 'No Data Outputs'
 
-    logger.info('Checking monotonic...')
+    logger.info('Checking mapped...')
+    if is_mapped(obs_list):
+        return 'Mapped'
+    logger.info('Not mapped, checking monotonic...')
     if is_monotonic(obs_list):
         return 'Monotonic'
     logger.info('Not monotonic, checking transportable...')

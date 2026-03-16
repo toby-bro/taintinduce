@@ -1,4 +1,4 @@
-from taintinduce.classifier.classifier import classify_instruction
+from taintinduce.classifier.classifier import classify_instruction, is_mapped
 from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EBX
 from taintinduce.state.state import Observation, State
 from taintinduce.types import Architecture, StateValue
@@ -121,12 +121,14 @@ def test_classify_cond_transportable():
 
     mut1_3 = State(64, StateValue(3))  # in0=1, in1=1
     mut1_out_3 = State(
-        64, StateValue(1),
+        64,
+        StateValue(1),
     )  # O=1. in0 rose -> O rose. (Non-decreasing behavior for in0! Breaks monotonic for in0)
 
     mut2_3 = State(64, StateValue(0))  # in0=0, in1=0
     mut2_out_3 = State(
-        64, StateValue(1),
+        64,
+        StateValue(1),
     )  # O=1. in1 fell -> O rose. (Non-increasing behavior for in1! Breaks monotonic for in1)
 
     obs2_3 = Observation(
@@ -138,3 +140,97 @@ def test_classify_cond_transportable():
     )
 
     assert classify_instruction([obs2_1, obs2_2, obs2_3]) == 'Conditionally Transportable'
+
+
+def test_classify_mapped():
+    # Test for mapped (e.g. NOT eax)
+    # X_0 flips Y_0, X_1 flips Y_1, etc.
+    seed_in = State(64, StateValue(0))
+    seed_out = State(64, StateValue(0xFFFFFFFFFFFFFFFF))
+
+    mutations = []
+    for i in range(5):
+        mut_in = State(64, StateValue(1 << i))
+        # NOT eax implies that the bit i of output will drop to 0
+        mut_out = State(64, StateValue(0xFFFFFFFFFFFFFFFF ^ (1 << i)))
+        mutations.append((mut_in, mut_out))
+
+    obs = Observation(
+        (seed_in, seed_out),
+        frozenset(mutations),
+        'test_not',
+        Architecture.X86,
+        [X86_REG_EAX(), X86_REG_EBX()],
+    )
+
+    assert is_mapped([obs]) is True
+    assert classify_instruction([obs]) == 'Mapped'
+
+
+def test_classify_mapped_shifted():
+    # Test for SHL eax, 2 (Mapped but shifted AND some inputs don't map)
+    # X_0 flips Y_2, X_1 flips Y_3... X_62 flips Y_64 (outside, or None), X_63 -> None
+    seed_in = State(64, StateValue(0))
+    seed_out = State(64, StateValue(0))
+
+    mutations = []
+    for i in range(10):
+        mut_in = State(64, StateValue(1 << i))
+        # SHL 2 means output is input << 2
+        mut_out = State(64, StateValue(mut_in.state_value << 2))
+        mutations.append((mut_in, mut_out))
+
+    # Add a mutation that falls off the edge
+    mutations.append((State(64, StateValue(1 << 63)), State(64, StateValue(0))))
+
+    obs = Observation(
+        (seed_in, seed_out),
+        frozenset(mutations),
+        'test_shl',
+        Architecture.X86,
+        [X86_REG_EAX(), X86_REG_EBX()],
+    )
+
+    assert is_mapped([obs]) is True
+    assert classify_instruction([obs]) == 'Mapped'
+
+
+def test_classify_mapped_add_fail():
+    # Test that ADD is NOT mapped (multiple inputs trigger same output carry, or single input triggers multiple outputs)
+    seed_in = State(64, StateValue(0))
+    seed_out = State(64, StateValue(0))
+
+    # If X_0 flips Y_0 and Z_0 flips Y_0 -> that's 2 inputs mapping to 1 output. Should fail is_mapped!
+    mut1_in = State(64, StateValue(1))  # X_0 = 1
+    mut1_out = State(64, StateValue(1))  # Y_0 = 1
+
+    mut2_in = State(64, StateValue(1 << 32))  # Z_0 = 1
+    mut2_out = State(64, StateValue(1))  # Y_0 = 1
+
+    obs = Observation(
+        (seed_in, seed_out),
+        frozenset([(mut1_in, mut1_out), (mut2_in, mut2_out)]),
+        'test_add',
+        Architecture.X86,
+        [X86_REG_EAX(), X86_REG_EBX()],
+    )
+
+    assert is_mapped([obs]) is False
+
+
+def test_classify_mapped_carry_fail():
+    # We need: ONE input flip causes TWO output flips
+    s_in = State(64, StateValue(0))
+    s_out = State(64, StateValue(0))
+    m_in = State(64, StateValue(1))
+    m_out = State(64, StateValue(3))  # Y_0 and Y_1 both flipped by X_0!
+
+    obs = Observation(
+        (s_in, s_out),
+        frozenset([(m_in, m_out)]),
+        'test_carry',
+        Architecture.X86,
+        [X86_REG_EAX(), X86_REG_EBX()],
+    )
+
+    assert is_mapped([obs]) is False
