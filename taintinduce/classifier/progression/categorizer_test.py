@@ -234,7 +234,7 @@ def test_categorize_progression():  # noqa: C901
                 print(f'Failed to get observations for {decoded_str}')
                 row[3] = 'Error'
             else:
-                row[3] = classify_instruction(obs_list)
+                row[3] = str(classify_instruction(obs_list))
                 print(f' -> {row[3]}')
         except Exception as e:
             print(f'Exception on {decoded_str}: {e}')

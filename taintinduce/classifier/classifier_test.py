@@ -1,4 +1,5 @@
 from taintinduce.classifier.classifier import classify_instruction, is_mapped, is_translatable
+from taintinduce.classifier.categories import InstructionCategory
 from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EBX
 from taintinduce.state.state import Observation, State
 from taintinduce.types import Architecture, StateValue
@@ -24,7 +25,7 @@ def test_classify_monotonic():
         state_fmt,
     )
 
-    assert classify_instruction([obs]) == 'Monotonic'
+    assert classify_instruction([obs]) == InstructionCategory.MONOTONIC
 
 
 def test_classify_transportable():
@@ -46,7 +47,7 @@ def test_classify_transportable():
         state_fmt,
     )
 
-    assert classify_instruction([obs]) == 'Transportable'
+    assert classify_instruction([obs]) == InstructionCategory.TRANSPORTABLE
 
 
 def test_classify_translatable():
@@ -81,7 +82,7 @@ def test_classify_translatable():
         state_fmt,
     )
 
-    assert classify_instruction([obs]) == 'Translatable'
+    assert classify_instruction([obs]) == InstructionCategory.TRANSLATABLE
 
 
 def test_classify_cond_transportable():
@@ -149,7 +150,7 @@ def test_classify_cond_transportable():
         [X86_REG_EAX(), X86_REG_EBX()],
     )
 
-    assert classify_instruction([obs2_1, obs2_2, obs2_3]) == 'Conditionally Transportable'
+    assert classify_instruction([obs2_1, obs2_2, obs2_3]) == InstructionCategory.COND_TRANSPORTABLE
 
 
 def test_classify_mapped():
@@ -174,7 +175,7 @@ def test_classify_mapped():
     )
 
     assert is_mapped([obs]) is True
-    assert classify_instruction([obs]) == 'Mapped'
+    assert classify_instruction([obs]) == InstructionCategory.MAPPED
 
 
 def test_classify_mapped_shifted():
@@ -202,7 +203,7 @@ def test_classify_mapped_shifted():
     )
 
     assert is_mapped([obs]) is True
-    assert classify_instruction([obs]) == 'Mapped'
+    assert classify_instruction([obs]) == InstructionCategory.MAPPED
 
 
 def test_classify_mapped_add_fail():
@@ -287,7 +288,7 @@ def test_classify_not_avalanche_arithmetic():
 
     res = classify_instruction([obs2])
     # Should not be avalanche because bits are contiguous
-    assert 'Avalanche' not in res
+    assert res != InstructionCategory.AVALANCHE
 
 
 def test_classify_avalanche():
@@ -312,7 +313,7 @@ def test_classify_avalanche():
     )
 
     res = classify_instruction([obs])
-    assert 'Avalanche' in res
+    assert res == InstructionCategory.AVALANCHE
     assert 'EAX' in res
 
 
@@ -329,7 +330,7 @@ def test_classify_not_translatable_multiple_flips():
 
     # Bit 1 flip causes Bit 2 AND Bit 3 to flip (e.g. out_xor = 12)
     m_in2 = State(32, StateValue(2))
-    m_out2 = State(32, StateValue(12)) # 0b1100 -> 2 bits flipped in EAX
+    m_out2 = State(32, StateValue(12))  # 0b1100 -> 2 bits flipped in EAX
 
     obs = Observation(
         (s_in, s_out),
@@ -342,4 +343,3 @@ def test_classify_not_translatable_multiple_flips():
     # It should correctly drop past mapping, monotonic, transportable, translatable.
     # We want to specifically ensure is_translatable rejects it.
     assert is_translatable([obs]) is False
-

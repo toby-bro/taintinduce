@@ -1,6 +1,7 @@
 import logging
 from typing import Set
 
+from taintinduce.classifier.categories import InstructionCategory
 from taintinduce.isa.register import CondRegister, Register
 from taintinduce.state.state import Observation
 from taintinduce.types import BitPosition
@@ -419,7 +420,7 @@ def get_avalanche_registers(obs_list: list[Observation]) -> list[str]:
     return list(avalanche_regs)
 
 
-def classify_instruction(obs_list: list[Observation]) -> str:  # noqa: C901
+def classify_instruction(obs_list: list[Observation]) -> InstructionCategory:  # noqa: C901
     has_outputs = False
     flag_bits = _get_flag_bits(obs_list[0]) if obs_list else set()
     flag_mask = sum(1 << b for b in flag_bits)
@@ -434,27 +435,27 @@ def classify_instruction(obs_list: list[Observation]) -> str:  # noqa: C901
                 break
 
     if not has_outputs:
-        return 'No Data Outputs'
+        return InstructionCategory.NO_DATA_OUTPUTS
 
     logger.info('Checking mapped...')
     if is_mapped(obs_list):
-        return 'Mapped'
+        return InstructionCategory.MAPPED
     logger.info('Not mapped, checking monotonic...')
     if is_monotonic(obs_list):
-        return 'Monotonic'
+        return InstructionCategory.MONOTONIC
     logger.info('Not monotonic, checking transportable...')
     if is_transportable(obs_list):
-        return 'Transportable'
+        return InstructionCategory.TRANSPORTABLE
     logger.info('Not transportable, checking translatable...')
     if is_translatable(obs_list):
-        return 'Translatable'
+        return InstructionCategory.TRANSLATABLE
     logger.info('Not translatable, checking conditionally transportable...')
     if is_cond_transportable(obs_list):
-        return 'Conditionally Transportable'
+        return InstructionCategory.COND_TRANSPORTABLE
 
     logger.info('Not conditionally transportable, checking avalanche...')
     avalanche_regs = get_avalanche_registers(obs_list)
     if avalanche_regs:
-        return f"Avalanche -> {', '.join(sorted(avalanche_regs))}"
+        return InstructionCategory.AVALANCHE
 
-    return 'Unknown'
+    return InstructionCategory.UNKNOWN
