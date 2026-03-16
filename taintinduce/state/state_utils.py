@@ -84,7 +84,7 @@ def bits2regs(state: State, regs: Sequence[Register]) -> CpuRegisterMap:
     """
     cpu_state = CpuRegisterMap()
     value = state.state_value
-    regs_list = sorted(regs, key=lambda reg: reg.uc_const)
+    regs_list = regs
     for reg in regs_list:
         cpu_state[reg] = ((2**reg.bits) - 1) & value
         value = StateValue(value >> reg.bits)
@@ -116,7 +116,7 @@ def pos2reg(state1: State, state2: State, regs: Sequence[Register]) -> list[tupl
     """Convert position values to registers."""
     pos_val = list(state1.diff(state2))
     pos_val = sorted(pos_val, reverse=True)
-    regs_list = sorted(regs, key=lambda reg: reg.uc_const)
+    regs_list = regs
     pos = 0
     res_regs = set()
 
