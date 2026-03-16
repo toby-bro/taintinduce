@@ -19,10 +19,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, Response, jsonify, request, send_file
 
 from taintinduce.cpu.cpu import CPUFactory
 from taintinduce.disassembler.compat import SquirrelDisassemblerZydis
+from taintinduce.instrumentation.ast import LogicCircuit
 from taintinduce.isa.register import Register
 from taintinduce.mreplica.cell import Cell as MReplicaCell
 from taintinduce.mreplica.mrepica import MReplica
@@ -46,7 +47,7 @@ SCRIPT_DIR = Path(__file__).parent
 app = Flask(__name__, static_folder=str(SCRIPT_DIR / 'static'))
 
 # Global rule storage
-current_rule: TaintRule | None = None
+current_rule: TaintRule | LogicCircuit | None = None
 rule_file_path: str = ''
 
 # Global M-Replica storage
@@ -72,8 +73,20 @@ def evaluate_condition(condition: TaintCondition | None, state_value: int) -> bo
     return False
 
 
-def get_matching_pairs(rule: TaintRule, input_state_value: int) -> list[dict['str', Any]]:
+def get_matching_pairs(rule: TaintRule | LogicCircuit, input_state_value: int) -> list[dict['str', Any]]:
     """Find which condition-dataflow pairs match the given input state."""
+    if isinstance(rule, LogicCircuit):
+        # All logic circuit assignments are unconditionally applied
+        return [
+            {
+                'pair_index': idx,
+                'condition': None,
+                'dataflow': assignment.target.name + ':' + str(assignment.target.bit_start),
+                'is_unconditional': True,
+            }
+            for idx, assignment in enumerate(rule.assignments)
+        ]
+
     matching_pairs = []
     for idx, pair in enumerate(rule.pairs):
         if evaluate_condition(pair.condition, input_state_value):
@@ -138,9 +151,12 @@ def format_condition_human_readable(condition: TaintCondition | None) -> str:
     return ''.join(parts) if parts else 'UNCONDITIONAL'
 
 
-def generate_test_cases(rule: TaintRule) -> list[dict[str, Any]]:
+def generate_test_cases(rule: TaintRule | LogicCircuit) -> list[dict[str, Any]]:
     """Generate concrete test cases for each condition-dataflow pair."""
-    test_cases = []
+    test_cases: list[dict[str, Any]] = []
+
+    if isinstance(rule, LogicCircuit):
+        return test_cases
 
     for idx, pair in enumerate(rule.pairs):
         if pair.condition is None:
@@ -176,7 +192,7 @@ def generate_test_cases(rule: TaintRule) -> list[dict[str, Any]]:
 
 
 @app.route('/')
-def index():
+def index() -> Response:
     """Serve the main HTML page."""
     return send_file(SCRIPT_DIR / 'static' / 'index.html')
 
@@ -203,20 +219,20 @@ def get_instruction_text(arch: str, bytestring: str) -> str:
 
 
 @app.route('/api/rule')
-def get_rule_data():
+def get_rule_data() -> Response | tuple[Response, int]:
     """API endpoint to get rule data."""
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
 
-    # print(f'📤 Backend: Building response for {current_rule.format.arch} with {len(current_rule.pairs)} pairs')
+    # print( for {_get_rule_format(current_rule).arch} with {len(current_rule.pairs)} pairs')
 
     ## Debug: Check if any pair has the problematic EAX[1]->EAX[1] flow
     # for idx, pair in enumerate(current_rule.pairs):
     #    if isinstance(pair.output_bits, dict):
     #        for input_bit, output_bits in pair.output_bits.items():
-    #            in_info = bitpos_to_reg_bit(input_bit, current_rule.format.registers)
+    #            in_info = bitpos_to_reg_bit(input_bit, _get_rule_format(current_rule).registers)
     #            for out_bit in output_bits:
-    #                out_info = bitpos_to_reg_bit(out_bit, current_rule.format.registers)
+    #                out_info = bitpos_to_reg_bit(out_bit, _get_rule_format(current_rule).registers)
     #                # Check for EAX[1] -> EAX[1]
     #                if (in_info.get('name') == 'EAX' and in_info.get('bit') == 1 and
     #                    out_info.get('name') == 'EAX' and out_info.get('bit') == 1):
@@ -227,6 +243,82 @@ def get_rule_data():
     #                        print(f'      Condition ops: {pair.condition.condition_ops}')
     #                        print(f'      Formatted: {format_condition_human_readable(pair.condition)[:200]}')
 
+    if isinstance(current_rule, LogicCircuit):
+        fmt = {
+            'arch': _get_rule_format(current_rule).arch,
+            'registers': [{'name': r.name, 'bits': r.bits} for r in _get_rule_format(current_rule).registers],
+            'mem_slots': 0,
+        }
+
+        pairs_data_circuit = []
+        for idx, assignment in enumerate(current_rule.assignments):
+            target = assignment.target.name
+            target_start = assignment.target.bit_start
+            target_end = assignment.target.bit_end
+
+            sample_flows_circuit = []
+            dataflow_list_circuit = []
+
+            out_info_circuit = {'type': 'reg', 'name': target, 'bit': f'{target_end}:{target_start}'}
+
+            input_bits_circuit = []
+            input_labels_circuit = []
+            for dep in assignment.dependencies:
+                input_bits_circuit.append({'type': 'reg', 'name': dep.name, 'bit': f'{dep.bit_end}:{dep.bit_start}'})
+                input_labels_circuit.append(str(dep))
+
+            if not input_labels_circuit:
+                input_label_circuit = '0'
+            else:
+                input_label_circuit = ' | '.join(input_labels_circuit)
+
+            sample_flows_circuit.append(
+                {
+                    'input': input_label_circuit,
+                    'outputs': str(assignment.target),
+                },
+            )
+
+            dataflow_list_circuit.append(
+                {
+                    'output_bit': out_info_circuit,
+                    'input_bits': input_bits_circuit,
+                    'condition': 'UNCONDITIONAL',
+                    'is_unconditional': True,
+                    'pair_index': idx,
+                },
+            )
+
+            pairs_data_circuit.append(
+                {
+                    'index': idx,
+                    'condition_text': 'UNCONDITIONAL',
+                    'condition_readable': str(assignment),
+                    'is_unconditional': True,
+                    'num_dataflows': 1,
+                    'sample_flows': sample_flows_circuit,
+                    'dataflow': dataflow_list_circuit,
+                },
+            )
+
+        return jsonify(
+            {
+                'filename': rule_file_path,
+                'is_logic_circuit': True,
+                'instruction': {
+                    'bytestring': getattr(current_rule, 'instruction', '') or getattr(current_rule, 'bytestring', ''),
+                    'asm': get_instruction_text(
+                        _get_rule_format(current_rule).arch,
+                        getattr(current_rule, 'instruction', '') or getattr(current_rule, 'bytestring', ''),
+                    ),
+                    'arch': _get_rule_format(current_rule).arch,
+                },
+                'format': fmt,
+                'num_pairs': len(current_rule.assignments),
+                'pairs': pairs_data_circuit,
+            },
+        )
+
     # Build pairs data
     pairs_data = []
     for idx, pair in enumerate(current_rule.pairs):
@@ -235,12 +327,12 @@ def get_rule_data():
         dataflow_list: list[dict[str, object]] = []
 
         # Convert input bit position to register name
-        in_info = bitpos_to_reg_bit(pair.input_bit, current_rule.format.registers)
-        input_label = f"{in_info['name']}[{in_info['bit']}]" if in_info['type'] == 'reg' else f'bit[{pair.input_bit}]'
+        in_info = bitpos_to_reg_bit(pair.input_bit, _get_rule_format(current_rule).registers)
+        input_label = f'{in_info["name"]}[{in_info["bit"]}]' if in_info['type'] == 'reg' else f'bit[{pair.input_bit}]'
 
         # Convert output bit position to register name (single output now)
-        out_info = bitpos_to_reg_bit(pair.output_bit, current_rule.format.registers)
-        out_label = f"{out_info['name']}[{out_info['bit']}]" if out_info['type'] == 'reg' else f'bit[{pair.output_bit}]'
+        out_info = bitpos_to_reg_bit(pair.output_bit, _get_rule_format(current_rule).registers)
+        out_label = f'{out_info["name"]}[{out_info["bit"]}]' if out_info['type'] == 'reg' else f'bit[{pair.output_bit}]'
 
         sample_flows.append(
             {
@@ -252,8 +344,8 @@ def get_rule_data():
         # Also prepare structured dataflow for graph
         # BitPosition is just an integer offset - need to map to register+bit
         # Convert integer BitPosition to (register, bit) using format
-        out_info = bitpos_to_reg_bit(pair.output_bit, current_rule.format.registers)
-        in_info = bitpos_to_reg_bit(pair.input_bit, current_rule.format.registers)
+        out_info = bitpos_to_reg_bit(pair.output_bit, _get_rule_format(current_rule).registers)
+        in_info = bitpos_to_reg_bit(pair.input_bit, _get_rule_format(current_rule).registers)
 
         dataflow_list.append(
             {
@@ -283,14 +375,17 @@ def get_rule_data():
         {
             'filename': rule_file_path,
             'instruction': {
-                'bytestring': current_rule.bytestring,
-                'asm': get_instruction_text(current_rule.format.arch, current_rule.bytestring),
-                'arch': current_rule.format.arch,
+                'bytestring': getattr(current_rule, 'bytestring', getattr(current_rule, 'instruction', '')),
+                'asm': get_instruction_text(
+                    _get_rule_format(current_rule).arch,
+                    getattr(current_rule, 'bytestring', getattr(current_rule, 'instruction', '')),
+                ),
+                'arch': _get_rule_format(current_rule).arch,
             },
             'format': {
-                'arch': current_rule.format.arch,
-                'registers': [{'name': reg.name, 'bits': reg.bits} for reg in current_rule.format.registers],
-                'mem_slots': len(current_rule.format.mem_slots),
+                'arch': _get_rule_format(current_rule).arch,
+                'registers': [{'name': reg.name, 'bits': reg.bits} for reg in _get_rule_format(current_rule).registers],
+                'mem_slots': len(_get_rule_format(current_rule).mem_slots),
             },
             'num_pairs': len(current_rule.pairs),
             'pairs': pairs_data,
@@ -299,7 +394,7 @@ def get_rule_data():
 
 
 @app.route('/api/taint', methods=['POST'])
-def taint():
+def taint() -> Response | tuple[Response, int]:
     """API endpoint to simulate taint propagation for a given input state."""
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
@@ -342,7 +437,7 @@ def taint():
 
 
 @app.route('/api/test-cases')
-def get_test_cases():
+def get_test_cases() -> Response | tuple[Response, int]:
     """API endpoint to get generated test cases."""
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
@@ -352,7 +447,7 @@ def get_test_cases():
 
 
 @app.route('/api/upload-rule', methods=['POST'])
-def upload_rule():
+def upload_rule() -> Response | tuple[Response, int]:
     """API endpoint to upload and deserialize a rule JSON file."""
     global current_rule, rule_file_path  # noqa: PLW0603
 
@@ -368,7 +463,7 @@ def upload_rule():
         decoder = TaintInduceDecoder()
         rule = decoder.decode(json_text)
 
-        if not isinstance(rule, TaintRule):
+        if not isinstance(rule, (TaintRule, LogicCircuit)):
             return jsonify({'error': 'Uploaded data is not a valid TaintRule'}), 400
 
         # Update global rule
@@ -380,8 +475,8 @@ def upload_rule():
             {
                 'success': True,
                 'message': 'Rule uploaded successfully',
-                'num_pairs': len(rule.pairs),
-                'arch': rule.format.arch,
+                'num_pairs': len(rule.pairs) if isinstance(rule, TaintRule) else len(rule.assignments),
+                'arch': _get_rule_format(rule).arch,
             },
         )
 
@@ -391,7 +486,7 @@ def upload_rule():
         return jsonify({'error': f'Failed to deserialize rule: {e!s}'}), 400
 
 
-def _parse_input_state(data: dict[str, Any], rule: TaintRule) -> tuple[int, dict[str, dict[int, int]]]:
+def _parse_input_state(data: dict[str, Any], rule: TaintRule | LogicCircuit) -> tuple[int, dict[str, dict[int, int]]]:
     """Parse input state from request data.
 
     Returns:
@@ -409,7 +504,7 @@ def _parse_input_state(data: dict[str, Any], rule: TaintRule) -> tuple[int, dict
             input_state = int(hex_val)
 
         # Extract register values from state
-        register_values = extract_bits_from_state(input_state, rule.format)
+        register_values = extract_bits_from_state(input_state, _get_rule_format(rule))
     else:
         # Build from register_values
         register_values = data.get('register_values', {})
@@ -418,15 +513,15 @@ def _parse_input_state(data: dict[str, Any], rule: TaintRule) -> tuple[int, dict
         for reg_name, bit_dict in register_values.items():
             cleaned_reg_vals[reg_name] = {int(k) if isinstance(k, str) else k: int(v) for k, v in bit_dict.items()}
         register_values = cleaned_reg_vals
-        input_state = build_state_from_bits(register_values, rule.format)
+        input_state = build_state_from_bits(register_values, _get_rule_format(rule))
 
     return input_state, register_values
 
 
-def _build_cpu_state(register_values: dict[str, dict[int, int]], rule: TaintRule) -> CpuRegisterMap:
+def _build_cpu_state(register_values: dict[str, dict[int, int]], rule: TaintRule | LogicCircuit) -> CpuRegisterMap:
     """Build CPU state from register values."""
     input_cpu_state = CpuRegisterMap()
-    for reg in rule.format.registers:
+    for reg in _get_rule_format(rule).registers:
         reg_value = 0
         reg_bits = register_values.get(reg.name, {})
         for bit_idx in range(reg.bits):
@@ -439,7 +534,7 @@ def _build_cpu_state(register_values: dict[str, dict[int, int]], rule: TaintRule
 def _extract_output_register_values(output_cpu_state: CpuRegisterMap) -> dict[str, dict[int, int]]:
     """Extract output register values as bit dict."""
     output_register_values: dict[str, dict[int, int]] = {}
-    # Extract all registers from the CPU state (not just those in rule.format)
+    # Extract all registers from the CPU state (not just those in _get_rule_format(rule))
     # This ensures we return values for all registers the CPU tracks
     for reg, reg_value in output_cpu_state.items():
         output_register_values[reg.name] = {}
@@ -451,11 +546,11 @@ def _extract_output_register_values(output_cpu_state: CpuRegisterMap) -> dict[st
 def _execute_instruction(
     register_values: dict[str, dict[int, int]],
     bytecode: bytes,
-    rule: TaintRule,
+    rule: TaintRule | LogicCircuit,
 ) -> dict[str, dict[int, int]]:
     """Execute instruction and return output register values."""
     input_cpu_state = _build_cpu_state(register_values, rule)
-    cpu = CPUFactory.create_cpu(rule.format.arch)
+    cpu = CPUFactory.create_cpu(_get_rule_format(rule).arch)
     cpu.set_cpu_state(input_cpu_state)
     _, output_cpu_state = cpu.execute(bytecode)
     return _extract_output_register_values(output_cpu_state)
@@ -463,33 +558,21 @@ def _execute_instruction(
 
 def _get_output_register_values(
     register_values: dict[str, dict[int, int]],
-    rule: TaintRule,
-    rule_path: str,
+    rule: TaintRule | LogicCircuit,
 ) -> dict[str, dict[int, int]]:
     """Get output register values by executing instruction."""
     output_register_values = register_values  # Default: output = input
 
-    if rule.bytestring:
+    if getattr(rule, 'bytestring', getattr(rule, 'instruction', '')):
         try:
             # Pad hex string to even length (e.g., "6" -> "60")
-            hex_str = rule.bytestring
+            hex_str = getattr(rule, 'bytestring', getattr(rule, 'instruction', ''))
             if len(hex_str) % 2 == 1:
                 hex_str = hex_str + '0'
             bytecode = bytes.fromhex(hex_str)
             output_register_values = _execute_instruction(register_values, bytecode, rule)
-        except Exception:
-            # If execution fails, try extracting from filename as fallback
-            if rule_path and rule_path != '<uploaded>':
-                try:
-                    filename = Path(rule_path).stem
-                    bytestring = filename.split('_')[0]
-                    # Pad hex string to even length (e.g., "6" -> "60")
-                    if len(bytestring) % 2 == 1:
-                        bytestring = bytestring + '0'  # Append 0, not prepend
-                    bytecode = bytes.fromhex(bytestring)
-                    output_register_values = _execute_instruction(register_values, bytecode, rule)
-                except Exception as e:
-                    print(f'Warning: Failed to extract register values: {e}')
+        except Exception as e:
+            print(f'Warning: Failed to execute instruction: {e}')
 
     return output_register_values
 
@@ -511,7 +594,7 @@ def _add_flag_information(result: dict[str, Any]) -> None:
 
 
 @app.route('/api/simulate-detailed', methods=['POST'])
-def simulate_detailed():
+def simulate_detailed() -> Response | tuple[Response, int]:
     """API endpoint for detailed bit-level taint simulation.
 
     Request body:
@@ -537,7 +620,7 @@ def simulate_detailed():
         tainted_bits = {(reg, int(bit)) for reg, bit in tainted_bits_list}
 
         # Execute the instruction to get output state
-        output_register_values = _get_output_register_values(register_values, current_rule, rule_file_path)
+        output_register_values = _get_output_register_values(register_values, current_rule)
 
         # Run taint simulation
         result = simulate_taint_propagation(current_rule, input_state, tainted_bits)
@@ -564,6 +647,35 @@ def simulate_detailed():
 # ──────────────────────────────────────────────────────────────
 
 
+class PseudoFormat:
+    def __init__(self, obj: Any) -> None:
+        self.arch = getattr(obj, 'architecture', '')
+
+        self.registers = getattr(obj, 'state_format', None)
+        if not self.registers:
+
+            class DummyReg:
+                def __init__(self, name: str, bits: int) -> None:
+                    self.name = name
+                    self.bits = bits
+
+            regs = {}
+            if hasattr(obj, 'assignments'):
+                for a in obj.assignments:
+                    for op in [a.target, *a.dependencies]:
+                        if op.name not in regs:
+                            regs[op.name] = DummyReg(op.name, 256)
+            self.registers = list(regs.values())
+
+        self.mem_slots: list[Any] = []
+
+
+def _get_rule_format(rule_obj: Any) -> Any:
+    if hasattr(rule_obj, 'format'):
+        return rule_obj.format
+    return PseudoFormat(rule_obj)
+
+
 def _make_mreplica_if_needed() -> MReplica:
     """Return the current M-Replica, creating one from the loaded rule if needed."""
     global current_mreplica  # noqa: PLW0603
@@ -571,9 +683,9 @@ def _make_mreplica_if_needed() -> MReplica:
         if current_rule is None:
             raise ValueError('No rule loaded')
         current_mreplica = MReplica(
-            hex_instruction=current_rule.bytestring,
-            architecture=current_rule.format.arch,
-            state_format=current_rule.format.registers,
+            hex_instruction=getattr(current_rule, 'bytestring', getattr(current_rule, 'instruction', '')),
+            architecture=_get_rule_format(current_rule).arch,
+            state_format=_get_rule_format(current_rule).registers,
         )
     return current_mreplica
 
@@ -582,14 +694,14 @@ def _total_bits() -> int:
     """Total number of state bits from the loaded rule."""
     if current_rule is None:
         raise ValueError('No rule loaded')
-    return sum(reg.bits for reg in current_rule.format.registers)
+    return sum(reg.bits for reg in _get_rule_format(current_rule).registers)
 
 
 def _reg_values_from_int(state_val: int) -> dict[str, dict[int, int]]:
     """Convert flat integer state value to per-register bit dicts."""
     if current_rule is None:
         raise ValueError('No rule loaded')
-    return extract_bits_from_state(state_val, current_rule.format)
+    return extract_bits_from_state(state_val, _get_rule_format(current_rule))
 
 
 def _cells_as_json(replica: MReplica) -> list[dict[str, int]]:
@@ -601,7 +713,7 @@ def _cells_as_json(replica: MReplica) -> list[dict[str, int]]:
 
 
 @app.route('/api/mreplica', methods=['GET'])
-def get_mreplica_state():
+def get_mreplica_state() -> Response | tuple[Response, int]:
     """Return the current M-Replica cells and basic metadata."""
     if current_mreplica is None or not current_mreplica.cells:
         return jsonify({'cells': [], 'num_cells': 0})
@@ -616,21 +728,21 @@ def get_mreplica_state():
 
 
 @app.route('/api/mreplica/reset', methods=['POST'])
-def reset_mreplica():
+def reset_mreplica() -> Response | tuple[Response, int]:
     """Clear all cells from the M-Replica."""
     global current_mreplica  # noqa: PLW0603
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
     current_mreplica = MReplica(
-        hex_instruction=current_rule.bytestring,
-        architecture=current_rule.format.arch,
-        state_format=current_rule.format.registers,
+        hex_instruction=getattr(current_rule, 'bytestring', getattr(current_rule, 'instruction', '')),
+        architecture=_get_rule_format(current_rule).arch,
+        state_format=_get_rule_format(current_rule).registers,
     )
     return jsonify({'success': True, 'num_cells': 0})
 
 
 @app.route('/api/mreplica/add-cell', methods=['POST'])
-def add_mreplica_cell():
+def add_mreplica_cell() -> Response | tuple[Response, int]:
     """Add a single cell (mask, value) to the M-Replica."""
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
@@ -643,7 +755,7 @@ def add_mreplica_cell():
 
 
 @app.route('/api/mreplica/delete-cell', methods=['POST'])
-def delete_mreplica_cell():
+def delete_mreplica_cell() -> Response | tuple[Response, int]:
     """Remove a cell identified by (mask, value) from the M-Replica."""
     if current_mreplica is None:
         return jsonify({'error': 'No M-Replica'}), 400
@@ -662,7 +774,7 @@ def delete_mreplica_cell():
 
 
 @app.route('/api/mreplica/make-full', methods=['POST'])
-def make_full_mreplica_endpoint():
+def make_full_mreplica_endpoint() -> Response | tuple[Response, int]:
     """Replace all cells with the full M-Replica for given bits_mask."""
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
@@ -679,7 +791,7 @@ def make_full_mreplica_endpoint():
 
 
 @app.route('/api/mreplica/simulate', methods=['POST'])
-def simulate_mreplica_endpoint():
+def simulate_mreplica_endpoint() -> Response | tuple[Response, int]:
     """Run M-Replica simulation + real instruction execution on an input state."""
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
@@ -711,7 +823,7 @@ def simulate_mreplica_endpoint():
 
     # Real instruction output
     register_values = _reg_values_from_int(input_val)
-    real_output = _get_output_register_values(register_values, current_rule, rule_file_path)
+    real_output = _get_output_register_values(register_values, current_rule)
 
     return jsonify(
         {
@@ -720,13 +832,15 @@ def simulate_mreplica_endpoint():
             'cell_results': cell_results,
             'real_output': real_output,
             'num_bits': n_bits,
-            'register_format': [{'name': reg.name, 'bits': reg.bits} for reg in current_rule.format.registers],
+            'register_format': [
+                {'name': reg.name, 'bits': reg.bits} for reg in _get_rule_format(current_rule).registers
+            ],
         },
     )
 
 
 @app.route('/api/mreplica/adapt', methods=['POST'])
-def adapt_mreplica():
+def adapt_mreplica() -> Response | tuple[Response, int]:
     """Build full M-Replica from tainted bits (one active bit per tainted bit position)."""
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
@@ -737,7 +851,7 @@ def adapt_mreplica():
     # Convert (reg, bit) pairs to a flat integer mask
     bits_mask = 0
     bit_offset = 0
-    for reg in current_rule.format.registers:
+    for reg in _get_rule_format(current_rule).registers:
         for bit_idx in range(reg.bits):
             if [reg.name, bit_idx] in tainted_bits_list or [reg.name, str(bit_idx)] in tainted_bits_list:
                 bits_mask |= 1 << (bit_offset + bit_idx)
@@ -756,7 +870,7 @@ def adapt_mreplica():
 # ──────────────────────────────────────────────────────────────
 
 
-def main():
+def main() -> None:
     global current_rule, rule_file_path  # noqa: PLW0603
 
     if len(sys.argv) < 2:
@@ -775,16 +889,16 @@ def main():
     with open(rule_file) as f:
         rule = json.load(f, cls=TaintInduceDecoder)
 
-    if not isinstance(rule, TaintRule):
-        print('Error: Loaded object is not a TaintRule')
+    if not isinstance(rule, (TaintRule, LogicCircuit)):
+        print('Error: Loaded object is not a TaintRule or LogicCircuit')
         sys.exit(1)
 
     current_rule = rule
     rule_file_path = rule_file
 
     print(f'✅ Loaded rule: {rule}')
-    print(f'   Architecture: {rule.format.arch}')
-    print(f'   Pairs: {len(rule.pairs)}')
+    print(f'   Architecture: {_get_rule_format(rule).arch}')
+    print(f'   Pairs: {len(getattr(rule, "pairs", getattr(rule, "assignments", [])))}')
     print()
     print('🚀 Starting Flask server...')
     print('📊 Open http://localhost:5000 in your browser')
