@@ -357,6 +357,55 @@ def is_mapped(obs_list: list[Observation]) -> bool:  # noqa: C901
     return has_mapping
 
 
+def get_avalanche_registers(obs_list: list[Observation]) -> list[str]:
+    """Detects operations that cause high-entropy or dense bit-level modifications on output registers.
+    Identifies Multiplicative, Cryptographic, and Pointer Indirection flows by verifying if a single
+    input bit swap produces widespread, non-contiguous output bit fluctuations on a register.
+    """
+    if not obs_list:
+        return []
+
+    state_format = obs_list[0].state_format
+    layout = get_register_layouts(state_format)
+    flag_bits = _get_flag_bits(obs_list[0])
+    flag_mask = sum(1 << b for b in flag_bits)
+
+    avalanche_regs = set()
+
+    for obs in obs_list:
+        seed_in, seed_out = obs.seed_io
+        for mutate_in, mutate_out in obs.mutated_ios:
+            in_xor = seed_in.state_value ^ mutate_in.state_value
+            # Must be a single bit mutation trigger
+            if in_xor == 0 or (in_xor & (in_xor - 1)) != 0:
+                continue
+
+            out_xor = seed_out.state_value ^ mutate_out.state_value
+            out_xor &= ~flag_mask
+
+            for start, end, reg_name in layout:
+                reg_size = end - start
+                reg_mask = ((1 << reg_size) - 1) << start
+                reg_out_xor = (out_xor & reg_mask) >> start
+
+                if reg_out_xor > 0:
+                    flips = bin(reg_out_xor).count('1')
+
+                    # Contiguous check to exclude linear arithmetic cascades (add, sub, inc, dec)
+                    # For arithmetic +/-, R ^ (R +/- 2^i) creates a single contiguous block of 1s mapping the carry.
+                    lsb = reg_out_xor & -reg_out_xor
+                    is_contiguous = (reg_out_xor & (reg_out_xor + lsb)) == 0
+
+                    # Threshold for "avalanche" or high entropy mapping
+                    # Checks if a significant portion of the register fluctuated (e.g. 6 bits for 32/64 bit regs)
+                    threshold = min(6, max(3, reg_size // 4))
+
+                    if flips >= threshold and not is_contiguous:
+                        avalanche_regs.add(str(reg_name))
+
+    return list(avalanche_regs)
+
+
 def classify_instruction(obs_list: list[Observation]) -> str:  # noqa: C901
     has_outputs = False
     flag_bits = _get_flag_bits(obs_list[0]) if obs_list else set()
@@ -389,4 +438,10 @@ def classify_instruction(obs_list: list[Observation]) -> str:  # noqa: C901
     logger.info('Not translatable, checking conditionally transportable...')
     if is_cond_transportable(obs_list):
         return 'Conditionally Transportable'
+
+    logger.info('Not conditionally transportable, checking avalanche...')
+    avalanche_regs = get_avalanche_registers(obs_list)
+    if avalanche_regs:
+        return f"Avalanche -> {', '.join(sorted(avalanche_regs))}"
+
     return 'Unknown'

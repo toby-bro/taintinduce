@@ -17,7 +17,11 @@ def test_classify_monotonic():
     mut_out2 = State(64, StateValue(1))  # out[0] flipped
 
     obs = Observation(
-        (seed_in, seed_out), frozenset([(mut_in1, mut_out1), (mut_in2, mut_out2)]), '00', Architecture.X86, state_fmt
+        (seed_in, seed_out),
+        frozenset([(mut_in1, mut_out1), (mut_in2, mut_out2)]),
+        '00',
+        Architecture.X86,
+        state_fmt,
     )
 
     assert classify_instruction([obs]) == 'Monotonic'
@@ -247,3 +251,66 @@ def test_classify_mapped_carry_fail():
     )
 
     assert is_mapped([obs]) is False
+
+
+def test_classify_not_avalanche_arithmetic():
+    # Simulate an arithmetic carry. A single input bit flip causes a long streak of 1s (contiguous)
+    # Output XOR looks like 0x0000FFFF (16 straight bits)
+    s_in = State(32, StateValue(0))
+    s_out = State(32, StateValue(0))
+
+    m_in = State(32, StateValue(1))  # 1 bit flip
+    m_out = State(32, StateValue(0x0000FFFF))  # 16 bits flipped contiguously
+
+    _obs = Observation(
+        (s_in, s_out),
+        frozenset([(m_in, m_out)]),
+        'test_arithmetic_cascade',
+        Architecture.X86,
+        [X86_REG_EAX()],
+    )
+
+    # Needs a few mutations to bypass simple mapped check, mapped requires 1 to very specific mapping
+    # Just checking if classify_instruction outputs "Avalanche" or not.
+    # Actually, 1 input 16 output bits contiguously will fail Mapped, fail monotonic etc.
+    # But let's add enough complexity to make it fall through to Unknown instead of Avalanche.
+    m_in2 = State(32, StateValue(2))
+    m_out2 = State(32, StateValue(0x0000FFFE))
+
+    obs2 = Observation(
+        (s_in, s_out),
+        frozenset([(m_in, m_out), (m_in2, m_out2)]),
+        'test_arithmetic_cascade_2',
+        Architecture.X86,
+        [X86_REG_EAX()],
+    )
+
+    res = classify_instruction([obs2])
+    # Should not be avalanche because bits are contiguous
+    assert 'Avalanche' not in res
+
+
+def test_classify_avalanche():
+    # Simulate dense entropy: 8 non-contiguous bits flipped
+    s_in = State(32, StateValue(0))
+    s_out = State(32, StateValue(0x0001))
+
+    m_in1 = State(32, StateValue(1))  # bit 0
+    m_out1 = State(32, StateValue(0x5554))  # out_xor = 0x5555 (overlaps bit 0)
+    # bits fell: 0x0001, rose: 0x5554. Breaks monotonic.
+
+    m_in2 = State(32, StateValue(2))  # bit 1
+    m_out2 = State(32, StateValue(0xAAAA))  # out_xor = 0xAAAA | 1 = 0xAAAB (overlaps bit 0)
+    # Both break Monotonic, out_xors overlap breaking Mapped unconditionally
+
+    obs = Observation(
+        (s_in, s_out),
+        frozenset([(m_in1, m_out1), (m_in2, m_out2)]),
+        'test_avalanche',
+        Architecture.X86,
+        [X86_REG_EAX()],
+    )
+
+    res = classify_instruction([obs])
+    assert 'Avalanche' in res
+    assert 'EAX' in res
