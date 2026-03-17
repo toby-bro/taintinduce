@@ -120,7 +120,7 @@ def main() -> None:
         help='Select the architecture of the instruction.',
     )
     parser.add_argument('--output-dir', type=str, default='output', help='Output directory.')
-    parser.add_argument('--skip-gen', default=False, action='store_true', help='Skip generation of observation')
+    parser.add_argument('--force-gen', default=False, action='store_true', help='Force generation of observations')
     parser.add_argument(
         '-v',
         '--verbose',
@@ -148,15 +148,21 @@ def main() -> None:
     obs_path = os.path.join(args.output_dir, output_obs_file)
     rule_path = os.path.join(args.output_dir, output_rule_file)
 
-    if args.skip_gen:
-        assert args.output_dir
-        with open(obs_path, 'r') as f:
-            obs_list = json.load(f, cls=TaintInduceDecoder)
-            if not isinstance(obs_list, list):
-                raise Exception('Loaded observations is not a list!')
-            assert all(isinstance(obs, Observation) for obs in obs_list)
-        _obs_engine = None  # No refinement when loading from file
-    else:
+    obs_list: list[Observation] = []
+
+    if not args.force_gen:
+        try:
+            assert args.output_dir
+            with open(obs_path, 'r') as f:
+                obs_list = json.load(f, cls=TaintInduceDecoder)
+                if not isinstance(obs_list, list):
+                    raise Exception('Loaded observations is not a list!')
+                assert all(isinstance(obs, Observation) for obs in obs_list)
+            _obs_engine = None  # No refinement when loading from file
+        except Exception as e:
+            print(f'Failed to load observations from {obs_path}: {e}')
+            print('Generating observations instead...')
+    if len(obs_list) == 0:
         obs_list, _obs_engine = gen_obs(args.arch, insn.bytestring, insn.state_format)
         print('Writing observations to {}'.format(obs_path))
         # Verify serialization round-trip
