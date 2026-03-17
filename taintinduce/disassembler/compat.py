@@ -3,18 +3,10 @@ Disassembler wrapper to replace squirrel.squirrel_disassembler.
 Uses Capstone directly without the squirrel wrapper.
 """
 
-from capstone import (
-    CS_ARCH_ARM,
-    CS_ARCH_ARM64,
-    CS_ARCH_X86,
-    CS_MODE_32,
-    CS_MODE_64,
-    CS_MODE_ARM,
-    Cs,
-    CsInsn,
-)
+from capstone import CS_ARCH_ARM, CS_ARCH_ARM64, CS_ARCH_X86, CS_MODE_32, CS_MODE_64, CS_MODE_ARM, Cs, CsInsn
 
 from taintinduce.disassembler.exceptions import ParseInsnException
+from taintinduce.isa.jn_isa import JNInstruction
 from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex_string
 from taintinduce.observation_engine.observation import encode_instruction_bytes
 from taintinduce.types import Architecture
@@ -23,7 +15,7 @@ from taintinduce.types import Architecture
 class JNInsnWrapper:
     """Wrapper to make JN instructions compatible with Capstone's CsInsn interface."""
 
-    def __init__(self, jn_insn):
+    def __init__(self, jn_insn: JNInstruction) -> None:
         self._jn_insn = jn_insn
         # Use the JNInstruction's mnemonic property for proper formatting
         # The mnemonic includes both the operation and operands
@@ -40,7 +32,7 @@ class SquirrelDisassemblerJN:
     def __init__(self, arch_str: str) -> None:
         self.arch_str = arch_str
 
-    def disassemble(self, bytecode: bytes | str, address: int = 0x1000) -> JNInsnWrapper:  # noqa: ARG002
+    def disassemble(self, bytecode: bytes | str, _address: int = 0x1000) -> JNInsnWrapper:
         """Disassemble JN bytecode and return wrapped instruction object."""
         # Convert bytes to hex string if needed
         if isinstance(bytecode, bytes):

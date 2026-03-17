@@ -11,7 +11,7 @@ INPUT_CSV_PATH = PROGRESSION_DIR / 'input.csv'
 OUTPUT_CSV_PATH = PROGRESSION_DIR / 'output.csv'
 
 
-def init_input_csv():
+def init_input_csv() -> None:
     """Generates the initial input csv with common instructions if it doesn't exist."""
     if INPUT_CSV_PATH.exists():
         return
@@ -167,7 +167,7 @@ def assemble_instruction(arch: Architecture, decoded: str) -> str:
     return ''
 
 
-def test_categorize_progression():  # noqa: C901
+def test_categorize_progression() -> None:  # noqa: C901
     init_input_csv()
 
     rows = []

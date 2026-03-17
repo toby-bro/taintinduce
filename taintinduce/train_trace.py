@@ -135,7 +135,7 @@ class RuleDatabase:
             print(f'ERROR: Failed to generate rule for {bytestring}: {e}')
 
 
-def _worker_init():
+def _worker_init() -> None:
     """Initialize worker process with signal handlers."""
     # Workers should ignore SIGINT and let the main process handle it
     signal.signal(signal.SIGINT, signal.SIG_IGN)

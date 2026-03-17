@@ -5,10 +5,7 @@ from capstone.arm64 import ARM64_OP_MEM, ARM64_OP_REG
 from capstone.x86 import X86_OP_MEM, X86_OP_REG
 
 from taintinduce.disassembler.compat import SquirrelDisassemblerZydis
-from taintinduce.disassembler.exceptions import (
-    UnsupportedArchException,
-    UnsupportedSizeException,
-)
+from taintinduce.disassembler.exceptions import UnsupportedArchException, UnsupportedSizeException
 from taintinduce.isa import amd64, arm64, jn, x86
 from taintinduce.isa.isa import ISA
 from taintinduce.isa.jn_isa import decode_hex_string as decode_jn_hex_string
@@ -41,7 +38,7 @@ class InsnInfo(SerializableMixin):
             if state_format is None:
                 state_format = []
             if archstring is None or bytestring is None or cond_reg is None:
-                raise Exception('Invalid arguments to InsnInfo constructor!')
+                raise RuntimeError('Invalid arguments to InsnInfo constructor!')
             self.archstring = archstring
             self.bytestring = bytestring
             self.state_format = state_format
@@ -100,11 +97,11 @@ class Disassembler(object):
 
         dis = SquirrelDisassemblerZydis(arch_str)
         if not isinstance(dis, SquirrelDisassemblerZydis):
-            raise Exception('Disassembler is not SquirrelDisassemblerZydis instance!')
+            raise RuntimeError('Disassembler is not SquirrelDisassemblerZydis instance!')
 
         insn = dis.disassemble(bytestring)
         if not isinstance(insn, CsInsn):
-            raise Exception('Disassembled object is not a CsInsn instance.')
+            raise RuntimeError('Disassembled object is not a CsInsn instance.')
 
         print(f'Disassembling {arch_str} instruction: {bytestring} -> {insn.mnemonic} {insn.op_str}')
 
@@ -113,11 +110,11 @@ class Disassembler(object):
 
         # Add implicit register reads/writes
         for reg_i in insn.regs_read:
-            reg_name = dis.md.reg_name(reg_i).upper()
+            reg_name = dis.md.reg_name(reg_i).upper()  # type: ignore[no-untyped-call]
             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
 
         for reg_i in insn.regs_write:
-            reg_name = dis.md.reg_name(reg_i).upper()
+            reg_name = dis.md.reg_name(reg_i).upper()  # type: ignore[no-untyped-call]
             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
 
         # Add explicit register operands (fixed bug where EAX, EBX etc. weren't tracked)
@@ -128,27 +125,27 @@ class Disassembler(object):
                 if arch_str in (Architecture.X86, Architecture.AMD64):
 
                     if operand.type == X86_OP_REG:
-                        reg_name = dis.md.reg_name(operand.reg).upper()
+                        reg_name = dis.md.reg_name(operand.reg).upper()  # type: ignore[no-untyped-call]
                         self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
                     elif operand.type == X86_OP_MEM:
                         if getattr(operand.mem, 'base', 0) != 0:
-                            reg_name = dis.md.reg_name(operand.mem.base).upper()
+                            reg_name = dis.md.reg_name(operand.mem.base).upper()  # type: ignore[no-untyped-call]
                             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
                         if getattr(operand.mem, 'index', 0) != 0:
-                            reg_name = dis.md.reg_name(operand.mem.index).upper()
+                            reg_name = dis.md.reg_name(operand.mem.index).upper()  # type: ignore[no-untyped-call]
                             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
 
                 elif arch_str == Architecture.ARM64:
 
                     if operand.type == ARM64_OP_REG:
-                        reg_name = dis.md.reg_name(operand.reg).upper()
+                        reg_name = dis.md.reg_name(operand.reg).upper()  # type: ignore[no-untyped-call]
                         self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
                     elif operand.type == ARM64_OP_MEM:
                         if getattr(operand.mem, 'base', 0) != 0:
-                            reg_name = dis.md.reg_name(operand.mem.base).upper()
+                            reg_name = dis.md.reg_name(operand.mem.base).upper()  # type: ignore[no-untyped-call]
                             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
                         if getattr(operand.mem, 'index', 0) != 0:
-                            reg_name = dis.md.reg_name(operand.mem.index).upper()
+                            reg_name = dis.md.reg_name(operand.mem.index).upper()  # type: ignore[no-untyped-call]
                             self.cs_reg_set.append(self.arch.create_full_reg(reg_name))
 
         # we don't fuck around with FPSW cause unicorn can't write stuff in it

@@ -10,7 +10,7 @@ from taintinduce.rules.rules import ConditionDataflowPair, GlobalRule
 from taintinduce.types import Architecture, BitPosition
 
 
-def test_validation_detects_incomplete_rule():
+def test_validation_detects_incomplete_rule() -> None:
     """Test that validation fails when rule doesn't cover all observed behaviors."""
     # Setup: Generate observations for XOR R1, R2
     state_format = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]
@@ -44,7 +44,7 @@ def test_validation_detects_incomplete_rule():
     assert coverage < 0.5, f'Incomplete rule should explain less than 50%, but got {coverage:.1%}'
 
 
-def test_validation_detects_wrong_condition():
+def test_validation_detects_wrong_condition() -> None:
     """Test that validation fails when rule has wrong conditions."""
     # Setup: Generate observations for OR R1, R2
     state_format = [JN_REG_R1(), JN_REG_R2(), JN_REG_NZCV()]

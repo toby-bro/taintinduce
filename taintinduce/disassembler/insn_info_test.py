@@ -2,9 +2,7 @@
 
 import pytest
 
-from taintinduce.disassembler.exceptions import (
-    ParseInsnException,
-)
+from taintinduce.disassembler.exceptions import ParseInsnException
 from taintinduce.disassembler.insn_info import Disassembler, InsnInfo
 from taintinduce.isa.jn_registers import JN_REG_NZCV
 from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EFLAGS
@@ -14,7 +12,7 @@ from taintinduce.types import Architecture
 class TestDisassemblerX86:
     """Test cases for X86 (32-bit) disassembly."""
 
-    def test_simple_mov_eax_ebx(self):
+    def test_simple_mov_eax_ebx(self) -> None:
         """Test MOV EAX, EBX (89 d8)."""
         dis = Disassembler(Architecture.X86, '89d8')
         assert dis.insn_info.archstring == Architecture.X86
@@ -25,7 +23,7 @@ class TestDisassemblerX86:
         assert 'EAX' in reg_names
         assert 'EBX' in reg_names
 
-    def test_add_eax_immediate(self):
+    def test_add_eax_immediate(self) -> None:
         """Test ADD EAX, imm32 (05 XX XX XX XX)."""
         dis = Disassembler(Architecture.X86, '05010000FF')
         assert dis.insn_info.archstring == Architecture.X86
@@ -34,7 +32,7 @@ class TestDisassemblerX86:
         assert 'EAX' in reg_names
         assert 'EFLAGS' in reg_names
 
-    def test_and_eax_immediate_complete(self):
+    def test_and_eax_immediate_complete(self) -> None:
         """Test AND EAX, imm32 (25 XX XX XX XX) - complete 5 bytes."""
         dis = Disassembler(Architecture.X86, '25FFFFFF7F')
         assert dis.insn_info.archstring == Architecture.X86
@@ -43,58 +41,58 @@ class TestDisassemblerX86:
         assert 'EAX' in reg_names
         assert 'EFLAGS' in reg_names
 
-    def test_and_eax_immediate_incomplete_fails(self):
+    def test_and_eax_immediate_incomplete_fails(self) -> None:
         """Test that incomplete AND EAX instruction (25 FF FF - only 3 bytes) fails."""
         with pytest.raises(ParseInsnException, match='capstone disassemble cannot translate'):
             Disassembler(Architecture.X86, '25FFFF')
 
-    def test_push_eax(self):
+    def test_push_eax(self) -> None:
         """Test PUSH EAX (50)."""
         dis = Disassembler(Architecture.X86, '50')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
         assert 'EAX' in reg_names
         assert 'ESP' in reg_names  # Stack pointer is implicitly modified
 
-    def test_pop_eax(self):
+    def test_pop_eax(self) -> None:
         """Test POP EAX (58)."""
         dis = Disassembler(Architecture.X86, '58')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
         assert 'EAX' in reg_names
         assert 'ESP' in reg_names
 
-    def test_xor_eax_eax(self):
+    def test_xor_eax_eax(self) -> None:
         """Test XOR EAX, EAX (31 c0) - common zeroing idiom."""
         dis = Disassembler(Architecture.X86, '31c0')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
         assert 'EAX' in reg_names
         assert 'EFLAGS' in reg_names
 
-    def test_inc_eax(self):
+    def test_inc_eax(self) -> None:
         """Test INC EAX (40)."""
         dis = Disassembler(Architecture.X86, '40')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
         assert 'EAX' in reg_names
         assert 'EFLAGS' in reg_names
 
-    def test_conditional_jump(self):
+    def test_conditional_jump(self) -> None:
         """Test JZ (74 XX) - conditional jump."""
         dis = Disassembler(Architecture.X86, '7402')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
         assert 'EFLAGS' in reg_names
 
-    def test_test_eax_eax(self):
+    def test_test_eax_eax(self) -> None:
         """Test TEST EAX, EAX (85 c0)."""
         dis = Disassembler(Architecture.X86, '85c0')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
         assert 'EAX' in reg_names
         assert 'EFLAGS' in reg_names
 
-    def test_empty_bytecode_fails(self):
+    def test_empty_bytecode_fails(self) -> None:
         """Test that empty bytecode fails."""
         with pytest.raises(ParseInsnException):
             Disassembler(Architecture.X86, '')
 
-    def test_invalid_bytecode_fails(self):
+    def test_invalid_bytecode_fails(self) -> None:
         """Test that invalid bytecode fails."""
         with pytest.raises(ValueError, match=r'non-hexadecimal|invalid literal'):
             Disassembler(Architecture.X86, 'GGGG')  # Invalid hex
@@ -103,7 +101,7 @@ class TestDisassemblerX86:
 class TestDisassemblerAMD64:
     """Test cases for AMD64 (64-bit) disassembly."""
 
-    def test_mov_rax_rbx(self):
+    def test_mov_rax_rbx(self) -> None:
         """Test MOV RAX, RBX (48 89 d8)."""
         dis = Disassembler(Architecture.AMD64, '4889d8')
         assert dis.insn_info.archstring == Architecture.AMD64
@@ -111,21 +109,21 @@ class TestDisassemblerAMD64:
         assert 'RAX' in reg_names
         assert 'RBX' in reg_names
 
-    def test_add_rax_immediate(self):
+    def test_add_rax_immediate(self) -> None:
         """Test ADD RAX, imm32 (48 05 XX XX XX XX)."""
         dis = Disassembler(Architecture.AMD64, '480501000000')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
         assert 'RAX' in reg_names
         assert 'EFLAGS' in reg_names
 
-    def test_push_rax(self):
+    def test_push_rax(self) -> None:
         """Test PUSH RAX (50)."""
         dis = Disassembler(Architecture.AMD64, '50')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
         assert 'RAX' in reg_names
         assert 'RSP' in reg_names
 
-    def test_xor_rax_rax(self):
+    def test_xor_rax_rax(self) -> None:
         """Test XOR RAX, RAX (48 31 c0)."""
         dis = Disassembler(Architecture.AMD64, '4831c0')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
@@ -136,7 +134,7 @@ class TestDisassemblerAMD64:
 class TestDisassemblerARM64:
     """Test cases for ARM64 disassembly."""
 
-    def test_mov_x0_x1(self):
+    def test_mov_x0_x1(self) -> None:
         """Test MOV X0, X1 (e0 03 01 aa)."""
         dis = Disassembler(Architecture.ARM64, 'e00301aa')
         assert dis.insn_info.archstring == Architecture.ARM64
@@ -144,7 +142,7 @@ class TestDisassemblerARM64:
         assert 'X0' in reg_names
         assert 'X1' in reg_names
 
-    def test_add_x0_x1_x2(self):
+    def test_add_x0_x1_x2(self) -> None:
         """Test ADD X0, X1, X2 (20 00 02 8b)."""
         dis = Disassembler(Architecture.ARM64, '2000028b')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
@@ -156,7 +154,7 @@ class TestDisassemblerARM64:
 class TestDisassemblerArchitecture:
     """Test architecture handling."""
 
-    def test_supported_architectures(self):
+    def test_supported_architectures(self) -> None:
         """Test all supported architectures can be instantiated."""
         supported = [Architecture.X86, Architecture.AMD64, Architecture.ARM64]
         for arch in supported:
@@ -171,7 +169,7 @@ class TestDisassemblerArchitecture:
 class TestInsnInfo:
     """Test InsnInfo class."""
 
-    def test_construction_with_valid_args(self):
+    def test_construction_with_valid_args(self) -> None:
         """Test InsnInfo construction with valid arguments."""
         info = InsnInfo(
             archstring=Architecture.X86,
@@ -184,7 +182,7 @@ class TestInsnInfo:
         assert len(info.state_format) == 1
         assert isinstance(info.cond_reg, X86_REG_EFLAGS)
 
-    def test_construction_without_required_args_fails(self):
+    def test_construction_without_required_args_fails(self) -> None:
         """Test that InsnInfo construction fails without required args."""
         with pytest.raises(Exception, match='Invalid arguments'):
             InsnInfo()
@@ -193,7 +191,7 @@ class TestInsnInfo:
 class TestRealWorldInstructions:
     """Test real-world instruction examples."""
 
-    def test_complex_x86_instruction(self):
+    def test_complex_x86_instruction(self) -> None:
         """Test a complex X86 instruction with memory operand."""
         # MOV EAX, [EBX+4]
         dis = Disassembler(Architecture.X86, '8b4304')
@@ -201,7 +199,7 @@ class TestRealWorldInstructions:
         assert 'EAX' in reg_names
         # Note: Memory operands might not always track base registers implicitly
 
-    def test_amd64_with_rex_prefix(self):
+    def test_amd64_with_rex_prefix(self) -> None:
         """Test AMD64 instruction with REX prefix."""
         # MOV RAX, [RBX]
         dis = Disassembler(Architecture.AMD64, '488b03')
@@ -209,7 +207,7 @@ class TestRealWorldInstructions:
         assert 'RAX' in reg_names
         # Note: Memory operands might not always track base registers implicitly
 
-    def test_instruction_with_multiple_operands(self):
+    def test_instruction_with_multiple_operands(self) -> None:
         """Test instruction affecting multiple registers."""
         # IMUL EAX, EBX, 5
         dis = Disassembler(Architecture.X86, '6bc305')
@@ -217,7 +215,7 @@ class TestRealWorldInstructions:
         assert 'EAX' in reg_names
         assert 'EBX' in reg_names
 
-    def test_string_operation(self):
+    def test_string_operation(self) -> None:
         """Test string operation that uses implicit registers."""
         # MOVSB (moves byte from DS:ESI to ES:EDI)
         dis = Disassembler(Architecture.X86, 'a4')
@@ -230,7 +228,7 @@ class TestRealWorldInstructions:
 class TestDisassemblerJN:
     """Test cases for JN (Just Nibbles) ISA."""
 
-    def test_add_register_instruction(self):
+    def test_add_register_instruction(self) -> None:
         """Test ADD R1, R2 (opcode 0 - register variant).
 
         Register instructions should include R1, R2, and NZCV in state_format.
@@ -246,7 +244,7 @@ class TestDisassemblerJN:
         assert 'NZCV' in reg_names, 'NZCV should be in state_format'
         assert len(dis.insn_info.state_format) == 3
 
-    def test_add_immediate_instruction(self):
+    def test_add_immediate_instruction(self) -> None:
         """Test ADD R1, #0xA (opcode 1A - immediate variant).
 
         Immediate instructions should ONLY include R1 and NZCV (R2 excluded).
@@ -262,7 +260,7 @@ class TestDisassemblerJN:
         assert 'NZCV' in reg_names, 'NZCV should be in state_format'
         assert len(dis.insn_info.state_format) == 2
 
-    def test_or_register_instruction(self):
+    def test_or_register_instruction(self) -> None:
         """Test OR R1, R2 (opcode 2 - register variant)."""
         dis = Disassembler(Architecture.JN, '2')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
@@ -271,7 +269,7 @@ class TestDisassemblerJN:
         assert 'NZCV' in reg_names
         assert len(dis.insn_info.state_format) == 3
 
-    def test_or_immediate_instruction(self):
+    def test_or_immediate_instruction(self) -> None:
         """Test OR R1, #0xF (opcode 3F - immediate variant)."""
         dis = Disassembler(Architecture.JN, '3F')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
@@ -280,7 +278,7 @@ class TestDisassemblerJN:
         assert 'NZCV' in reg_names
         assert len(dis.insn_info.state_format) == 2
 
-    def test_and_register_instruction(self):
+    def test_and_register_instruction(self) -> None:
         """Test AND R1, R2 (opcode 4 - register variant)."""
         dis = Disassembler(Architecture.JN, '4')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
@@ -288,7 +286,7 @@ class TestDisassemblerJN:
         assert 'R2' in reg_names
         assert 'NZCV' in reg_names
 
-    def test_and_immediate_instruction(self):
+    def test_and_immediate_instruction(self) -> None:
         """Test AND R1, #0x5 (opcode 55 - immediate variant)."""
         dis = Disassembler(Architecture.JN, '55')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
@@ -296,7 +294,7 @@ class TestDisassemblerJN:
         assert 'R2' not in reg_names
         assert 'NZCV' in reg_names
 
-    def test_xor_register_instruction(self):
+    def test_xor_register_instruction(self) -> None:
         """Test XOR R1, R2 (opcode 6 - register variant)."""
         dis = Disassembler(Architecture.JN, '6')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
@@ -304,7 +302,7 @@ class TestDisassemblerJN:
         assert 'R2' in reg_names
         assert 'NZCV' in reg_names
 
-    def test_xor_immediate_instruction(self):
+    def test_xor_immediate_instruction(self) -> None:
         """Test XOR R1, #0x9 (opcode 79 - immediate variant)."""
         dis = Disassembler(Architecture.JN, '79')
         reg_names = {reg.name for reg in dis.insn_info.state_format}
@@ -312,7 +310,7 @@ class TestDisassemblerJN:
         assert 'R2' not in reg_names
         assert 'NZCV' in reg_names
 
-    def test_all_register_instructions_include_r2(self):
+    def test_all_register_instructions_include_r2(self) -> None:
         """Verify all register-variant instructions include R2."""
         register_opcodes = ['0', '2', '4', '6']  # Even opcodes = register
         for opcode in register_opcodes:
@@ -320,7 +318,7 @@ class TestDisassemblerJN:
             reg_names = {reg.name for reg in dis.insn_info.state_format}
             assert 'R2' in reg_names, f'Opcode {opcode} should include R2 (register variant)'
 
-    def test_all_immediate_instructions_exclude_r2(self):
+    def test_all_immediate_instructions_exclude_r2(self) -> None:
         """Verify all immediate-variant instructions exclude R2."""
         immediate_opcodes = ['1A', '3F', '55', '79']  # Odd opcodes with immediate
         for opcode in immediate_opcodes:
@@ -328,7 +326,7 @@ class TestDisassemblerJN:
             reg_names = {reg.name for reg in dis.insn_info.state_format}
             assert 'R2' not in reg_names, f'Opcode {opcode} should NOT include R2 (immediate variant)'
 
-    def test_jn_cond_reg_is_nzvc(self):
+    def test_jn_cond_reg_is_nzvc(self) -> None:
         """Verify JN uses NZCV as condition register."""
         dis = Disassembler(Architecture.JN, '1A')
         assert isinstance(dis.insn_info.cond_reg, JN_REG_NZCV)

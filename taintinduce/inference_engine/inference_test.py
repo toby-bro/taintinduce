@@ -5,17 +5,12 @@ taint propagation rules with data-dependent conditions.
 """
 
 import pytest
+from pytest_mock import MockerFixture
 
 from taintinduce.inference_engine import observation_processor
 from taintinduce.inference_engine.condition_generator import ConditionGenerator
-from taintinduce.inference_engine.inference import (
-    infer,
-)
-from taintinduce.inference_engine.logic import (
-    Espresso,
-    EspressoException,
-    NonOrthogonalException,
-)
+from taintinduce.inference_engine.inference import infer
+from taintinduce.inference_engine.logic import Espresso, EspressoException, NonOrthogonalException
 from taintinduce.isa.register import Register
 from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EFLAGS
 from taintinduce.rules.conditions import LogicType, TaintCondition
@@ -29,48 +24,48 @@ from taintinduce.types import Architecture, BitPosition, Dataflow, MutatedInputS
 
 
 @pytest.fixture
-def mock_espresso(mocker):
+def mock_espresso(mocker: MockerFixture) -> Espresso:
     """Create a mock Espresso instance."""
     espresso = mocker.Mock(spec=Espresso)
     espresso.minimize = mocker.Mock(return_value=frozenset([(0xFF, 0x01)]))
-    return espresso
+    return espresso  # type: ignore[no-any-return]
 
 
 @pytest.fixture
-def mock_register(mocker):
+def mock_register(mocker: MockerFixture) -> Register:
     """Create a mock Register."""
     reg = mocker.Mock(spec=Register)
     reg.name = 'EAX'
     reg.bits = 32
-    return reg
+    return reg  # type: ignore[no-any-return]
 
 
 @pytest.fixture
-def mock_eflags(mocker):
+def mock_eflags(mocker: MockerFixture) -> X86_REG_EFLAGS:
     """Create a mock EFLAGS register."""
     eflags = mocker.Mock(spec=X86_REG_EFLAGS)
     eflags.name = 'EFLAGS'
     eflags.bits = 32
-    return eflags
+    return eflags  # type: ignore[no-any-return]
 
 
 @pytest.fixture
-def mock_eax(mocker):
+def mock_eax(mocker: MockerFixture) -> X86_REG_EAX:
     """Create a mock EAX register."""
     eax = mocker.Mock(spec=X86_REG_EAX)
     eax.name = 'EAX'
     eax.bits = 32
-    return eax
+    return eax  # type: ignore[no-any-return]
 
 
 @pytest.fixture
-def state_format(mock_eflags, mock_eax):
+def state_format(mock_eflags: X86_REG_EFLAGS, mock_eax: X86_REG_EAX) -> list[Register]:
     """Create a standard state format with EFLAGS and EAX."""
     return [mock_eflags, mock_eax]
 
 
 @pytest.fixture
-def simple_observation(state_format):
+def simple_observation(state_format: list[Register]) -> Observation:
     """Create a simple observation for testing."""
     seed_in = State(num_bits=64, state_value=StateValue(0x0000000012345678))
     seed_out = State(num_bits=64, state_value=StateValue(0x0000000012345678))
@@ -88,7 +83,7 @@ def simple_observation(state_format):
 
 
 @pytest.fixture
-def conditional_observation(state_format):
+def conditional_observation(state_format: list[Register]) -> Observation:
     """Create an observation with conditional behavior."""
     # When EFLAGS bit 0 is set, different output behavior
     seed_in = State(num_bits=64, state_value=StateValue(0x0000000100000000))
@@ -107,7 +102,7 @@ def conditional_observation(state_format):
 
 
 @pytest.fixture
-def condition_generator(mocker):
+def condition_generator(mocker: MockerFixture) -> ConditionGenerator:
     """Create a ConditionGenerator with mocked Espresso."""
     gen = ConditionGenerator()
     mock_espresso = mocker.Mock()
@@ -124,12 +119,12 @@ def condition_generator(mocker):
 class TestInfer:
     """Tests for the main infer method."""
 
-    def test_infer_with_empty_observations_raises_exception(self):
+    def test_infer_with_empty_observations_raises_exception(self) -> None:
         """Test that infer raises exception with empty observations."""
         with pytest.raises(Exception, match='No observations to infer from'):
             infer([])
 
-    def test_infer_with_none_state_format_raises_exception(self, mocker):
+    def test_infer_with_none_state_format_raises_exception(self, mocker: MockerFixture) -> None:
         """Test that infer raises exception when state_format is None."""
         obs = mocker.Mock(spec=Observation)
         obs.state_format = None
@@ -137,7 +132,7 @@ class TestInfer:
         with pytest.raises(Exception, match='State format is None'):
             infer([obs])
 
-    def test_infer_returns_rule(self, simple_observation, mocker):
+    def test_infer_returns_rule(self, simple_observation: Observation, mocker: MockerFixture) -> None:
         """Test that infer returns a Rule object."""
         mock_infer_flow = mocker.patch('taintinduce.inference_engine.inference.infer_flow_conditions')
         # Return dict mapping input bits to their condition-dataflow pairs
@@ -158,7 +153,7 @@ class TestInfer:
         assert isinstance(result, GlobalRule)
         assert result.state_format == simple_observation.state_format
 
-    def test_infer_merges_conditions_and_dataflows(self, simple_observation):
+    def test_infer_merges_conditions_and_dataflows(self, simple_observation: Observation) -> None:
         """Test that infer properly creates condition-dataflow pairs."""
         # Integration-style test to verify pairs are created correctly
         result = infer([simple_observation])
@@ -175,7 +170,7 @@ class TestInfer:
 class TestExtractObservationDependencies:
     """Tests for extract_observation_dependencies method."""
 
-    def test_extract_single_observation(self, simple_observation):
+    def test_extract_single_observation(self, simple_observation: Observation) -> None:
         """Test extracting dependencies from a single observation."""
         result = observation_processor.extract_observation_dependencies([simple_observation])
 
@@ -183,7 +178,7 @@ class TestExtractObservationDependencies:
         assert isinstance(result[0], ObservationDependency)
         assert BitPosition(0) in result[0].dataflow
 
-    def test_extract_raises_on_multiple_bit_flips(self, state_format):
+    def test_extract_raises_on_multiple_bit_flips(self, state_format: list[Register]) -> None:
         """Test that method raises exception when multiple bits are flipped."""
         seed_in = State(num_bits=64, state_value=StateValue(0x0000000012345678))
         seed_out = State(num_bits=64, state_value=StateValue(0x0000000012345678))
@@ -203,7 +198,11 @@ class TestExtractObservationDependencies:
         with pytest.raises(Exception, match='More than one bit flipped'):
             observation_processor.extract_observation_dependencies([obs])
 
-    def test_extract_multiple_observations(self, simple_observation, conditional_observation):
+    def test_extract_multiple_observations(
+        self,
+        simple_observation: Observation,
+        conditional_observation: Observation,
+    ) -> None:
         """Test extracting dependencies from multiple observations."""
         result = observation_processor.extract_observation_dependencies([simple_observation, conditional_observation])
 
@@ -219,7 +218,7 @@ class TestExtractObservationDependencies:
 class TestLinkAffectedOutputsToTheirInputStates:
     """Tests for link_affected_outputs_to_their_input_states method."""
 
-    def test_link_creates_partitions(self):
+    def test_link_creates_partitions(self) -> None:
         """Test that method creates correct partitions."""
         # Create mock observation dependencies
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
@@ -251,7 +250,7 @@ class TestLinkAffectedOutputsToTheirInputStates:
         assert state1 in result[frozenset([BitPosition(32), BitPosition(33)])]
         assert state2 in result[frozenset([BitPosition(32), BitPosition(34)])]
 
-    def test_link_filters_by_mutated_bit(self):
+    def test_link_filters_by_mutated_bit(self) -> None:
         """Test that method only includes observations for the specified mutated bit."""
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
 
@@ -279,7 +278,12 @@ class TestLinkAffectedOutputsToTheirInputStates:
 class TestGenCondition:
     """Tests for _gen_condition method."""
 
-    def test_gen_condition_with_full_state(self, condition_generator, state_format, mock_eflags):
+    def test_gen_condition_with_full_state(
+        self,
+        condition_generator: ConditionGenerator,
+        state_format: list[Register],
+        mock_eflags: X86_REG_EFLAGS,
+    ) -> None:
         """Test condition generation with use_full_state=True."""
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
         state2 = State(num_bits=64, state_value=StateValue(0x0000000087654321))
@@ -297,11 +301,17 @@ class TestGenCondition:
 
         assert result is not None
         assert isinstance(result, TaintCondition)
-        condition_generator.espresso.minimize.assert_called_once()
+        condition_generator.espresso.minimize.assert_called_once()  # type: ignore[attr-defined]
         # Check that it used 64 bits (full state)
-        assert condition_generator.espresso.minimize.call_args[0][0] == 64
+        assert condition_generator.espresso.minimize.call_args[0][0] == 64  # type: ignore[attr-defined]
 
-    def test_gen_condition_with_cond_reg_only(self, condition_generator, state_format, mock_eflags, mocker):
+    def test_gen_condition_with_cond_reg_only(
+        self,
+        condition_generator: ConditionGenerator,
+        state_format: list[Register],
+        mock_eflags: X86_REG_EFLAGS,
+        mocker: MockerFixture,
+    ) -> None:
         """Test condition generation with use_full_state=False."""
         state1 = State(num_bits=64, state_value=StateValue(0x0000000112345678))
         state2 = State(num_bits=64, state_value=StateValue(0x0000000287654321))
@@ -323,11 +333,16 @@ class TestGenCondition:
 
         assert result is not None
         # Check that it used 32 bits (cond_reg only)
-        assert condition_generator.espresso.minimize.call_args[0][0] == 32
+        assert condition_generator.espresso.minimize.call_args[0][0] == 32  # type: ignore[attr-defined]
         # Check that shift_espresso was called (legacy mode)
         mock_shift.assert_called_once()
 
-    def test_gen_condition_returns_none_on_non_orthogonal(self, condition_generator, state_format, mock_eflags):
+    def test_gen_condition_returns_none_on_non_orthogonal(
+        self,
+        condition_generator: ConditionGenerator,
+        state_format: list[Register],
+        mock_eflags: X86_REG_EFLAGS,
+    ) -> None:
         """Test that method returns None when partitions are not orthogonal."""
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
         state2 = State(num_bits=64, state_value=StateValue(0x0000000012345678))  # Same state
@@ -335,7 +350,9 @@ class TestGenCondition:
         agreeing = {state1}
         opposing = {state2}
 
-        condition_generator.espresso.minimize.side_effect = NonOrthogonalException('Not orthogonal')
+        condition_generator.espresso.minimize.side_effect = NonOrthogonalException(  #  type: ignore[attr-defined]
+            'Not orthogonal',
+        )
 
         result = condition_generator.generate_condition(
             agreeing,
@@ -347,7 +364,12 @@ class TestGenCondition:
 
         assert result is None
 
-    def test_gen_condition_returns_none_on_espresso_error(self, condition_generator, state_format, mock_eflags):
+    def test_gen_condition_returns_none_on_espresso_error(
+        self,
+        condition_generator: ConditionGenerator,
+        state_format: list[Register],
+        mock_eflags: X86_REG_EFLAGS,
+    ) -> None:
         """Test that method returns None on specific Espresso errors."""
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
         state2 = State(num_bits=64, state_value=StateValue(0x0000000087654321))
@@ -355,7 +377,7 @@ class TestGenCondition:
         agreeing = {state1}
         opposing = {state2}
 
-        condition_generator.espresso.minimize.side_effect = EspressoException(
+        condition_generator.espresso.minimize.side_effect = EspressoException(  # type: ignore[attr-defined]
             'ON-set and OFF-set are not orthogonal',
         )
 
@@ -369,7 +391,13 @@ class TestGenCondition:
 
         assert result is None
 
-    def test_gen_condition_calls_espresso2cond(self, condition_generator, state_format, mock_eflags, mocker):
+    def test_gen_condition_calls_espresso2cond(
+        self,
+        condition_generator: ConditionGenerator,
+        state_format: list[Register],
+        mock_eflags: X86_REG_EFLAGS,
+        mocker: MockerFixture,
+    ) -> None:
         """Test that method calls espresso2cond to convert result."""
         state1 = State(num_bits=64, state_value=StateValue(0x0000000012345678))
         state2 = State(num_bits=64, state_value=StateValue(0x0000000087654321))
@@ -399,7 +427,7 @@ class TestGenCondition:
 class TestInferenceEngineIntegration:
     """Integration tests for the complete inference pipeline."""
 
-    def test_end_to_end_simple_instruction(self, state_format):
+    def test_end_to_end_simple_instruction(self, state_format: list[Register]) -> None:
         """Test complete inference for a simple instruction."""
 
         # Create observation for simple instruction (e.g., mov)
@@ -424,7 +452,11 @@ class TestInferenceEngineIntegration:
         assert result.state_format == state_format
         assert len(result.pairs) > 0
 
-    def test_data_dependent_condition_and_instruction(self, state_format, mocker):
+    def test_data_dependent_condition_and_instruction(
+        self,
+        state_format: list[Register],
+        mocker: MockerFixture,
+    ) -> None:
         """Test inference for data-dependent instruction like AND."""
         mock_espresso_instance = mocker.Mock()
         mock_espresso_instance.minimize = mocker.Mock(

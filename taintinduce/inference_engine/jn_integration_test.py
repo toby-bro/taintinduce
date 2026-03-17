@@ -1279,7 +1279,9 @@ class TestJNNZCVFlags:
             (0b1111, 0b1111, 0b1110, 1, 0, 1, 0),  # -1 + -1 = -2 (no overflow)
         ],
     )
-    def test_add_nzcv_flags(self, r1, r2, expected_result, expected_n, expected_z, expected_c, expected_v):
+    def test_add_nzcv_flags(
+        self, r1: int, r2: int, expected_result: int, expected_n: int, expected_z: int, expected_c: int, expected_v: int
+    ) -> None:
         """Test NZCV flag computation for ADD instruction."""
         cpu = JNCpu()
         bytestring = encode_instruction(JNOpcode.ADD_R1_R2)
@@ -1314,7 +1316,7 @@ class TestJNNZCVFlags:
             (JNOpcode.XOR_R1_IMM, 0b1010, 0x5, True),
         ],
     )
-    def test_logical_ops_set_nz_flags(self, opcode, r1, r2_or_imm, use_imm):
+    def test_logical_ops_set_nz_flags(self, opcode: JNOpcode, r1: int, r2_or_imm: int, use_imm: bool) -> None:
         """Test that logical operations set N and Z flags, but not C or V."""
         cpu = JNCpu()
 
@@ -1374,7 +1376,7 @@ class TestJNNZCVFlags:
                     found_nzcv_flow
                 ), f'{opcode.name}: Input bit {input_bit} should propagate taint to NZCV flags (bits 8-11)'
 
-    def test_nzcv_flag_bit_meanings(self):
+    def test_nzcv_flag_bit_meanings(self) -> None:
         """Test that NZCV flag bits are correctly positioned.
 
         NZCV layout (bits 8-11 of state):

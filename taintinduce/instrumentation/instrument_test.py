@@ -5,7 +5,7 @@ from taintinduce.state.state import Observation, State
 from taintinduce.types import Architecture, StateValue
 
 
-def test_instrument_mapped():
+def test_instrument_mapped() -> None:
     state_fmt = [X86_REG_EAX(), X86_REG_EBX()]
 
     # Simulating mov eax, ebx
@@ -27,7 +27,7 @@ def test_instrument_mapped():
     assert 'T_EAX[0] = T_EBX[0]' in output_str
 
 
-def test_instrument_monotonic():
+def test_instrument_monotonic() -> None:
     state_fmt = [X86_REG_EAX(), X86_REG_EBX()]
 
     # Simulating or eax, ebx
@@ -46,7 +46,7 @@ def test_instrument_monotonic():
     assert 'C_mock_or[EAX[0:0]]' in output_str
 
 
-def test_instrument_monotonic_16_bit():
+def test_instrument_monotonic_16_bit() -> None:
     """Verify that a 16-bit operation only produces [15:0] constraints and leaves [31:16] alone"""
     state_fmt = [X86_REG_EAX(), X86_REG_EBX()]
 

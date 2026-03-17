@@ -8,7 +8,7 @@ from taintinduce.state.state import Observation, State
 from taintinduce.types import Architecture, StateValue
 
 
-def test_instrument_monotonic_and_correctness():
+def test_instrument_monotonic_and_correctness() -> None:
     state_fmt = [X86_REG_EAX(), X86_REG_EBX()]
 
     seed_in = State(64, StateValue((0xFFFFFFFF << 32) | 0xFFFFFFFF))

@@ -1,14 +1,17 @@
 import random
+from typing import Callable
 
 
 # Let's say C is a known monotonic function, e.g. bitwise AND
-def C_and(A, B):
+def C_and(A: int, B: int) -> int:
     return A & B
 
-def C_or(A, B):
+
+def C_or(A: int, B: int) -> int:
     return A | B
 
-def m_replica(A, B, T_A, T_B, C_func, width=8):
+
+def m_replica(A: int, B: int, T_A: int, T_B: int, C_func: Callable[[int, int], int], width: int = 8) -> int:
     """
     Computes precise taint using full m-replica methodology.
     For every bit in output, it is tainted if there exists an input combining
@@ -42,12 +45,12 @@ def m_replica(A, B, T_A, T_B, C_func, width=8):
                 break
 
         if is_tainted:
-            out_taint |= (1 << bit)
+            out_taint |= 1 << bit
 
     return out_taint
 
 
-def test_monotonic_property_and():
+def test_monotonic_property_and() -> None:
     # Test formula: C(I & ~T_I) ^ C(I | T_I)
     for _ in range(100):
         A = random.randint(0, 255)
@@ -71,7 +74,8 @@ def test_monotonic_property_and():
 
         assert expected == actual
 
-def test_monotonic_property_or():
+
+def test_monotonic_property_or() -> None:
     for _ in range(100):
         A = random.randint(0, 255)
         B = random.randint(0, 255)
@@ -87,4 +91,3 @@ def test_monotonic_property_or():
 
         actual = C_or(A0, B0) ^ C_or(A1, B1)
         assert expected == actual
-

@@ -16,7 +16,7 @@ from taintinduce.observation_engine.strategy import ByteBlocks
 class TestByteBlocks:
     """Test ByteBlocks strategy."""
 
-    def test_byteblocks_32bit_register(self):
+    def test_byteblocks_32bit_register(self) -> None:
         """Test ByteBlocks strategy with a 32-bit register (EAX)."""
         strategy = ByteBlocks(num_runs=1)
         reg = X86_REG_EAX()
@@ -60,7 +60,7 @@ class TestByteBlocks:
             assert var.registers[0].name == 'EAX'
             assert len(var.values) == 1
 
-    def test_byteblocks_16bit_register(self):
+    def test_byteblocks_16bit_register(self) -> None:
         """Test ByteBlocks strategy with a 16-bit register."""
 
         strategy = ByteBlocks(num_runs=1)
@@ -84,7 +84,7 @@ class TestByteBlocks:
         actual_values = [var.values[0] for var in variations]
         assert sorted(actual_values) == sorted(expected_values)
 
-    def test_byteblocks_8bit_register(self):
+    def test_byteblocks_8bit_register(self) -> None:
         """Test ByteBlocks strategy with an 8-bit register."""
 
         strategy = ByteBlocks(num_runs=1)
@@ -99,7 +99,7 @@ class TestByteBlocks:
         actual_values = [var.values[0] for var in variations]
         assert sorted(actual_values) == sorted(expected_values)
 
-    def test_byteblocks_multiple_registers(self):
+    def test_byteblocks_multiple_registers(self) -> None:
         """Test ByteBlocks strategy with multiple registers.
 
         When multiple registers are provided, ByteBlocks now generates
@@ -122,11 +122,11 @@ class TestByteBlocks:
             assert var.registers[1].name == 'EBX'
             assert len(var.values) == 2
 
-    def test_byteblocks_non_byte_aligned_register_skipped(self):
+    def test_byteblocks_non_byte_aligned_register_skipped(self) -> None:
         """Test that registers with bits not divisible by 8 are skipped."""
 
         class MockReg(Register):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.name = 'MOCK'
                 self.bits = 12  # Not divisible by 8
                 self.structure = [12]
@@ -141,7 +141,7 @@ class TestByteBlocks:
         # Should produce no variations for non-byte-aligned register
         assert len(variations) == 0
 
-    def test_byteblocks_two_32bit_registers_combinations(self):
+    def test_byteblocks_two_32bit_registers_combinations(self) -> None:
         """Test ByteBlocks generates all combinations across two 32-bit registers.
 
         For arithmetic operations like ADD EAX, EBX, we need to test all
@@ -188,7 +188,7 @@ class TestByteBlocks:
         unique_combos = {(var.values[0], var.values[1]) for var in variations}
         assert len(unique_combos) == 225, 'All combinations should be unique'
 
-    def test_byteblocks_with_eflags_register(self):
+    def test_byteblocks_with_eflags_register(self) -> None:
         """Test ByteBlocks with EFLAGS register - should set EFLAGS to 0."""
         strategy = ByteBlocks(num_runs=1)
         eflags = X86_REG_EFLAGS()
@@ -206,7 +206,7 @@ class TestByteBlocks:
             assert var.registers[1].name == 'EAX'
             assert var.values[0] == 0, 'EFLAGS should always be 0'
 
-    def test_byteblocks_64bit_registers(self):
+    def test_byteblocks_64bit_registers(self) -> None:
         """Test ByteBlocks with 64-bit registers.
 
         For 64-bit registers:

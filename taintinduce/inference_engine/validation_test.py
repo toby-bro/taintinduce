@@ -1,28 +1,25 @@
 """Unit tests for validation module."""
 
-from taintinduce.inference_engine.validation import (
-    check_condition_satisfied,
-    validate_condition,
-)
+from taintinduce.inference_engine.validation import check_condition_satisfied, validate_condition
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.state.state import State
 from taintinduce.types import StateValue
 
 
-def test_check_condition_satisfied_unconditional():
+def test_check_condition_satisfied_unconditional() -> None:
     """Test that unconditional (None) conditions are always satisfied."""
     state = State(num_bits=64, state_value=StateValue(0x12345678))
     assert check_condition_satisfied(None, state)
 
 
-def test_check_condition_satisfied_empty():
+def test_check_condition_satisfied_empty() -> None:
     """Test that empty conditions are always satisfied."""
     empty_condition = TaintCondition(LogicType.DNF, frozenset())
     state = State(num_bits=64, state_value=StateValue(0x12345678))
     assert check_condition_satisfied(empty_condition, state)
 
 
-def test_check_condition_satisfied_matching():
+def test_check_condition_satisfied_matching() -> None:
     """Test that matching DNF clause is satisfied."""
     # Condition: bit 0 must be 1
     condition = TaintCondition(LogicType.DNF, frozenset([(0x1, 0x1)]))
@@ -30,7 +27,7 @@ def test_check_condition_satisfied_matching():
     assert check_condition_satisfied(condition, state)
 
 
-def test_check_condition_satisfied_not_matching():
+def test_check_condition_satisfied_not_matching() -> None:
     """Test that non-matching state is not satisfied."""
     # Condition: bit 0 must be 1
     condition = TaintCondition(LogicType.DNF, frozenset([(0x1, 0x1)]))
@@ -38,7 +35,7 @@ def test_check_condition_satisfied_not_matching():
     assert not check_condition_satisfied(condition, state)
 
 
-def test_validate_condition_empty():
+def test_validate_condition_empty() -> None:
     """Test that empty condition is always valid."""
     condition = TaintCondition(LogicType.DNF, None)
     agreeing = {State(num_bits=64, state_value=StateValue(0x0))}
@@ -46,7 +43,7 @@ def test_validate_condition_empty():
     assert validate_condition(condition, agreeing, disagreeing)
 
 
-def test_validate_condition_valid():
+def test_validate_condition_valid() -> None:
     """Test validation of a correct condition."""
     # Condition: bit 0 = 1 (matches only odd numbers)
     condition = TaintCondition(LogicType.DNF, frozenset([(0x1, 0x1)]))
@@ -63,7 +60,7 @@ def test_validate_condition_valid():
     assert validate_condition(condition, agreeing, disagreeing)
 
 
-def test_validate_condition_invalid_agreeing():
+def test_validate_condition_invalid_agreeing() -> None:
     """Test that validation fails when agreeing state doesn't satisfy condition."""
     # Condition: bit 0 = 1
     condition = TaintCondition(LogicType.DNF, frozenset([(0x1, 0x1)]))
@@ -75,7 +72,7 @@ def test_validate_condition_invalid_agreeing():
     assert not validate_condition(condition, agreeing, disagreeing)
 
 
-def test_validate_condition_invalid_disagreeing():
+def test_validate_condition_invalid_disagreeing() -> None:
     """Test that validation fails when disagreeing state satisfies condition."""
     # Condition: bit 0 = 1
     condition = TaintCondition(LogicType.DNF, frozenset([(0x1, 0x1)]))

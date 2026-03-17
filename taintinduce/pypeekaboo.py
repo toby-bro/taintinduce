@@ -1,10 +1,11 @@
 import os
 import struct
 from ctypes import Structure, c_uint8, c_uint16, c_uint32, c_uint64, sizeof
+from io import BufferedReader
 from typing import ClassVar
 
 
-def read_struct(myfile, mystruct):
+def read_struct(myfile: BufferedReader, mystruct: type[Structure]) -> Structure:
     x = mystruct()
     assert myfile.readinto(x) == sizeof(mystruct)
     return x
@@ -260,8 +261,8 @@ class RegFileARM64(Structure):
 ARCH_INFO = {
     0: (RegFileARM64, 'AARCH32'),  # ARCH_AARCH32
     1: (RegFileARM64, 'AARCH64'),  # ARCH_AARCH64 / ARM64
-    2: (RegFileX86, 'X86'),        # ARCH_X86
-    3: (RegFileAMD64, 'AMD64'),    # ARCH_AMD64
+    2: (RegFileX86, 'X86'),  # ARCH_X86
+    3: (RegFileAMD64, 'AMD64'),  # ARCH_AMD64
 }
 
 
@@ -319,16 +320,16 @@ class MemFile(Structure):
 
 
 class TraceInsn(object):
-    def __init__(self):
+    def __init__(self) -> None:
         self.addr = None
         self.rawbytes = None
         self.num_mem = None
-        self.mem = []
+        self.mem: list[MemFile] = []
         self.regfile = None
 
 
 class MemInfo(object):
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
 
@@ -337,7 +338,7 @@ class PyPeekaboo(object):
     arch_str: str
     bytemap: dict[int, list[int]]
 
-    def __init__(self, trace_path):
+    def __init__(self, trace_path: str):
         # ensure that path points to a directory...
         assert os.path.isdir(trace_path)
         # ensure that the basic structure is correct
@@ -380,7 +381,7 @@ class PyPeekaboo(object):
         while self.insn_bytemap.readinto(bytesmap_entry) == sizeof(bytesmap_entry):
             self.bytesmap[bytesmap_entry.pc] = list(bytesmap_entry.rawbytes)[: bytesmap_entry.size]
 
-    def load_memrefs_offsets(self, trace_path):
+    def load_memrefs_offsets(self, trace_path: str) -> BufferedReader:
         memrefs_offsets_path = os.path.join(trace_path, 'memrefs_offsets')
         if not os.path.isfile(memrefs_offsets_path):
             # memfile offsets for each insn does not exist, create them
@@ -398,7 +399,7 @@ class PyPeekaboo(object):
                         offset_file.write(struct.pack('<Q', 2**63))
         return open(memrefs_offsets_path, 'rb')
 
-    def get_insn(self, insn_id):
+    def get_insn(self, insn_id: int) -> TraceInsn:
 
         # get the offset of the instruction into the different files.
         insn_trace_foffset = insn_id * sizeof(InsnRef)
@@ -428,7 +429,7 @@ class PyPeekaboo(object):
         my_insn.regfile = read_struct(self.regfile, self.regfile_struct)
         return my_insn
 
-    def pp(self):
+    def pp(self) -> None:
         insn_ref = InsnRef()
         while self.insn_trace.readinto(insn_ref) == sizeof(InsnRef):
             rawbytes = self.bytesmap[insn_ref.pc]

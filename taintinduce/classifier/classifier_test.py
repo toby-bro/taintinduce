@@ -5,7 +5,7 @@ from taintinduce.state.state import Observation, State
 from taintinduce.types import Architecture, StateValue
 
 
-def test_classify_monotonic():
+def test_classify_monotonic() -> None:
     state_fmt = [X86_REG_EAX(), X86_REG_EBX()]
     seed_in = State(64, StateValue(0))
     seed_out = State(64, StateValue(0))
@@ -28,7 +28,7 @@ def test_classify_monotonic():
     assert classify_instruction([obs]) == InstructionCategory.MONOTONIC
 
 
-def test_classify_transportable():
+def test_classify_transportable() -> None:
     state_fmt = [X86_REG_EAX(), X86_REG_EBX()]
     seed_in = State(64, StateValue(1))  # EAX=1
     seed_out = State(64, StateValue(1))
@@ -50,7 +50,7 @@ def test_classify_transportable():
     assert classify_instruction([obs]) == InstructionCategory.TRANSPORTABLE
 
 
-def test_classify_translatable():
+def test_classify_translatable() -> None:
     state_fmt = [X86_REG_EAX(), X86_REG_EBX()]
 
     # SHL EAX, CL (using EBX as CL for simplicity)
@@ -85,7 +85,7 @@ def test_classify_translatable():
     assert classify_instruction([obs]) == InstructionCategory.TRANSLATABLE
 
 
-def test_classify_cond_transportable():
+def test_classify_cond_transportable() -> None:
     # To avoid being classified as Monotonic, a bit must show it is neither non-decreasing nor non-increasing.
     # We need an input bit that both rises AND falls causing the output to rise in both cases, or something similar.
     # Ex: O = 1 if ((in0 ^ in1) == 0) else 0.
@@ -153,7 +153,7 @@ def test_classify_cond_transportable():
     assert classify_instruction([obs2_1, obs2_2, obs2_3]) == InstructionCategory.COND_TRANSPORTABLE
 
 
-def test_classify_mapped():
+def test_classify_mapped() -> None:
     # Test for mapped (e.g. NOT eax)
     # X_0 flips Y_0, X_1 flips Y_1, etc.
     seed_in = State(64, StateValue(0))
@@ -178,7 +178,7 @@ def test_classify_mapped():
     assert classify_instruction([obs]) == InstructionCategory.MAPPED
 
 
-def test_classify_mapped_shifted():
+def test_classify_mapped_shifted() -> None:
     # Test for SHL eax, 2 (Mapped but shifted AND some inputs don't map)
     # X_0 flips Y_2, X_1 flips Y_3... X_62 flips Y_64 (outside, or None), X_63 -> None
     seed_in = State(64, StateValue(0))
@@ -206,7 +206,7 @@ def test_classify_mapped_shifted():
     assert classify_instruction([obs]) == InstructionCategory.MAPPED
 
 
-def test_classify_mapped_add_fail():
+def test_classify_mapped_add_fail() -> None:
     # Test that ADD is NOT mapped (multiple inputs trigger same output carry, or single input triggers multiple outputs)
     seed_in = State(64, StateValue(0))
     seed_out = State(64, StateValue(0))
@@ -229,7 +229,7 @@ def test_classify_mapped_add_fail():
     assert is_mapped([obs]) is False
 
 
-def test_classify_mapped_carry_fail():
+def test_classify_mapped_carry_fail() -> None:
     # If 1 input causes 2 output flips, but a SECOND input ALSO causes a flip in those outputs
     # Examples: Arithmetic ADD triggers carry cascades.
     s_in = State(64, StateValue(0))
@@ -254,7 +254,7 @@ def test_classify_mapped_carry_fail():
     assert is_mapped([obs]) is False
 
 
-def test_classify_not_avalanche_arithmetic():
+def test_classify_not_avalanche_arithmetic() -> None:
     # Simulate an arithmetic carry. A single input bit flip causes a long streak of 1s (contiguous)
     # Output XOR looks like 0x0000FFFF (16 straight bits)
     s_in = State(32, StateValue(0))
@@ -291,7 +291,7 @@ def test_classify_not_avalanche_arithmetic():
     assert res != InstructionCategory.AVALANCHE
 
 
-def test_classify_avalanche():
+def test_classify_avalanche() -> None:
     # Simulate dense entropy: 8 non-contiguous bits flipped
     s_in = State(32, StateValue(0))
     s_out = State(32, StateValue(0x0001))
@@ -316,7 +316,7 @@ def test_classify_avalanche():
     assert res == InstructionCategory.AVALANCHE
 
 
-def test_classify_not_translatable_multiple_flips():
+def test_classify_not_translatable_multiple_flips() -> None:
     # Simulates a scenario like 'imul' where a constant offset exists for the lowest bit,
     # but a single input bit flips multiple output bits in the destination register.
     # This must not be classified as Translatable.

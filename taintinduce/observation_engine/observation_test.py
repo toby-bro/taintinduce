@@ -1,15 +1,12 @@
 """Unit tests for observation generation to debug AMD64 vs X86 differences."""
 
 import pytest
+from pytest_mock import MockerFixture
 
 from taintinduce.cpu.unicorn_cpu import UnicornCPU
 from taintinduce.disassembler.insn_info import Disassembler
 from taintinduce.isa.arm64_registers import ARM64_REG_NZCV, ARM64_REG_X0
-from taintinduce.isa.x86_registers import (
-    X86_REG_EAX,
-    X86_REG_EFLAGS,
-    X86_REG_RAX,
-)
+from taintinduce.isa.x86_registers import X86_REG_EAX, X86_REG_EFLAGS, X86_REG_RAX
 from taintinduce.observation_engine.observation import ObservationEngine
 from taintinduce.state.state import Observation
 from taintinduce.types import Architecture
@@ -18,7 +15,7 @@ from taintinduce.types import Architecture
 class TestObservationGenerationMocked:
     """Fast mocked tests for observation generation."""
 
-    def test_x86_observe_insn_called(self, mocker):
+    def test_x86_observe_insn_called(self, mocker: MockerFixture) -> None:
         """Test that X86 observe_insn is called with correct strategy."""
         bytestring = '25FF00FFaa'
         dis = Disassembler(Architecture.X86, bytestring)
@@ -42,7 +39,7 @@ class TestObservationGenerationMocked:
         assert len(observations) == 1
         assert len(observations[0].mutated_ios) > 0
 
-    def test_amd64_observe_insn_called(self, mocker):
+    def test_amd64_observe_insn_called(self, mocker: MockerFixture) -> None:
         """Test that AMD64 observe_insn is called with correct strategy."""
         bytestring = '25FF00FFaa'
         dis = Disassembler(Architecture.AMD64, bytestring)
@@ -66,7 +63,7 @@ class TestObservationGenerationMocked:
         assert len(observations) == 1
         assert len(observations[0].mutated_ios) > 0
 
-    def test_gen_seeds_called_with_strategy(self, mocker):
+    def test_gen_seeds_called_with_strategy(self, mocker: MockerFixture) -> None:
         """Test that _gen_seeds is called with correct parameters."""
         bytestring = '25FF00FFaa'
         dis = Disassembler(Architecture.X86, bytestring)
@@ -88,7 +85,7 @@ class TestObservationGenerationMocked:
         mock_gen_seeds.assert_called_once_with(bytestring, Architecture.X86, state_format)
         assert len(seeds) == 1
 
-    def test_gen_observation_called_with_seed(self, mocker):
+    def test_gen_observation_called_with_seed(self, mocker: MockerFixture) -> None:
         """Test that _gen_observation is called with seed."""
         bytestring = '25FF00FFaa'
         dis = Disassembler(Architecture.AMD64, bytestring)
@@ -115,7 +112,7 @@ class TestObservationGenerationMocked:
 class TestActualExecution:
     """Tests that verify actual CPU execution with real inputs/outputs."""
 
-    def test_x86_and_instruction_execution(self):
+    def test_x86_and_instruction_execution(self) -> None:
         """Test that X86 AND instruction produces correct output."""
         bytecode = bytes.fromhex('25FF00FFaa')  # AND EAX, 0xaaff00ff
         cpu = UnicornCPU(Architecture.X86)
@@ -130,7 +127,7 @@ class TestActualExecution:
 
         assert state_out[eax_reg] == 0xAAFF00FF, f'Expected 0xaaff00ff, got {state_out[eax_reg]:#x}'
 
-    def test_amd64_and_instruction_execution(self):
+    def test_amd64_and_instruction_execution(self) -> None:
         """Test that AMD64 AND instruction produces correct output."""
         bytecode = bytes.fromhex('25FF00FFaa')  # AND EAX, 0xaaff00ff
         cpu = UnicornCPU(Architecture.AMD64)
@@ -145,7 +142,7 @@ class TestActualExecution:
 
         assert state_out[rax_reg] == 0x00000000AAFF00FF, f'Expected 0x00000000aaff00ff, got {state_out[rax_reg]:#018x}'
 
-    def test_x86_bit_flip_changes_output(self):
+    def test_x86_bit_flip_changes_output(self) -> None:
         """Test that flipping input bit changes output for X86."""
         bytecode = bytes.fromhex('25FF00FFaa')
         cpu = UnicornCPU(Architecture.X86)
@@ -165,7 +162,7 @@ class TestActualExecution:
 
         assert state_out1[eax_reg] != state_out2[eax_reg], 'Bit flip should change output'
 
-    def test_amd64_bit_flip_changes_output(self):
+    def test_amd64_bit_flip_changes_output(self) -> None:
         """Test that flipping input bit changes output for AMD64."""
         bytecode = bytes.fromhex('25FF00FFaa')
         cpu = UnicornCPU(Architecture.AMD64)
@@ -185,7 +182,7 @@ class TestActualExecution:
 
         assert state_out1[rax_reg] != state_out2[rax_reg], 'Bit flip should change output'
 
-    def test_arm64_add_instruction_execution(self):
+    def test_arm64_add_instruction_execution(self) -> None:
         """Test that ARM64 ADD instruction produces correct output."""
         bytecode = bytes.fromhex('00080091')  # add x0, x0, #0x02
         cpu = UnicornCPU(Architecture.ARM64)
@@ -200,7 +197,7 @@ class TestActualExecution:
 
         assert state_out[x0_reg] == 0x0000000000000007, f'Expected 0x0000000000000007, got {state_out[x0_reg]:#018x}'
 
-    def test_arm64_and_instruction_execution(self):
+    def test_arm64_and_instruction_execution(self) -> None:
         """Test that ARM64 AND instruction produces correct output."""
         bytecode = bytes.fromhex('000c1c12')  # and w0, w0, #0xf0
         cpu = UnicornCPU(Architecture.ARM64)
@@ -215,7 +212,7 @@ class TestActualExecution:
 
         assert state_out[x0_reg] == 0x00000000000000F0, f'Expected 0x00000000000000F0, got {state_out[x0_reg]:#018x}'
 
-    def test_arm64_bit_flip_changes_output(self):
+    def test_arm64_bit_flip_changes_output(self) -> None:
         """Test that flipping input bit changes output for ARM64."""
         bytecode = bytes.fromhex('00080091')  # add x0, x0, #0x02
         cpu = UnicornCPU(Architecture.ARM64)
@@ -235,7 +232,7 @@ class TestActualExecution:
 
         assert state_out1[x0_reg] != state_out2[x0_reg], 'Bit flip should change output'
 
-    def test_arm64_instruction_state_changes(self):
+    def test_arm64_instruction_state_changes(self) -> None:
         """Test that ARM64 instructions produce actual state changes (not no-ops)."""
         bytecode = bytes.fromhex('00080091')  # add x0, x0, #0x02
         cpu = UnicornCPU(Architecture.ARM64)

@@ -156,7 +156,7 @@ def main() -> None:
             with open(obs_path, 'r') as f:
                 obs_list = json.load(f, cls=TaintInduceDecoder)
                 if not isinstance(obs_list, list):
-                    raise Exception('Loaded observations is not a list!')
+                    raise RuntimeError('Loaded observations is not a list!')
                 assert all(isinstance(obs, Observation) for obs in obs_list)
             _obs_engine = None  # No refinement when loading from file
         except Exception as e:

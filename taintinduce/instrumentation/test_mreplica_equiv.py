@@ -15,20 +15,22 @@ def dict_to_state(taints: dict[str, int], layout: list[tuple[int, int, str]], nu
         if name in taints:
             # mask out to size just in case
             val = taints[name] & ((1 << (end - start)) - 1)
-            state_val |= (val << start)
+            state_val |= val << start
     return State(num_bits, StateValue(state_val))
+
 
 def state_to_dict(state: State, layout: list[tuple[int, int, str]]) -> dict[str, int]:
     out = {}
     state_val = state.state_value
     for start, end, name in layout:
-        mask = ((1 << (end - start)) - 1)
+        mask = (1 << (end - start)) - 1
         val = (state_val >> start) & mask
-        if val != 0: # only add if non-zero? or all? let's add all
+        if val != 0:  # only add if non-zero? or all? let's add all
             out[name] = val
     return out
 
-def test_equivalence_21d8_and():
+
+def test_equivalence_21d8_and() -> None:
     with open('output/21d8_X86_obs.json', 'r') as f:
         obs_list = json.load(f, cls=TaintInduceDecoder)
 
@@ -65,7 +67,6 @@ def test_equivalence_21d8_and():
     mreplica.make_full_m_replica(input_state, reset=True)
     mreplica_out_state = mreplica.simulate(modified_seed)
 
-
     mreplica_out_dict = state_to_dict(mreplica_out_state, layout)
 
     # We really only care about data registers (EAX, EBX)
@@ -73,7 +74,8 @@ def test_equivalence_21d8_and():
     assert lc_out.get('EAX', 0) == mreplica_out_dict.get('EAX', 0)
     assert lc_out.get('EBX', 0) == mreplica_out_dict.get('EBX', 0)
 
-def test_equivalence_01d8_add():
+
+def test_equivalence_01d8_add() -> None:
     with open('output/01d8_X86_obs.json', 'r') as f:
         obs_list = json.load(f, cls=TaintInduceDecoder)
 
@@ -114,4 +116,3 @@ def test_equivalence_01d8_add():
     print('MREPLICA:', mreplica_out_dict)
     print('LC:', lc_out)
     assert lc_out.get('EAX', 0) == mreplica_out_dict.get('EAX', 0)
-

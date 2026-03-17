@@ -21,16 +21,16 @@ from taintinduce.state.state import Observation, check_ones
 from taintinduce.types import Dataflow
 
 
-def decode_eflags(eflags):
+def decode_eflags(eflags: int) -> None:
     updated_flags = []
     for j in range(46):
         if eflags & (1 << j):
             updated_flags.append(get_eflag_name(1 << j))
-    print('\tEFLAGS: %s' % (','.join(p for p in updated_flags)))
+    print('\tEFLAGS: %s' % (','.join(updated_flags)))
 
 
-def get_eflag_name(eflag):
-    {
+def get_eflag_name(eflag: int) -> str:
+    return {
         x86_consts.X86_EFLAGS_UNDEFINED_OF: 'UNDEF_OF',
         x86_consts.X86_EFLAGS_UNDEFINED_SF: 'UNDEF_SF',
         x86_consts.X86_EFLAGS_UNDEFINED_ZF: 'UNDEF_ZF',
@@ -77,7 +77,7 @@ def get_eflag_name(eflag):
         x86_consts.X86_EFLAGS_SET_CF: 'SET_CF',
         x86_consts.X86_EFLAGS_SET_DF: 'SET_DF',
         x86_consts.X86_EFLAGS_SET_IF: 'SET_IF',
-    }.get(eflag, None)
+    }.get(eflag, 'UNKNOWN')
 
 
 def _format_condition_description(condition: Optional[TaintCondition]) -> str:
@@ -225,7 +225,7 @@ def read_observations(obs_file: str, limit: int = 5) -> None:
     print()
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 2:
         print('Usage:')
         print('  python read_taint_output.py <rule_file.json>')
