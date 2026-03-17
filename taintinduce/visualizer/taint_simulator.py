@@ -199,11 +199,20 @@ def simulate_taint_propagation(
             - dataflows: List of all active dataflows showing taint propagation paths
     """
     if isinstance(rule, LogicCircuit):
+        input_values = {}
+        bit_offset = 0
+        for reg in rule.state_format:
+            val = (input_state >> bit_offset) & ((1 << reg.bits) - 1)
+            input_values[reg.name] = val
+            bit_offset += reg.bits
+
         # Convert set of (reg, bit) to dict of reg -> bitmask
-        tainted_outputs, all_dataflows = evaluate_taint_propagation_for_circuit(rule, tainted_bits)
+        tainted_outputs, all_dataflows = evaluate_taint_propagation_for_circuit(rule, tainted_bits, input_values)
 
         return {
-            'matching_pairs': list(range(len(rule.assignments))),
+            'matching_pairs': [
+                {'pair_index': i, 'condition_text': '', 'is_unconditional': True} for i in range(len(rule.assignments))
+            ],
             'tainted_outputs': list(tainted_outputs),
             'dataflows': all_dataflows,
             'num_tainted_inputs': len(tainted_bits),
@@ -255,13 +264,14 @@ def simulate_taint_propagation(
 def evaluate_taint_propagation_for_circuit(
     rule: LogicCircuit,
     tainted_bits: set[tuple[str, int]],
+    input_values: dict[str, int],
 ) -> tuple[set[tuple[str, int]], list[dict[str, Any]]]:
     input_taint: dict[str, int] = {}
     for reg, bit in tainted_bits:
         input_taint[reg] = input_taint.get(reg, 0) | (1 << bit)
 
-        # Evaluate using AST logic
-    output_taint = rule.evaluate(input_taint)
+    # Evaluate using AST logic
+    output_taint = rule.evaluate(input_taint, input_values)
 
     # Convert dict of reg -> bitmask back to set of (reg, bit)
     tainted_outputs = set()

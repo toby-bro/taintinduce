@@ -50,26 +50,19 @@ def test_equivalence_21d8_and():
         'EFLAGS': 0x0,
     }
 
-    # 4. Evaluate logic circuit
-    lc_out = circuit.evaluate(input_taints)
-
-    # 5. Evaluate MReplica
-    # For MReplica, we need to completely build it first based on the input state:
-    input_state = dict_to_state(input_taints, layout, num_bits)
-    mreplica.make_full_m_replica(input_state, reset=True)
-
-    # To test equivalence of the STATIC dependency graph across MReplica, we must
-    # use a seed state where ALL bits pass the monotonic logic gates.
-    # For AND, both operands must be all 1s (0xFFFFFFFF) so any bit flip changes the outcome.
-    original_seed_io = first_obs.seed_io[0]
-
     # Let's craft a new seed specifically for EAX and EBX to be 0xFFFFFFFF
     # We will simply overwrite the input state value with 0xFFFFFFFF for both.
+    original_seed_io = first_obs.seed_io[0]
     seed_dict = state_to_dict(original_seed_io, layout)
     seed_dict['EAX'] = 0xFFFFFFFF
     seed_dict['EBX'] = 0xFFFFFFFF
     modified_seed = dict_to_state(seed_dict, layout, num_bits)
 
+    # 4. Evaluate logic circuit
+    lc_out = circuit.evaluate(input_taints, seed_dict)
+
+    input_state = dict_to_state(input_taints, layout, num_bits)
+    mreplica.make_full_m_replica(input_state, reset=True)
     mreplica_out_state = mreplica.simulate(modified_seed)
 
 
@@ -107,6 +100,7 @@ def test_equivalence_01d8_add():
     # For ADD, if we want maximum propagation (to trigger dependencies), what seed to use?
     # well, actually for addition, any carry can propagate taint.
     # We will test on 0x0 + 0x0, or maybe 1+1 etc. Let's just use 0x0 and 0x0.
+    original_seed_io = first_obs.seed_io[0]
     seed_dict = state_to_dict(original_seed_io, layout)
     seed_dict['EAX'] = 0x0
     seed_dict['EBX'] = 0x0

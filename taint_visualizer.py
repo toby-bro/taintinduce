@@ -267,7 +267,9 @@ def get_rule_data() -> Response | tuple[Response, int]:
                 input_bits_circuit.append({'type': 'reg', 'name': dep.name, 'bit': f'{dep.bit_end}:{dep.bit_start}'})
                 input_labels_circuit.append(str(dep))
 
-            if not input_labels_circuit:
+            if assignment.expression:
+                input_label_circuit = str(assignment.expression)
+            elif not input_labels_circuit:
                 input_label_circuit = '0'
             else:
                 input_label_circuit = ' | '.join(input_labels_circuit)
@@ -279,15 +281,31 @@ def get_rule_data() -> Response | tuple[Response, int]:
                 },
             )
 
-            dataflow_list_circuit.append(
-                {
-                    'output_bit': out_info_circuit,
-                    'input_bits': input_bits_circuit,
-                    'condition': 'UNCONDITIONAL',
-                    'is_unconditional': True,
-                    'pair_index': idx,
-                },
-            )
+            # Create bit-level mapping for graph
+            target_size = target_end - target_start + 1
+            for out_idx in range(target_size):
+                out_bit = target_start + out_idx
+                out_info = {'type': 'reg', 'name': target, 'bit': out_bit}
+                in_bits = []
+                for dep in assignment.dependencies:
+                    dep_size = dep.bit_end - dep.bit_start + 1
+                    if dep_size == target_size:
+                        # bitwise mapping
+                        in_bits.append({'type': 'reg', 'name': dep.name, 'bit': dep.bit_start + out_idx})
+                    else:
+                        # broadcast
+                        for in_bit in range(dep.bit_start, dep.bit_end + 1):
+                            in_bits.append({'type': 'reg', 'name': dep.name, 'bit': in_bit})
+
+                dataflow_list_circuit.append(
+                    {
+                        'output_bit': out_info,
+                        'input_bits': in_bits,
+                        'condition': 'UNCONDITIONAL',
+                        'is_unconditional': True,
+                        'pair_index': idx,
+                    },
+                )
 
             pairs_data_circuit.append(
                 {

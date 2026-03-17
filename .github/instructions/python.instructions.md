@@ -19,6 +19,7 @@ applyTo: "**/*.py"
   - make small functions for logic
   - make variable and function names explicit so as not to need comments / docstring
 - Prevent regressions by adding unit tests for each bug you fix, and for each new feature you add.
+- Never make fallbacks, or assumptions on default behavious, prefer raising Errors that I will fix instead of silently doing something that may be wrong.
 
 ## Writing tests
 

@@ -151,3 +151,22 @@ class LogicCircuit(SerializableMixin):
 
             output_taint[assignment.target.name] = val
         return output_taint
+
+
+@dataclass
+class InstructionCellExpr(Expr):
+    """Represents evaluating the instruction itself as a logic cell."""
+
+    architecture: Architecture
+    instruction: str
+    out_reg: str
+    out_bit_start: int
+    out_bit_end: int
+    inputs: dict[str, Expr]
+
+    def __str__(self) -> str:
+        args = ', '.join(f'{k}={v}' for k, v in self.inputs.items())
+        return f'C_{self.instruction}[{self.out_reg}[{self.out_bit_end}:{self.out_bit_start}]]({args})'
+
+    def evaluate(self, input_taint: dict[str, int], input_values: dict[str, int]) -> int:
+        raise NotImplementedError('Evaluating instruction cell expr dynamically outside emulator is not supported.')
