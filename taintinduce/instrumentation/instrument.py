@@ -7,6 +7,7 @@ from taintinduce.inference_engine.unitary_flow_processor import group_unitary_fl
 from taintinduce.instrumentation.ast import (
     BinaryExpr,
     Constant,
+    Expr,
     InstructionCellExpr,
     LogicCircuit,
     Op,
@@ -194,8 +195,8 @@ def instrument_monotonic(obs_list: list[Observation]) -> LogicCircuit:
                 assignments.append(TaintAssignment(target=target, dependencies=dependencies))
                 continue
 
-        cell_inputs_rep1 = {}
-        cell_inputs_rep2 = {}
+        cell_inputs_rep1: dict[str, Expr] = {}
+        cell_inputs_rep2: dict[str, Expr] = {}
 
         for r_name, r_min, r_max in in_regs:
             local_len = r_max - r_min + 1

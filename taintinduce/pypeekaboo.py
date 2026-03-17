@@ -2,10 +2,12 @@ import os
 import struct
 from ctypes import Structure, c_uint8, c_uint16, c_uint32, c_uint64, sizeof
 from io import BufferedReader
-from typing import ClassVar
+from typing import ClassVar, Optional, TypeVar
+
+TStructure = TypeVar('TStructure', bound=Structure)
 
 
-def read_struct(myfile: BufferedReader, mystruct: type[Structure]) -> Structure:
+def read_struct(myfile: BufferedReader, mystruct: type[TStructure]) -> TStructure:
     x = mystruct()
     assert myfile.readinto(x) == sizeof(mystruct)
     return x
@@ -321,11 +323,11 @@ class MemFile(Structure):
 
 class TraceInsn(object):
     def __init__(self) -> None:
-        self.addr = None
-        self.rawbytes = None
-        self.num_mem = None
+        self.addr: int = 0
+        self.rawbytes: list[int] = []
+        self.num_mem: int = 0
         self.mem: list[MemFile] = []
-        self.regfile = None
+        self.regfile: Optional[Structure] = None
 
 
 class MemInfo(object):
