@@ -68,7 +68,7 @@ def execute_asm_in_unicorn(
     # Write inputs
     for var, addr in var_addr_map.items():
         val = 0
-        if var.startswith('V_') or var.startswith('T_'):
+        if var.startswith(('V_', 'T_')):
             parts = var.split('_')
             if len(parts) >= 2:
                 reg_name = parts[1]

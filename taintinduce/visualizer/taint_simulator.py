@@ -9,6 +9,8 @@ from typing import Any
 from taintinduce.instrumentation.ast import LogicCircuit
 from taintinduce.rules.conditions import LogicType, TaintCondition
 from taintinduce.rules.rules import ConditionDataflowPair, TaintRule, TaintRuleFormat
+from taintinduce.transpiler.transpiler import make_transpiler
+from taintinduce.visualizer.unicorn_runner import execute_asm_in_unicorn
 
 
 def evaluate_condition(
@@ -274,8 +276,6 @@ def evaluate_taint_propagation_for_circuit(
     try:
         output_taint = rule.evaluate(input_taint, input_values)
     except NotImplementedError:
-        from taintinduce.transpiler.transpiler import make_transpiler
-        from taintinduce.visualizer.unicorn_runner import execute_asm_in_unicorn
 
         transpiler = make_transpiler(rule.architecture)
         asm = transpiler.transpile(rule)

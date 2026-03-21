@@ -191,7 +191,8 @@ def compute_di_vector(
             pass  # 0
         else:
             raise RuntimeError(
-                f'Input bit {global_bit} is neither non-decreasing nor non-increasing! This instruction is not monotonic.',
+                f'Input bit {global_bit} is neither non-decreasing nor non-increasing!'
+                ' This instruction is not monotonic.',
             )
 
     return d_mask

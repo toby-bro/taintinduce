@@ -1280,7 +1280,14 @@ class TestJNNZCVFlags:
         ],
     )
     def test_add_nzcv_flags(
-        self, r1: int, r2: int, expected_result: int, expected_n: int, expected_z: int, expected_c: int, expected_v: int
+        self,
+        r1: int,
+        r2: int,
+        expected_result: int,
+        expected_n: int,
+        expected_z: int,
+        expected_c: int,
+        expected_v: int,
     ) -> None:
         """Test NZCV flag computation for ADD instruction."""
         cpu = JNCpu()
