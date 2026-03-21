@@ -58,29 +58,29 @@ AMD64|4839d8|cmp rax, rbx|
 AMD64|4885d8|test rax, rbx|
 AMD64|90|nop|
 AMD64|488918|mov qword ptr [rax], rbx|
-AMD64||mov rsi, [rdi]|
-AMD64||cqo|
-AMD64||movzx rax, bl|
-AMD64||movzx rax, bx|
-AMD64||movsx rax, bl|
-AMD64||movsx rax, bx|
-AMD64||movsxd rax, ebx|
-AMD64||xchg rax, rbx|
-AMD64||cmovz rax, rbx|
-AMD64||cmovnz rax, rbx|
-AMD64||setz al|
-AMD64||bswap rax|
-AMD64||std|
-AMD64||cld|
-AMD64||ret|
-AMD64||syscall|
-ARM64||ret|
-ARM64||brk #0|
+AMD64|488b37|mov rsi, [rdi]|
+AMD64|4899|cqo|
+AMD64|480fb6c3|movzx rax, bl|
+AMD64|480fb7c3|movzx rax, bx|
+AMD64|480fbec3|movsx rax, bl|
+AMD64|480fbfc3|movsx rax, bx|
+AMD64|4863c3|movsxd rax, ebx|
+AMD64|4893|xchg rax, rbx|
+AMD64|480f44c3|cmovz rax, rbx|
+AMD64|480f45c3|cmovnz rax, rbx|
+AMD64|0f94c0|setz al|
+AMD64|480fc8|bswap rax|
+AMD64|fd|std|
+AMD64|fc|cld|
+AMD64|c3|ret|
+AMD64|0f05|syscall|
+ARM64|c0035fd6|ret|
+ARM64|000020d4|brk #0|
 ARM64||autibsp|
-ARM64||eor x0, x1, x2|
-ARM64||sub x0, x1, x2|
-ARM64||cset x0, eq|
-ARM64||cmn x0, x1|
+ARM64|200002ca|eor x0, x1, x2|
+ARM64|200002cb|sub x0, x1, x2|
+ARM64|e0179f9a|cset x0, eq|
+ARM64|1f0001ab|cmn x0, x1|
 ARM64||ldur x0, [x1, #-4]|
 ARM64||add x0, x1, x2, lsl #2|
 ARM64||csel x0, x1, x2, eq|

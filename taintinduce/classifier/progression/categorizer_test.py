@@ -1,5 +1,8 @@
 import csv
+import os
 from pathlib import Path
+
+import pytest
 
 from taintinduce.classifier.classifier import classify_instruction
 from taintinduce.cpu.cpu import CPUFactory
@@ -168,6 +171,9 @@ def assemble_instruction(arch: Architecture, decoded: str) -> str:
 
 
 def test_categorize_progression() -> None:  # noqa: C901
+    # skip test if 'E2E' env variable is not set
+    if not os.getenv('E2E'):
+        pytest.skip('E2E environment variable not set')
     init_input_csv()
 
     rows = []

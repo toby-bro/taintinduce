@@ -57,3 +57,29 @@ AMD64|58|pop rax|Avalanche -> RAX
 AMD64|4839d8|cmp rax, rbx|Mapped
 AMD64|4885d8|test rax, rbx|Mapped
 AMD64|90|nop|No Data Outputs
+AMD64|488b37|mov rsi, [rdi]|Avalanche -> RSI
+AMD64|4899|cqo|Mapped
+AMD64|480fb6c3|movzx rax, bl|Mapped
+AMD64|480fb7c3|movzx rax, bx|Mapped
+AMD64|480fbec3|movsx rax, bl|Mapped
+AMD64|480fbfc3|movsx rax, bx|Mapped
+AMD64|4863c3|movsxd rax, ebx|Mapped
+AMD64|4893|xchg rax, rbx|Mapped
+AMD64|480f44c3|cmovz rax, rbx|Translatable
+AMD64|480f45c3|cmovnz rax, rbx|Translatable
+AMD64|0f94c0|setz al|Mapped
+AMD64|480fc8|bswap rax|Mapped
+AMD64|fd|std|No Data Outputs
+AMD64|fc|cld|No Data Outputs
+AMD64|c3|ret|Error
+AMD64|0f05|syscall|No Data Outputs
+ARM64|c0035fd6|ret|No Data Outputs
+ARM64|000020d4|brk #0|Error
+ARM64|200002ca|eor x0, x1, x2|Transportable
+ARM64|200002cb|sub x0, x1, x2|Transportable
+ARM64|e0179f9a|cset x0, eq|Mapped
+ARM64|1f0001ab|cmn x0, x1|Mapped
+X86|8d44cb05|lea eax, [ebx + ecx*8 + 5]|Unknown
+X86|8d44cb05|lea eax, [ebx + ecx*8 + 5]|Unknown
+X86|c3|ret|Error
+X86|c3|ret|Error
