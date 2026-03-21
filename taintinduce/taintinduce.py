@@ -21,6 +21,7 @@ from taintinduce.rules.rules import TaintRule
 # Replaced squirrel imports with our own serialization
 from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder
 from taintinduce.state.state import Observation
+from taintinduce.transpiler.transpiler import make_transpiler
 from taintinduce.types import Architecture
 
 
@@ -185,6 +186,15 @@ def main() -> None:
         circuit = instrument_instruction(obs_list, category)
         print('======== Generated Instrumentation ========')
         print(circuit)
+
+        try:
+            transpiler = make_transpiler(args.arch)
+            asm = transpiler.transpile(circuit)
+            print('======== Assembly Instrumentation ========')
+            print(asm)
+        except Exception as e:
+            print(f'Error transpiling: {e}')
+
         print('=========================================')
 
         instrument_path = os.path.join(args.output_dir, args.bytestring + '_' + args.arch + '_instrumentation.json')

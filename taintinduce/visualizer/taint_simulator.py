@@ -271,7 +271,41 @@ def evaluate_taint_propagation_for_circuit(
         input_taint[reg] = input_taint.get(reg, 0) | (1 << bit)
 
     # Evaluate using AST logic
-    output_taint = rule.evaluate(input_taint, input_values)
+    try:
+        output_taint = rule.evaluate(input_taint, input_values)
+    except NotImplementedError:
+        from taintinduce.transpiler.transpiler import make_transpiler
+        from taintinduce.visualizer.unicorn_runner import execute_asm_in_unicorn
+
+        transpiler = make_transpiler(rule.architecture)
+        asm = transpiler.transpile(rule)
+        target_vars = [transpiler.format_var_name(assignment.target) for assignment in rule.assignments]
+        raw_results = execute_asm_in_unicorn(asm, rule.architecture, input_taint, input_values, target_vars)
+
+        output_taint = {}
+        for var, val in raw_results.items():
+            # var is like T_EAX_31_0
+            try:
+                parts = var.split('_')
+                if len(parts) >= 4:
+                    reg_name = parts[1]
+                    bit_max = int(parts[2])
+                    bit_min = int(parts[3])
+
+                    # Compute the mask for this var
+                    bit_len = bit_max - bit_min + 1
+                    mask = (1 << bit_len) - 1
+
+                    # Apply the mask to val and shift it to the correct offset
+                    masked_val = (val & mask) << bit_min
+
+                    output_taint[reg_name] = output_taint.get(reg_name, 0) | masked_val
+                else:
+                    reg_name = parts[1]
+                    output_taint[reg_name] = output_taint.get(reg_name, 0) | val
+            except Exception:
+                reg_name = var.split('_')[1] if '_' in var else var
+                output_taint[reg_name] = output_taint.get(reg_name, 0) | val
 
     # Convert dict of reg -> bitmask back to set of (reg, bit)
     tainted_outputs = set()
