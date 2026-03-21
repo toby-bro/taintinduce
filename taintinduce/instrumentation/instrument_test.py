@@ -56,7 +56,7 @@ def test_instrument_monotonic_16_bit() -> None:
 
     obs_mutations = []
     # Test random bit flips inside the 16 bit range
-    for bit in [0, 7, 15]:
+    for bit in range(16):
         # flip bit `bit` of ebx
         mut_in = State(64, StateValue(1 << (32 + bit)))
         # Output propagates only to the corresponding EAX bit `bit` (and ebx stays same)
@@ -75,3 +75,28 @@ def test_instrument_monotonic_16_bit() -> None:
 
     assert 'T_EAX[15:0]' in output_str, f'Should target just 15:0 but got: {output_str}'
     assert 'T_EAX[31:0]' not in output_str
+
+def test_instrument_transportable() -> None:
+    state_fmt = [X86_REG_EAX(), X86_REG_EBX()]
+
+    # Simulating add eax, ebx
+    seed_in = State(64, StateValue(0))
+    seed_out = State(64, StateValue(0))
+
+    # EBX bit 0
+    mut_in = State(64, StateValue(1 << 32))  # ebx
+    mut_out = State(64, StateValue((1 << 32) | 1))  # ebx + eax
+
+    obs = Observation((seed_in, seed_out), frozenset([(mut_in, mut_out)]), 'mock_add', Architecture.X86, state_fmt)
+
+    circuit = instrument_instruction([obs], InstructionCategory.TRANSPORTABLE)
+    output_str = str(circuit)
+
+    assert 'T_EAX[0] =' in output_str
+    # transportability formula should contain an OR with an AND term
+    # E.g. ((... XOR ...) OR (T_EAX[0:0] AND T_EBX[0:0]))
+    assert (
+        ' OR (T_EBX[0] OR T_EAX[0])' in output_str
+        or ' OR (T_EAX[0] OR T_EBX[0])' in output_str
+        or ' OR T_EBX[0]' in output_str
+    )
