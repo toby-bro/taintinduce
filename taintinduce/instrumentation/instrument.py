@@ -32,34 +32,67 @@ def _build_flow_map(obs_list: list[Observation]) -> dict[tuple[str, int, int], s
     deps = extract_observation_dependencies(obs_list)
     output_to_inputs = group_unitary_flows_by_output(deps)
 
-    out_reg_to_bits: dict[str, set[int]] = defaultdict(set)
+    # NEW LOGIC: group by the set of input registers.
+    out_reg_to_bits: dict[str, dict[int, set[str]]] = defaultdict(dict)
+
     for out_bit in output_to_inputs:
         name, idx = get_reg_info(out_bit)
         if name is not None and idx is not None:
-            out_reg_to_bits[name].add(idx)
+            # get all input registers this bit depends on
+            in_regs_for_bit = set()
+            for in_global in output_to_inputs[out_bit]:
+                in_name, in_idx = get_reg_info(in_global)
+                if in_name is not None:
+                    in_regs_for_bit.add(in_name)
+            out_reg_to_bits[name][idx] = in_regs_for_bit
 
     flow_map: dict[tuple[str, int, int], set[tuple[str, int, int]]] = {}
-    for out_name, out_bits in out_reg_to_bits.items():
-        out_min = min(out_bits)
-        out_max = max(out_bits)
 
-        in_globals: set[int] = set()
-        for b in out_bits:
-            global_out = next(start for start, end, name in layout if name == out_name) + b
-            if BitPosition(global_out) in output_to_inputs:
-                in_globals.update(output_to_inputs[BitPosition(global_out)])
+    for out_name, bits_dict in out_reg_to_bits.items():
+        # Group bits by their in_regs_for_bit
+        # We need to find contiguous ranges that have the same in_regs_for_bit
+        sorted_bits = sorted(bits_dict.keys())
 
-        in_reg_to_bits: dict[str, set[int]] = defaultdict(set)
-        for in_bit in in_globals:
-            in_name, in_idx = get_reg_info(in_bit)
-            if in_name is not None and in_idx is not None:
-                in_reg_to_bits[in_name].add(in_idx)
+        # Group adjacent bits with the exact same dependency signatures
+        groups = []
+        if not sorted_bits:
+            continue
 
-        in_slices = set()
-        for in_name, in_bits in in_reg_to_bits.items():
-            in_slices.add((in_name, min(in_bits), max(in_bits)))
+        current_group = [sorted_bits[0]]
+        current_deps = bits_dict[sorted_bits[0]]
 
-        flow_map[(out_name, out_min, out_max)] = in_slices
+        for i in range(1, len(sorted_bits)):
+            b = sorted_bits[i]
+            b_deps = bits_dict[b]
+            if b_deps == current_deps and b == current_group[-1] + 1:
+                current_group.append(b)
+            else:
+                groups.append((current_group, current_deps))
+                current_group = [b]
+                current_deps = b_deps
+        groups.append((current_group, current_deps))
+
+        for g_bits, g_deps in groups:
+            out_min = min(g_bits)
+            out_max = max(g_bits)
+
+            in_globals: set[int] = set()
+            for b in g_bits:
+                global_out = next(start for start, end, name in layout if name == out_name) + b
+                if BitPosition(global_out) in output_to_inputs:
+                    in_globals.update(output_to_inputs[BitPosition(global_out)])
+
+            in_reg_to_bits: dict[str, set[int]] = defaultdict(set)
+            for in_bit in in_globals:
+                in_name, in_idx = get_reg_info(in_bit)
+                if in_name is not None and in_idx is not None:
+                    in_reg_to_bits[in_name].add(in_idx)
+
+            in_slices = set()
+            for in_name, in_bits in in_reg_to_bits.items():
+                in_slices.add((in_name, min(in_bits), max(in_bits)))
+
+            flow_map[(out_name, out_min, out_max)] = in_slices
 
     return flow_map
 
@@ -76,7 +109,7 @@ def instrument_mapped(obs_list: list[Observation]) -> LogicCircuit:
     state_format = obs_list[0].state_format
     archstring = obs_list[0].archstring
     bytestring = obs_list[0].bytestring
-    layout = get_register_layouts(state_format)
+    _layout = get_register_layouts(state_format)
     # Using the first successful observation where logic is fully observable
 
     flow_map = _build_flow_map(obs_list)
@@ -164,6 +197,57 @@ def compute_di_vector(
     return d_mask
 
 
+def _infer_bitwise_gate(
+    obs_list: list[Observation],
+    layout: list[tuple[int, int, str]],
+    out_name: str,
+    out_min: int,
+    in_regs: list[tuple[str, int, int]],
+) -> Op | None:
+    if len(in_regs) != 2:
+        return None
+    r1_name, r1_min, r1_max = in_regs[0]
+    r2_name, r2_min, r2_max = in_regs[1]
+
+    r1_global = next(start for start, end, name in layout if name == r1_name) + r1_min
+    r2_global = next(start for start, end, name in layout if name == r2_name) + r2_min
+    out_global = next(start for start, end, name in layout if name == out_name) + out_min
+
+    # Also we need the bit length
+    num_bits = min(r1_max - r1_min, r2_max - r2_min)
+    if num_bits <= 0:
+        return None
+
+    tt = {}
+
+    def update_tt(in_val: int, out_val: int) -> None:
+        for bit in range(num_bits):
+            b1 = (in_val >> (r1_global + bit)) & 1
+            b2 = (in_val >> (r2_global + bit)) & 1
+            bo = (out_val >> (out_global + bit)) & 1
+            tt[(b1, b2)] = bo
+
+    for obs in obs_list:
+        seed_in, seed_out = obs.seed_io
+        update_tt(seed_in.state_value, seed_out.state_value)
+
+        for mut_in, mut_out in obs.mutated_ios:
+            update_tt(mut_in.state_value, mut_out.state_value)
+
+        if len(tt) == 4:
+            break
+
+    if len(tt) == 4:
+        if tt == {(0, 0): 0, (0, 1): 0, (1, 0): 0, (1, 1): 1}:
+            return Op.AND
+        if tt == {(0, 0): 0, (0, 1): 1, (1, 0): 1, (1, 1): 1}:
+            return Op.OR
+        if tt == {(0, 0): 0, (0, 1): 1, (1, 0): 1, (1, 1): 0}:
+            return Op.XOR
+
+    return None
+
+
 def instrument_monotonic(obs_list: list[Observation]) -> LogicCircuit:
     assignments: list[TaintAssignment] = []
     if not obs_list:
@@ -190,7 +274,7 @@ def instrument_monotonic(obs_list: list[Observation]) -> LogicCircuit:
             dependencies.append(TaintOperand(r_name, r_min, r_max, is_taint=True))
 
         if len(in_regs) == 1:
-            r_name, r_min, r_max = list(in_regs)[0]
+            r_name, r_min, r_max = next(iter(in_regs))
             if r_name == out_name and r_min == out_min and r_max == out_max:
                 assignments.append(TaintAssignment(target=target, dependencies=dependencies))
                 continue
@@ -210,28 +294,48 @@ def instrument_monotonic(obs_list: list[Observation]) -> LogicCircuit:
             V_in = TaintOperand(r_name, r_min, r_max, is_taint=False)
             T_in = TaintOperand(r_name, r_min, r_max, is_taint=True)
 
-            # Rep 1: (V & ~T) | (D & T)
             v_and_not_t = BinaryExpr(Op.AND, V_in, UnaryExpr(Op.NOT, T_in))
 
-            D_const = Constant(d_mask, local_len)
-            d_and_t = BinaryExpr(Op.AND, D_const, T_in)
+            if d_mask == ((1 << local_len) - 1):
+                rep1_expr = BinaryExpr(Op.OR, V_in, T_in)
+            elif d_mask == 0:
+                rep1_expr = v_and_not_t
+            else:
+                D_const = Constant(d_mask, local_len)
+                d_and_t = BinaryExpr(Op.AND, D_const, T_in)
+                rep1_expr = BinaryExpr(Op.OR, v_and_not_t, d_and_t)
 
-            rep1_expr = BinaryExpr(Op.OR, v_and_not_t, d_and_t)
-
-            # Rep 2: (V & ~T) | (~D & T)
             not_d_mask = (~d_mask) & ((1 << local_len) - 1)
-            Not_D_const = Constant(not_d_mask, local_len)
-            not_d_and_t = BinaryExpr(Op.AND, Not_D_const, T_in)
 
-            rep2_expr = BinaryExpr(Op.OR, v_and_not_t, not_d_and_t)
+            if not_d_mask == ((1 << local_len) - 1):
+                rep2_expr = BinaryExpr(Op.OR, V_in, T_in)
+            elif not_d_mask == 0:
+                rep2_expr = v_and_not_t
+            else:
+                Not_D_const = Constant(not_d_mask, local_len)
+                not_d_and_t = BinaryExpr(Op.AND, Not_D_const, T_in)
+                rep2_expr = BinaryExpr(Op.OR, v_and_not_t, not_d_and_t)
 
             cell_inputs_rep1[r_name] = rep1_expr
             cell_inputs_rep2[r_name] = rep2_expr
 
-        C1 = InstructionCellExpr(archstring, bytestring, out_name, out_min, out_max, cell_inputs_rep1)
-        C2 = InstructionCellExpr(archstring, bytestring, out_name, out_min, out_max, cell_inputs_rep2)
+        in_regs_list = list(in_regs)
+        bitwise_op = _infer_bitwise_gate(obs_list, layout, out_name, out_min, in_regs_list)
 
-        expression = BinaryExpr(Op.XOR, C1, C2)
+        if bitwise_op is not None and len(in_regs_list) == 2:
+            r1_name = in_regs_list[0][0]
+            r2_name = in_regs_list[1][0]
+            C1_bin = BinaryExpr(bitwise_op, cell_inputs_rep1[r1_name], cell_inputs_rep1[r2_name])
+            C2_bin = BinaryExpr(bitwise_op, cell_inputs_rep2[r1_name], cell_inputs_rep2[r2_name])
+            C1_expr: Expr = C1_bin
+            C2_expr: Expr = C2_bin
+        else:
+            C1_cell = InstructionCellExpr(archstring, bytestring, out_name, out_min, out_max, cell_inputs_rep1)
+            C2_cell = InstructionCellExpr(archstring, bytestring, out_name, out_min, out_max, cell_inputs_rep2)
+            C1_expr = C1_cell
+            C2_expr = C2_cell
+
+        expression = BinaryExpr(Op.XOR, C1_expr, C2_expr)
 
         assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expression))
 
