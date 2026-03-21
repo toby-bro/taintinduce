@@ -137,7 +137,7 @@ class LogicCircuit(SerializableMixin):
     def evaluate(self, input_taint: dict[str, int], input_values: Optional[dict[str, int]] = None) -> dict[str, int]:
         if input_values is None:
             input_values = {}
-        output_taint = {}
+        output_taint: dict[str, int] = {}
         for assignment in self.assignments:
             if assignment.expression is not None:
                 val = assignment.expression.evaluate(input_taint, input_values)
@@ -149,7 +149,10 @@ class LogicCircuit(SerializableMixin):
                 for dep in assignment.dependencies:
                     val |= dep.evaluate(input_taint, input_values)
 
-            output_taint[assignment.target.name] = val
+            # Shift value up to correct position and combine
+            val = val << assignment.target.bit_start
+            output_taint[assignment.target.name] = output_taint.get(assignment.target.name, 0) | val
+
         return output_taint
 
 
