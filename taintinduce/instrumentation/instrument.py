@@ -124,8 +124,14 @@ def instrument_mapped(obs_list: list[Observation]) -> LogicCircuit:
             continue
 
         target = TaintOperand(out_name, out_min, out_max, is_taint=True)
-        dependencies = [TaintOperand(r_name, r_min, r_max, is_taint=True) for r_name, r_min, r_max in in_regs]
-        assignments.append(TaintAssignment(target=target, dependencies=dependencies))
+        dependencies = []
+        cell_inputs = {}
+        for r_name, r_min, r_max in in_regs:
+            T_in = TaintOperand(r_name, r_min, r_max, is_taint=True)
+            dependencies.append(T_in)
+            cell_inputs[r_name] = T_in
+        expr = InstructionCellExpr(archstring, bytestring, out_name, out_min, out_max, cell_inputs)
+        assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expr))
 
     return LogicCircuit(
         assignments=assignments,
@@ -143,6 +149,45 @@ def compute_di_vector(  # noqa: C901
     out_bit_len: int,
 ) -> int:
     """Computes the di mask (1 for non-decreasing, 0 for non-increasing) for a bit slice"""
+
+    def get_signed_val(val: int, bits: int) -> int:
+        if val & (1 << (bits - 1)):
+            return val - (1 << bits)
+        return val
+
+    # First, try to determine if this operand as a whole acts additively or subtractively
+    pos_corr = 0
+    neg_corr = 0
+
+    for obs in obs_list:
+        seed_in, seed_out = obs.seed_io
+        for mut_in, mut_out in obs.mutated_ios:
+            # isolate the bit slices
+            seed_val = (seed_in.state_value >> global_bit_start) & ((1 << bit_len) - 1)
+            mut_val = (mut_in.state_value >> global_bit_start) & ((1 << bit_len) - 1)
+
+            # only consider mutations in this slice
+            diff = seed_in.diff(mut_in)
+            if not diff or not all(global_bit_start <= b < global_bit_start + bit_len for b in diff):
+                continue
+
+            seed_out_val = (seed_out.state_value >> out_global_start) & ((1 << out_bit_len) - 1)
+            mut_out_val = (mut_out.state_value >> out_global_start) & ((1 << out_bit_len) - 1)
+
+            s_diff = get_signed_val(mut_val, bit_len) - get_signed_val(seed_val, bit_len)
+            o_diff = get_signed_val(mut_out_val, out_bit_len) - get_signed_val(seed_out_val, out_bit_len)
+
+            if s_diff > 0 and o_diff > 0:
+                pos_corr += 1
+            elif s_diff > 0 and o_diff < 0:
+                neg_corr += 1
+            elif s_diff < 0 and o_diff < 0:
+                pos_corr += 1
+            elif s_diff < 0 and o_diff > 0:
+                neg_corr += 1
+
+    acts_negatively = neg_corr > pos_corr
+
     out_mask = ((1 << out_bit_len) - 1) << out_global_start
     d_mask = 0
     for local_bit in range(bit_len):
@@ -185,15 +230,14 @@ def compute_di_vector(  # noqa: C901
                 if raised_mask & out_diff:
                     is_non_increasing = False
 
-        # For monotonic logic, falling bits are strictly non-increasing (D=0).
-        # Any bit that falls AND raises across mutations violates monotonicity.
-        # However, for TRANPORTABLE operations like ADD, they inherently violate monotonicity
-        # (a bit raise can flip adjacent carry bits back down).
-        # CellIFT treats the underlying monotonic cell of a transportable operation by assuming D=1 (non-decreasing).
         if is_non_increasing and not is_non_decreasing:
             pass  # 0
-        else:
+        elif is_non_decreasing and not is_non_increasing:
             d_mask |= 1 << local_bit
+        else:
+            # Monotonicity violated (e.g., transportable cell)
+            if not acts_negatively:
+                d_mask |= 1 << local_bit
 
     return d_mask
 
@@ -276,12 +320,6 @@ def _instrument_polarized(  # noqa: C901
         dependencies = []
         for r_name, r_min, r_max in in_regs:
             dependencies.append(TaintOperand(r_name, r_min, r_max, is_taint=True))
-
-        if len(in_regs) == 1:
-            r_name, r_min, r_max = next(iter(in_regs))
-            if r_name == out_name and r_min == out_min and r_max == out_max:
-                assignments.append(TaintAssignment(target=target, dependencies=dependencies))
-                continue
 
         cell_inputs_rep1: dict[str, Expr] = {}
         cell_inputs_rep2: dict[str, Expr] = {}
