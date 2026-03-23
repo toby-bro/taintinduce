@@ -147,17 +147,28 @@ def main() -> None:
     _configure_logging(args.verbose)
 
     if not args.no_sleigh:
+        insn = gen_insninfo(args.arch, args.bytestring)
+        sleigh_circuit = generate_static_rule(args.arch, bytes(bytearray.fromhex(args.bytestring)), insn.state_format)
 
-        sleigh_rule = generate_static_rule(args.arch, bytes(bytearray.fromhex(args.bytestring)))
-        print('======== SLEIGH Static Rule ========')
-        print(json.dumps(sleigh_rule, indent=2))
+        print('======== SLEIGH Generated Instrumentation ========')
+        print(sleigh_circuit)
 
-        rule_path = os.path.join(args.output_dir, args.bytestring + '_' + args.arch + '_sleigh_rule.json')
+        instrument_path = os.path.join(args.output_dir, args.bytestring + '_' + args.arch + '_sleigh_instrumentation.json')
         if not os.path.exists(args.output_dir):
             os.makedirs(args.output_dir)
-        with open(rule_path, 'w') as f:
-            json.dump(sleigh_rule, f, indent=2)
-        print(f'Writing SLEIGH rule to {rule_path}')
+        with open(instrument_path, 'w') as f:
+            json.dump(sleigh_circuit, f, cls=TaintInduceEncoder, indent=2)
+        print(f'Writing SLEIGH instrumentation to {instrument_path}\n')
+
+        try:
+            transpiler = make_transpiler(args.arch)
+            asm = transpiler.transpile(sleigh_circuit)
+            print('======== SLEIGH Assembly Instrumentation ========')
+            print(asm)
+            print('=========================================')
+        except Exception as e:
+            print(f'Error transpiling SLEIGH: {e}')
+
         return
 
     if not os.path.exists(args.output_dir):
