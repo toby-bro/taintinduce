@@ -20,6 +20,7 @@ from taintinduce.rules.rules import TaintRule
 
 # Replaced squirrel imports with our own serialization
 from taintinduce.serialization import TaintInduceDecoder, TaintInduceEncoder
+from taintinduce.sleigh.engine import generate_static_rule
 from taintinduce.state.state import Observation
 from taintinduce.transpiler.transpiler import make_transpiler
 from taintinduce.types import Architecture
@@ -130,6 +131,12 @@ def main() -> None:
         help='Increase verbosity: -v for warnings, -vv for info, -vvv for debug',
     )
     parser.add_argument(
+        '--no-sleigh',
+        default=False,
+        action='store_true',
+        help='Use static SLEIGH lifting instead of dynamic emulation',
+    )
+    parser.add_argument(
         '--output-induction',
         default=False,
         action='store_true',
@@ -138,6 +145,20 @@ def main() -> None:
 
     args = parser.parse_args()
     _configure_logging(args.verbose)
+
+    if not args.no_sleigh:
+
+        sleigh_rule = generate_static_rule(args.arch, bytes(bytearray.fromhex(args.bytestring)))
+        print('======== SLEIGH Static Rule ========')
+        print(json.dumps(sleigh_rule, indent=2))
+
+        rule_path = os.path.join(args.output_dir, args.bytestring + '_' + args.arch + '_sleigh_rule.json')
+        if not os.path.exists(args.output_dir):
+            os.makedirs(args.output_dir)
+        with open(rule_path, 'w') as f:
+            json.dump(sleigh_rule, f, indent=2)
+        print(f'Writing SLEIGH rule to {rule_path}')
+        return
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
