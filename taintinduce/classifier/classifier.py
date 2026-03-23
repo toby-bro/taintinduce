@@ -1,5 +1,4 @@
 import logging
-from typing import Set
 
 from taintinduce.classifier.categories import InstructionCategory
 from taintinduce.isa.register import CondRegister, Register
@@ -9,7 +8,7 @@ from taintinduce.types import BitPosition
 logger = logging.getLogger(__name__)
 
 
-def _get_flag_bits(obs: Observation) -> Set[BitPosition]:
+def _get_flag_bits(obs: Observation) -> set[BitPosition]:
     """Returns the set of bit positions corresponding to flags/condition registers."""
     flag_bits = set()
     start_pos = 0
@@ -48,7 +47,7 @@ def extract_flipped_bits(val1: int, val2: int) -> set[int]:
     return bits
 
 
-def is_bitwise_non_decreasing(obs_list: list[Observation], input_bit: BitPosition, flag_bits: Set[BitPosition]) -> bool:
+def is_bitwise_non_decreasing(obs_list: list[Observation], input_bit: BitPosition, flag_bits: set[BitPosition]) -> bool:
     """Check if the instruction behaves as bitwise non-decreasing for a specific input bit."""
     flag_mask = sum(1 << b for b in flag_bits)
     for obs in obs_list:
@@ -71,7 +70,7 @@ def is_bitwise_non_decreasing(obs_list: list[Observation], input_bit: BitPositio
     return True
 
 
-def is_bitwise_non_increasing(obs_list: list[Observation], input_bit: BitPosition, flag_bits: Set[BitPosition]) -> bool:
+def is_bitwise_non_increasing(obs_list: list[Observation], input_bit: BitPosition, flag_bits: set[BitPosition]) -> bool:
     """Check if the instruction behaves as bitwise non-increasing for a specific input bit."""
     flag_mask = sum(1 << b for b in flag_bits)
     for obs in obs_list:

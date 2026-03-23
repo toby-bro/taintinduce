@@ -1,5 +1,3 @@
-from typing import List, Set
-
 import pypcode
 
 
@@ -11,9 +9,9 @@ def _get_varnode_id(vn: pypcode.pypcode_native.Varnode) -> str:
 
 
 def slice_backward(
-    ops: List[pypcode.pypcode_native.PcodeOp],
+    ops: list[pypcode.pypcode_native.PcodeOp],
     target_varnode: pypcode.pypcode_native.Varnode,
-) -> List[pypcode.pypcode_native.PcodeOp]:
+) -> list[pypcode.pypcode_native.PcodeOp]:
     """
     Given an ordered list of P-code operations and a target output varnode,
     traverse backward to find all operations that contribute to computing it.
@@ -21,8 +19,8 @@ def slice_backward(
     target_id = _get_varnode_id(target_varnode)
 
     # Track which varnodes we care about parsing backward
-    worklist: Set[str] = {target_id}
-    slice_ops: List[pypcode.pypcode_native.PcodeOp] = []
+    worklist: set[str] = {target_id}
+    slice_ops: list[pypcode.pypcode_native.PcodeOp] = []
 
     for op in reversed(ops):
         if not op.output:

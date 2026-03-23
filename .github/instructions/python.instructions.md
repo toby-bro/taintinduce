@@ -5,7 +5,7 @@ applyTo: "**/*.py"
 ## General instructions
 
 - When running code always use `uv run` instead of python / pytest / mypy / ruff directly.
-- Type all your code rigourously.
+- Type all your code rigourously: we are in python 3.12 so do not use Dict/List/... use dict/list... no need of importing them from typing.
 - Once you modify code run these three commands.
   - `uv run mypy .`
   - `uv run ruff check`

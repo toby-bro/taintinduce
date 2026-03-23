@@ -1,8 +1,6 @@
-from typing import Dict
-
 import pypcode
 
-_pypcode_contexts: Dict[str, pypcode.Context] = {}
+_pypcode_contexts: dict[str, pypcode.Context] = {}
 
 
 def get_context(arch: str) -> pypcode.Context:
