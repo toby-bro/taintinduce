@@ -263,7 +263,7 @@ def simulate_taint_propagation(
     }
 
 
-def evaluate_taint_propagation_for_circuit(
+def evaluate_taint_propagation_for_circuit(  # noqa: C901
     rule: LogicCircuit,
     tainted_bits: set[tuple[str, int]],
     input_values: dict[str, int],

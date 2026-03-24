@@ -109,7 +109,7 @@ class RegisterAllocatorTranspiler(Transpiler):
                 self.store_var(self.format_var_name(assignment.target), res_reg)
                 self.allocator.free(res_reg)
 
-    def transpile_expr(self, expr: Expr) -> str:
+    def transpile_expr(self, expr: Expr) -> str:  # noqa: C901
         if isinstance(expr, Constant):
             reg = self.allocator.alloc()
             self.load_val(reg, expr.value)

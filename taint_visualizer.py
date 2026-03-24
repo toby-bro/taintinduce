@@ -219,7 +219,7 @@ def get_instruction_text(arch: str, bytestring: str) -> str:
 
 
 @app.route('/api/rule')
-def get_rule_data() -> Response | tuple[Response, int]:
+def get_rule_data() -> Response | tuple[Response, int]:  # noqa: C901
     """API endpoint to get rule data."""
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
@@ -259,7 +259,7 @@ def get_rule_data() -> Response | tuple[Response, int]:
             sample_flows_circuit = []
             dataflow_list_circuit = []
 
-            out_info_circuit = {'type': 'reg', 'name': target, 'bit': f'{target_end}:{target_start}'}
+
 
             input_bits_circuit = []
             input_labels_circuit = []

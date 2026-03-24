@@ -8,7 +8,7 @@ from unicorn.x86_const import UC_X86_REG_ESP, UC_X86_REG_RSP
 from taintinduce.types import Architecture
 
 
-def execute_asm_in_unicorn(
+def execute_asm_in_unicorn(  # noqa: C901
     asm_code: str,
     arch: Architecture,
     input_taint: dict[str, int],
@@ -48,7 +48,7 @@ def execute_asm_in_unicorn(
     else:
         raise NotImplementedError(f'Unsupported arch {arch}')
 
-    encoding, count = ks.asm(patched_asm)
+    encoding, _count = ks.asm(patched_asm)
     if not encoding:
         raise RuntimeError('Failed to assemble the transpiled code')
 

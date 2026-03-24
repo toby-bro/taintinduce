@@ -111,7 +111,7 @@ def _configure_logging(verbosity: int) -> None:
     )
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     # we don't have ARM32, MIPS YET
     parser = argparse.ArgumentParser()
     parser.add_argument('bytestring', type=str, help='Instruction bytestring in ' + 'hex, e.g. use dac3 for \\xda\\xc3')
@@ -153,7 +153,7 @@ def main() -> None:
         print('======== SLEIGH Generated Instrumentation ========')
         print(sleigh_circuit)
 
-        instrument_path = os.path.join(args.output_dir, args.bytestring + '_' + args.arch + '_sleigh_instrumentation.json')
+        instrument_path = os.path.join(args.output_dir, args.bytestring + '_' + args.arch + '_sleigh_instrumentation.json')  # noqa: E501
         if not os.path.exists(args.output_dir):
             os.makedirs(args.output_dir)
         with open(instrument_path, 'w') as f:

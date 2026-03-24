@@ -125,7 +125,7 @@ def instrument_mapped(obs_list: list[Observation]) -> LogicCircuit:
 
         target = TaintOperand(out_name, out_min, out_max, is_taint=True)
         dependencies = []
-        cell_inputs = {}
+        cell_inputs: dict[str, Expr] = {}
         for r_name, r_min, r_max in in_regs:
             T_in = TaintOperand(r_name, r_min, r_max, is_taint=True)
             dependencies.append(T_in)

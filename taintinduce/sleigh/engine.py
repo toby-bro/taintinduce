@@ -1,3 +1,5 @@
+import pypcode
+
 from taintinduce.classifier.categories import InstructionCategory
 from taintinduce.instrumentation.ast import (
     BinaryExpr,
@@ -17,7 +19,7 @@ from taintinduce.sleigh.slicer import _get_varnode_id, slice_backward
 from taintinduce.types import Architecture
 
 
-def _map_sleigh_to_state(ctx, arch: str, state_format: list[Register], offset: int, size: int) -> tuple[str, int, int] | None:
+def _map_sleigh_to_state(ctx: pypcode.Context, arch: str, state_format: list[Register], offset: int, size: int) -> tuple[str, int, int] | None:  # noqa: E501
     # Handle X86 flags abstract offsets (512-540)
     if 'X86' in arch.upper() and 512 <= offset < 550:
         for sf_reg in state_format:
@@ -41,7 +43,7 @@ def _map_sleigh_to_state(ctx, arch: str, state_format: list[Register], offset: i
     return None
 
 
-def generate_static_rule(arch: Architecture, bytestring: bytes, state_format: list[Register]) -> LogicCircuit:
+def generate_static_rule(arch: Architecture, bytestring: bytes, state_format: list[Register]) -> LogicCircuit:  # noqa: C901
     """
     Statically analyzes an instruction using SLEIGH and generates
     the inferred logic circuit with D-vectors.
@@ -113,8 +115,8 @@ def generate_static_rule(arch: Architecture, bytestring: bytes, state_format: li
             assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expr))
 
         elif cat == InstructionCategory.TRANSPORTABLE:
-            C1_cell = InstructionCellExpr(arch, bytestring.hex(), out_name, out_bit_start, out_bit_end, cell_inputs_rep1)
-            C2_cell = InstructionCellExpr(arch, bytestring.hex(), out_name, out_bit_start, out_bit_end, cell_inputs_rep2)
+            C1_cell = InstructionCellExpr(arch, bytestring.hex(), out_name, out_bit_start, out_bit_end, cell_inputs_rep1)  # noqa: E501
+            C2_cell = InstructionCellExpr(arch, bytestring.hex(), out_name, out_bit_start, out_bit_end, cell_inputs_rep2)  # noqa: E501
 
             expression: Expr = BinaryExpr(Op.XOR, C1_cell, C2_cell)
 
@@ -126,8 +128,8 @@ def generate_static_rule(arch: Architecture, bytestring: bytes, state_format: li
 
             assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expression))
         else:
-            in_dict = {d.name: d for d in dependencies}
+            in_dict: dict[str, Expr] = {d.name: d for d in dependencies}
             C_cell = InstructionCellExpr(arch, bytestring.hex(), out_name, out_bit_start, out_bit_end, in_dict)
             assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=C_cell))
 
-    return LogicCircuit(assignments=assignments, architecture=arch, instruction=bytestring.hex(), state_format=state_format)
+    return LogicCircuit(assignments=assignments, architecture=arch, instruction=bytestring.hex(), state_format=state_format)  # noqa: E501
