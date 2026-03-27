@@ -9,6 +9,9 @@ applyTo: "**/*.py"
 - Once you modify code run these three commands.
   - `uv run mypy .`
   - `uv run ruff check`
+    - using `noqa` is nearly always forbidden, and must be avoided at all costs
+      - for complexity issues, prefer refactoring the code instead of silencing the error
+      - exception for translation functions, where the complexity is often unavoidable, but even then prefer refactoring the code instead of silencing the error
   - `uv run pytest`
 - Do not use classes when you do not need shared states, use functions instead.
 - Never use tuples[, ...] use sets or frozensets instead.
