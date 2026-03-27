@@ -57,3 +57,15 @@ def test_adc_eax0_taint() -> None:
 
     assert ('EAX', 0) in taints
     assert ('EAX', 1) not in taints, 'EAX[1] should not be tainted if EBX=0'
+
+
+def test_add_ax_bx_high_bits() -> None:
+    format = X86().cpu_regs
+    circuit = generate_static_rule(Architecture.X86, bytes.fromhex('6601d8'), format)
+
+    tainted_bits = {('EAX', 20)}
+    input_values = {'EAX': 0, 'EBX': 0, 'EFLAGS': 0}
+
+    taints, _ = evaluate_taint_propagation_for_circuit(circuit, tainted_bits, input_values)
+
+    assert ('EAX', 20) in taints, 'Upper bit should not be cleared by 16-bit operation'

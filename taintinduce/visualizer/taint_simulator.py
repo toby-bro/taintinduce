@@ -314,9 +314,23 @@ def evaluate_taint_propagation_for_circuit(  # noqa: C901
                 reg_name = original_var.split('_')[1] if '_' in original_var else original_var
                 output_taint[reg_name] = output_taint.get(reg_name, 0) | val
 
+    # Merge output_taint into input_taint, preserving untouched bits
+    final_taint = input_taint.copy()
+
+    for assignment in rule.assignments:
+        name = assignment.target.name
+        bit_start = assignment.target.bit_start
+        bit_end = assignment.target.bit_end
+        mask = ((1 << (bit_end - bit_start + 1)) - 1) << bit_start
+        if name in final_taint:
+            final_taint[name] &= ~mask
+
+    for reg, val in output_taint.items():
+        final_taint[reg] = final_taint.get(reg, 0) | val
+
     # Convert dict of reg -> bitmask back to set of (reg, bit)
     tainted_outputs = set()
-    for reg, bitmask in output_taint.items():
+    for reg, bitmask in final_taint.items():
         for bit in range(256):  # Max register size approximation
             if bitmask & (1 << bit):
                 tainted_outputs.add((reg, bit))
