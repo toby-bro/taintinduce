@@ -18,8 +18,3 @@ def get_context(arch: str) -> pypcode.Context:
         _pypcode_contexts[arch] = pypcode.Context(arch_map[arch])
 
     return _pypcode_contexts[arch]
-
-
-def lift_instruction(arch: str, bytestring: bytes, address: int = 0x1000) -> pypcode.pypcode_native.Translation:
-    ctx = get_context(arch)
-    return ctx.translate(bytestring, address)
