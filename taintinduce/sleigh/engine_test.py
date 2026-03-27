@@ -1,12 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 from taintinduce.classifier.categories import InstructionCategory
-from taintinduce.instrumentation.ast import (
-    BinaryExpr,
-    InstructionCellExpr,
-    LogicCircuit,
-    Op,
-)
+from taintinduce.instrumentation.ast import BinaryExpr, InstructionCellExpr, LogicCircuit, Op
 from taintinduce.isa.register import Register
 from taintinduce.sleigh.engine import _map_sleigh_to_state, generate_static_rule
 from taintinduce.types import Architecture

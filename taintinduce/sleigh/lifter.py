@@ -9,6 +9,7 @@ def get_context(arch: str) -> pypcode.Context:
         arch_map = {
             'X86': 'x86:LE:32:default',
             'AMD64': 'x86:LE:64:default',
+            'ARM64': 'AARCH64:LE:64:v8A',
         }
 
         if arch not in arch_map:
