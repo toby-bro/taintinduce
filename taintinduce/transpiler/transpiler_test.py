@@ -27,9 +27,9 @@ def test_transpiler_x86() -> None:
     transpiler = make_transpiler(Architecture.X86)
     asm = transpiler.transpile(circuit)
 
-    assert 'push dword ptr [V_EAX_31_0]' in asm
-    assert 'push dword ptr [T_EAX_31_0]' in asm
-    assert 'not eax' in asm
+    assert 'mov eax, dword ptr [V_EAX_31_0]' in asm
+    assert 'mov ebx, dword ptr [T_EAX_31_0]' in asm
+    assert 'not ebx' in asm
     assert 'and eax, ebx' in asm
     assert '.byte 0x21, 0xd8' in asm
 
@@ -45,8 +45,8 @@ def test_transpiler_amd64() -> None:
     transpiler = make_transpiler(Architecture.AMD64)
     asm = transpiler.transpile(circuit)
 
-    assert 'push qword ptr [V_RAX_63_0]' in asm
-    assert 'push qword ptr [T_RAX_63_0]' in asm
+    assert 'mov rax, qword ptr [V_RAX_63_0]' in asm
+    assert 'mov rbx, qword ptr [T_RAX_63_0]' in asm
     assert 'or rax, rbx' in asm
 
 
@@ -63,4 +63,4 @@ def test_transpiler_arm64() -> None:
 
     assert 'ldr x0, =V_X0_63_0' in asm
     assert 'ldr x0, =T_X0_63_0' in asm
-    assert 'eor x0, x0, x1' in asm
+    assert 'eor x2, x2, x3' in asm

@@ -1,8 +1,9 @@
 import re
 
 from keystone import KS_ARCH_ARM64, KS_ARCH_X86, KS_MODE_32, KS_MODE_64, KS_MODE_LITTLE_ENDIAN, Ks
-from unicorn import UC_ARCH_ARM64, UC_ARCH_X86, UC_MODE_32, UC_MODE_64, UC_MODE_ARM, Uc
+from unicorn import UC_ARCH_ARM64, UC_ARCH_X86, UC_MODE_32, UC_MODE_64, UC_MODE_ARM
 from unicorn.arm64_const import UC_ARM64_REG_SP
+from unicorn.unicorn import Uc
 from unicorn.x86_const import UC_X86_REG_ESP, UC_X86_REG_RSP
 
 from taintinduce.types import Architecture
@@ -27,9 +28,9 @@ def execute_asm_in_unicorn(  # noqa: C901
     for i, var in enumerate(sorted(vars_found)):
         var_addr_map[var] = base_data + (i * 8)
 
-    # Replace variable names with addresses matching their strings
+    # Replace variable names with addresses matching their strings, sort by length descending to avoid partial matches
     patched_asm = asm_code
-    for var, addr in var_addr_map.items():
+    for var, addr in sorted(var_addr_map.items(), key=lambda x: len(x[0]), reverse=True):
         patched_asm = patched_asm.replace(var, hex(addr))
 
     # Compile
@@ -75,7 +76,13 @@ def execute_asm_in_unicorn(  # noqa: C901
                 source_dict = input_values if var.startswith('V_') else input_taint
                 if reg_name in source_dict:
                     val = source_dict[reg_name]
-                    if len(parts) >= 4:
+                    if len(parts) == 3:
+                        try:
+                            bit_pos = int(parts[2])
+                            val = (val >> bit_pos) & 1
+                        except ValueError:
+                            pass
+                    elif len(parts) >= 4:
                         try:
                             bit_max = int(parts[2])
                             bit_min = int(parts[3])

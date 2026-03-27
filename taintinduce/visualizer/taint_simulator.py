@@ -287,7 +287,12 @@ def evaluate_taint_propagation_for_circuit(  # noqa: C901
             # var is like T_EAX_31_0
             try:
                 parts = var.split('_')
-                if len(parts) >= 4:
+                if len(parts) == 3:
+                    reg_name = parts[1]
+                    bit_pos = int(parts[2])
+                    masked_val = (val & 1) << bit_pos
+                    output_taint[reg_name] = output_taint.get(reg_name, 0) | masked_val
+                elif len(parts) >= 4:
                     reg_name = parts[1]
                     bit_max = int(parts[2])
                     bit_min = int(parts[3])

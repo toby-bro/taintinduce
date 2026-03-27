@@ -80,6 +80,12 @@ class RegisterAllocatorTranspiler(Transpiler):
     def emit_byte(self, bytes_str: str) -> None:
         raise NotImplementedError
 
+    def emit_shr(self, reg: str, count: int) -> None:
+        raise NotImplementedError
+
+    def emit_and_imm(self, reg: str, imm: int) -> None:
+        raise NotImplementedError
+
     def transpile_assignment(self, assignment: TaintAssignment) -> None:
         if assignment.expression is None and len(assignment.dependencies) == 1:
             dep = assignment.dependencies[0]
@@ -146,7 +152,7 @@ class RegisterAllocatorTranspiler(Transpiler):
             for arch in reversed(arch_regs):
                 self.emit_pop(arch)
 
-            bytes_str = ', '.join([f'0x{expr.instruction[i:i+2]}' for i in range(0, len(expr.instruction), 2)])
+            bytes_str = ', '.join([f'0x{expr.instruction[i : i + 2]}' for i in range(0, len(expr.instruction), 2)])
             self.emit_byte(bytes_str)
 
             out_arch = expr.out_reg.lower()
@@ -163,6 +169,13 @@ class RegisterAllocatorTranspiler(Transpiler):
 
             for r in reversed(in_use_before):
                 self.emit_pop(r)
+
+            if expr.out_bit_start > 0:
+                self.emit_shr(res_reg, expr.out_bit_start)
+
+            mask = (1 << (expr.out_bit_end - expr.out_bit_start + 1)) - 1
+            if mask not in (0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF):
+                self.emit_and_imm(res_reg, mask)
 
             return res_reg
         raise NotImplementedError
@@ -198,17 +211,35 @@ class X86Transpiler(RegisterAllocatorTranspiler):
         self.emit(f'not {reg}')
 
     def emit_push(self, reg: str) -> None:
-        self.emit(f'push {reg}')
+        if reg == 'eflags':
+            self.emit('pushfd')
+        else:
+            self.emit(f'push {reg}')
 
     def emit_pop(self, reg: str) -> None:
-        self.emit(f'pop {reg}')
+        if reg == 'eflags':
+            self.emit('popfd')
+        else:
+            self.emit(f'pop {reg}')
 
     def emit_mov(self, dst: str, src: str) -> None:
-        if dst != src:
+        if src == 'eflags':
+            self.emit('pushfd')
+            self.emit(f'pop {dst}')
+        elif dst == 'eflags':
+            self.emit(f'push {src}')
+            self.emit('popfd')
+        elif dst != src:
             self.emit(f'mov {dst}, {src}')
 
     def emit_byte(self, bytes_str: str) -> None:
         self.emit(f'.byte {bytes_str}')
+
+    def emit_shr(self, reg: str, count: int) -> None:
+        self.emit(f'shr {reg}, {count}')
+
+    def emit_and_imm(self, reg: str, imm: int) -> None:
+        self.emit(f'and {reg}, {imm}')
 
 
 class AMD64Transpiler(RegisterAllocatorTranspiler):
@@ -241,17 +272,35 @@ class AMD64Transpiler(RegisterAllocatorTranspiler):
         self.emit(f'not {reg}')
 
     def emit_push(self, reg: str) -> None:
-        self.emit(f'push {reg}')
+        if reg in ('eflags', 'rflags'):
+            self.emit('pushfq')
+        else:
+            self.emit(f'push {reg}')
 
     def emit_pop(self, reg: str) -> None:
-        self.emit(f'pop {reg}')
+        if reg in ('eflags', 'rflags'):
+            self.emit('popfq')
+        else:
+            self.emit(f'pop {reg}')
 
     def emit_mov(self, dst: str, src: str) -> None:
-        if dst != src:
+        if src in ('eflags', 'rflags'):
+            self.emit('pushfq')
+            self.emit(f'pop {dst}')
+        elif dst in ('eflags', 'rflags'):
+            self.emit(f'push {src}')
+            self.emit('popfq')
+        elif dst != src:
             self.emit(f'mov {dst}, {src}')
 
     def emit_byte(self, bytes_str: str) -> None:
         self.emit(f'.byte {bytes_str}')
+
+    def emit_shr(self, reg: str, count: int) -> None:
+        self.emit(f'shr {reg}, {count}')
+
+    def emit_and_imm(self, reg: str, imm: int) -> None:
+        self.emit(f'and {reg}, {imm}')
 
 
 class ARM64Transpiler(RegisterAllocatorTranspiler):
@@ -298,6 +347,13 @@ class ARM64Transpiler(RegisterAllocatorTranspiler):
 
     def emit_byte(self, bytes_str: str) -> None:
         self.emit(f'.byte {bytes_str}')
+
+    def emit_shr(self, reg: str, count: int) -> None:
+        self.emit(f'lsr {reg}, {reg}, #{count}')
+
+    def emit_and_imm(self, reg: str, imm: int) -> None:
+        self.emit(f'ldr x1, ={imm}')
+        self.emit(f'and {reg}, {reg}, x1')
 
 
 def make_transpiler(arch: Architecture | str) -> Transpiler:
