@@ -44,3 +44,16 @@ def test_zero_flag_transpilation_leakage() -> None:
 
     # Check that zero flag being tainted does not wrongly infect EAX[6]
     assert ('EAX', 6) not in taints
+
+
+def test_adc_eax0_taint() -> None:
+    format = X86().cpu_regs
+    circuit = generate_static_rule(Architecture.X86, bytes.fromhex('11d8'), format)
+
+    tainted_bits = {('EAX', 0)}
+    input_values = {'EAX': 0, 'EBX': 0, 'EFLAGS': 0}
+
+    taints, _ = evaluate_taint_propagation_for_circuit(circuit, tainted_bits, input_values)
+
+    assert ('EAX', 0) in taints
+    assert ('EAX', 1) not in taints, 'EAX[1] should not be tainted if EBX=0'

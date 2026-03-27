@@ -276,17 +276,19 @@ def evaluate_taint_propagation_for_circuit(  # noqa: C901
     try:
         output_taint = rule.evaluate(input_taint, input_values)
     except NotImplementedError:
-
         transpiler = make_transpiler(rule.architecture)
         asm = transpiler.transpile(rule)
-        target_vars = [transpiler.format_var_name(assignment.target) for assignment in rule.assignments]
+        target_vars = ['OUT_' + transpiler.format_var_name(assignment.target) for assignment in rule.assignments]
         raw_results = execute_asm_in_unicorn(asm, rule.architecture, input_taint, input_values, target_vars)
 
         output_taint = {}
         for var, val in raw_results.items():
-            # var is like T_EAX_31_0
+            # var is like OUT_T_EAX_31_0
+            original_var = var
+            if original_var.startswith('OUT_'):
+                original_var = original_var[4:]
             try:
-                parts = var.split('_')
+                parts = original_var.split('_')
                 if len(parts) == 3:
                     reg_name = parts[1]
                     bit_pos = int(parts[2])
@@ -309,7 +311,7 @@ def evaluate_taint_propagation_for_circuit(  # noqa: C901
                     reg_name = parts[1]
                     output_taint[reg_name] = output_taint.get(reg_name, 0) | val
             except Exception:
-                reg_name = var.split('_')[1] if '_' in var else var
+                reg_name = original_var.split('_')[1] if '_' in original_var else original_var
                 output_taint[reg_name] = output_taint.get(reg_name, 0) | val
 
     # Convert dict of reg -> bitmask back to set of (reg, bit)

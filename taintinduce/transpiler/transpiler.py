@@ -87,24 +87,25 @@ class RegisterAllocatorTranspiler(Transpiler):
         raise NotImplementedError
 
     def transpile_assignment(self, assignment: TaintAssignment) -> None:
+        target_var = 'OUT_' + self.format_var_name(assignment.target)
         if assignment.expression is None and len(assignment.dependencies) == 1:
             dep = assignment.dependencies[0]
             if str(dep) == str(assignment.target):
                 reg = self.allocator.alloc()
                 self.load_var(reg, self.format_var_name(dep))
-                self.store_var(self.format_var_name(assignment.target), reg)
+                self.store_var(target_var, reg)
                 self.allocator.free(reg)
                 return
 
         if assignment.expression is not None:
             res_reg = self.transpile_expr(assignment.expression)
-            self.store_var(self.format_var_name(assignment.target), res_reg)
+            self.store_var(target_var, res_reg)
             self.allocator.free(res_reg)
         else:
             if not assignment.dependencies:
                 reg = self.allocator.alloc()
                 self.load_val(reg, 0)
-                self.store_var(self.format_var_name(assignment.target), reg)
+                self.store_var(target_var, reg)
                 self.allocator.free(reg)
             else:
                 res_reg = self.transpile_expr(assignment.dependencies[0])
@@ -112,7 +113,7 @@ class RegisterAllocatorTranspiler(Transpiler):
                     dep_reg = self.transpile_expr(dep)
                     self.emit_op(Op.OR, res_reg, dep_reg)
                     self.allocator.free(dep_reg)
-                self.store_var(self.format_var_name(assignment.target), res_reg)
+                self.store_var(target_var, res_reg)
                 self.allocator.free(res_reg)
 
     def transpile_expr(self, expr: Expr) -> str:  # noqa: C901
