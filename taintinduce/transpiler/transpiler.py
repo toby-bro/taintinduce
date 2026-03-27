@@ -1,4 +1,5 @@
 from taintinduce.instrumentation.ast import (
+    AvalancheExpr,
     BinaryExpr,
     Constant,
     Expr,
@@ -68,6 +69,9 @@ class RegisterAllocatorTranspiler(Transpiler):
     def emit_not(self, reg: str) -> None:
         raise NotImplementedError
 
+    def emit_avalanche(self, reg: str) -> None:
+        raise NotImplementedError
+
     def emit_push(self, reg: str) -> None:
         raise NotImplementedError
 
@@ -131,6 +135,10 @@ class RegisterAllocatorTranspiler(Transpiler):
                 self.emit_not(reg)
             else:
                 raise NotImplementedError
+            return reg
+        if isinstance(expr, AvalancheExpr):
+            reg = self.transpile_expr(expr.expr)
+            self.emit_avalanche(reg)
             return reg
         if isinstance(expr, BinaryExpr):
             lhs_reg = self.transpile_expr(expr.lhs)
@@ -211,6 +219,10 @@ class X86Transpiler(RegisterAllocatorTranspiler):
     def emit_not(self, reg: str) -> None:
         self.emit(f'not {reg}')
 
+    def emit_avalanche(self, reg: str) -> None:
+        self.emit(f'neg {reg}')
+        self.emit(f'sbb {reg}, {reg}')
+
     def emit_push(self, reg: str) -> None:
         if reg == 'eflags':
             self.emit('pushfd')
@@ -271,6 +283,10 @@ class AMD64Transpiler(RegisterAllocatorTranspiler):
 
     def emit_not(self, reg: str) -> None:
         self.emit(f'not {reg}')
+
+    def emit_avalanche(self, reg: str) -> None:
+        self.emit(f'neg {reg}')
+        self.emit(f'sbb {reg}, {reg}')
 
     def emit_push(self, reg: str) -> None:
         if reg in ('eflags', 'rflags'):
@@ -345,6 +361,10 @@ class ARM64Transpiler(RegisterAllocatorTranspiler):
     def emit_mov(self, dst: str, src: str) -> None:
         if dst != src:
             self.emit(f'mov {dst}, {src}')
+
+    def emit_avalanche(self, reg: str) -> None:
+        self.emit(f'cmp {reg}, xzr')
+        self.emit(f'csetm {reg}, ne')
 
     def emit_byte(self, bytes_str: str) -> None:
         self.emit(f'.byte {bytes_str}')

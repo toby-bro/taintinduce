@@ -6,11 +6,6 @@ from taintinduce.classifier.categories import InstructionCategory
 TRANSPORTABLE_OPCODES: set[str] = {
     'INT_ADD',
     'INT_SUB',
-    'INT_MULT',
-    'INT_DIV',
-    'INT_SDIV',
-    'INT_REM',
-    'INT_SREM',
     'INT_LEFT',  # Logical Shift Left
     'INT_RIGHT',  # Logical Shift Right
     'INT_SRIGHT',  # Arithmetic Shift Right
@@ -26,6 +21,16 @@ TRANSPORTABLE_OPCODES: set[str] = {
 }
 
 # CellIFT Mapped Operations (Bitwise logical operations, exact copies)
+
+# CellIFT Avalanche Operations (Multiplications, Divisions)
+AVALANCHE_OPCODES: set[str] = {
+    'INT_MULT',
+    'INT_DIV',
+    'INT_SDIV',
+    'INT_REM',
+    'INT_SREM',
+}
+
 MAPPED_OPCODES: set[str] = {
     'COPY',  # Register to register exact move
     'LOAD',  # Memory read
@@ -55,8 +60,11 @@ def determine_category(slice_ops: list[pypcode.pypcode_native.PcodeOp]) -> Instr
     for op in slice_ops:
         op_name = op.opcode.name
 
+        # If any operation in the slice relies on avalanche operations
+        if op_name in AVALANCHE_OPCODES:
+            return InstructionCategory.AVALANCHE
+
         # If any operation in the slice relies on arithmetic/carries,
-        # the entire taint propagation bounding must use Transportable rules.
         if op_name in TRANSPORTABLE_OPCODES:
             return InstructionCategory.TRANSPORTABLE
 

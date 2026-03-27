@@ -69,3 +69,34 @@ def test_add_ax_bx_high_bits() -> None:
     taints, _ = evaluate_taint_propagation_for_circuit(circuit, tainted_bits, input_values)
 
     assert ('EAX', 20) in taints, 'Upper bit should not be cleared by 16-bit operation'
+
+
+def test_imul_maximal() -> None:
+    format = X86().cpu_regs
+    # '0fafc3' -> imul eax, ebx
+    circuit = generate_static_rule(Architecture.X86, bytes.fromhex('0fafc3'), format)
+
+    tainted_bits = {('EBX', 0)}
+    input_values = {'EAX': 0, 'EBX': 0, 'EFLAGS': 0}
+
+    taints, _ = evaluate_taint_propagation_for_circuit(circuit, tainted_bits, input_values)
+
+    # We want ALL bits of EAX to be tainted! 32 bits => EAX[0] to EAX[31]
+    for i in range(32):
+        assert ('EAX', i) in taints
+
+
+def test_mul_maximal() -> None:
+    format = X86().cpu_regs
+    # 'f7e3' -> mul ebx (uses EAX and EBX implicitly, outputs to EAX and EDX)
+    circuit = generate_static_rule(Architecture.X86, bytes.fromhex('f7e3'), format)
+
+    tainted_bits = {('EAX', 1)}
+    input_values = {'EAX': 0, 'EBX': 0, 'EDX': 0, 'EFLAGS': 0}
+
+    taints, _ = evaluate_taint_propagation_for_circuit(circuit, tainted_bits, input_values)
+
+    # Make sure all EAX and EDX bits get tainted since AVALANCHE applies
+    for i in range(32):
+        assert ('EAX', i) in taints
+        assert ('EDX', i) in taints

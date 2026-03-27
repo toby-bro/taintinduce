@@ -2,6 +2,7 @@ import pypcode
 
 from taintinduce.classifier.categories import InstructionCategory
 from taintinduce.instrumentation.ast import (
+    AvalancheExpr,
     BinaryExpr,
     Expr,
     InstructionCellExpr,
@@ -124,6 +125,13 @@ def generate_static_rule(
                 expr = BinaryExpr(Op.OR, expr, dep)
             assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expr))
 
+        elif cat == InstructionCategory.AVALANCHE:
+            expr = dependencies[0]
+            for dep in dependencies[1:]:
+                expr = BinaryExpr(Op.OR, expr, dep)
+            expression: Expr = AvalancheExpr(expr)
+            assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expression))
+
         elif cat == InstructionCategory.TRANSPORTABLE:
             C1_cell = InstructionCellExpr(
                 arch,
@@ -142,7 +150,7 @@ def generate_static_rule(
                 cell_inputs_rep2,
             )
 
-            expression: Expr = BinaryExpr(Op.XOR, C1_cell, C2_cell)
+            expression = BinaryExpr(Op.XOR, C1_cell, C2_cell)
 
             transport_term: Expr = dependencies[0]
             for dep in dependencies[1:]:

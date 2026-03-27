@@ -27,6 +27,22 @@ class Expr(SerializableMixin):
 
 
 @dataclass
+class AvalancheExpr(Expr):
+    """A unary operation that evaluates to all 1s (-1) if the inner expression is non-zero, else 0."""
+
+    expr: Expr
+
+    def __str__(self) -> str:
+        return f'AVALANCHE({self.expr})'
+
+    def evaluate(self, input_taint: dict[str, int], input_values: dict[str, int]) -> int:
+        val = self.expr.evaluate(input_taint, input_values)
+        if val != 0:
+            return -1
+        return 0
+
+
+@dataclass
 class TaintOperand(Expr):
     """Represents a taint value operand (e.g. the taint status of EAX) or a concrete value operand."""
 
