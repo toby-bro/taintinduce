@@ -100,3 +100,38 @@ def test_mul_maximal() -> None:
     for i in range(32):
         assert ('EAX', i) in taints
         assert ('EDX', i) in taints
+
+
+def test_conditional_branch_avalanche() -> None:
+    """Test that a conditional branch like jz +0 correctly uses an avalanche effect
+    to taint the entire Program Counter if the condition flag (ZF) is tainted."""
+    format = X86().cpu_regs
+    # '7400' -> jz +0
+    circuit = generate_static_rule(Architecture.X86, bytes.fromhex('7400'), format)
+
+    tainted_bits = {('EFLAGS', 6)}  # Taint ZF
+    input_values = {'EAX': 0, 'EBX': 0, 'EFLAGS': 0, 'EIP': 0}
+
+    taints, _ = evaluate_taint_propagation_for_circuit(circuit, tainted_bits, input_values)
+
+    # We want ALL 32 bits of EIP to be tainted because of the Avalanche behavior
+    for i in range(32):
+        assert ('EIP', i) in taints
+
+
+def test_indirect_branch_avalanche() -> None:
+    """Test that an indirect branch like jmp eax correctly propagates taint to
+    the entire Program Counter via avalanche."""
+    format = X86().cpu_regs
+    # 'ffe0' -> jmp eax
+    circuit = generate_static_rule(Architecture.X86, bytes.fromhex('ffe0'), format)
+
+    tainted_bits = {('EAX', 0)}
+    input_values = {'EAX': 0, 'EBX': 0, 'EFLAGS': 0, 'EIP': 0}
+
+    taints, _ = evaluate_taint_propagation_for_circuit(circuit, tainted_bits, input_values)
+
+    # We want ALL 32 bits of EIP to be tainted
+    for i in range(32):
+        assert ('EIP', i) in taints
+

@@ -69,28 +69,55 @@ def generate_static_rule(
 
     unique_outputs = {_get_varnode_id(out): out for out in outputs}.values()
 
-    assignments: list[TaintAssignment] = []
-
+    targets_to_evaluate: list[tuple[pypcode.pypcode_native.Varnode, str, int, int]] = []
     for out_vn in unique_outputs:
         mapped_out = _map_sleigh_to_state(ctx, arch, state_format, out_vn.offset, out_vn.size)
-        if not mapped_out:
-            continue
-        out_name, out_bit_start, out_bit_end = mapped_out
+        if mapped_out:
+            targets_to_evaluate.append((out_vn, mapped_out[0], mapped_out[1], mapped_out[2]))
 
+    # Add branch implicits (CBRANCH, BRANCHIND, CALLIND) mapping to Program Counter (PC)
+    for op in translation.ops:
+        op_name = op.opcode.name
+        if op_name in ('CBRANCH', 'BRANCHIND', 'CALLIND'):
+            pc_name = 'EIP' if 'X86' in arch.upper() else 'RIP' if 'AMD64' in arch.upper() else 'PC'
+            pc_reg = next((r for r in state_format if r.name.upper() == pc_name), None)
+            if not pc_reg:
+                continue
+
+            varnode = op.inputs[1] if op_name == 'CBRANCH' else op.inputs[0]
+
+            # Discard if it is strictly a constant dictating the branch
+            if varnode.space.name == 'const':
+                continue
+
+            targets_to_evaluate.append((varnode, pc_reg.name, 0, pc_reg.bits - 1))
+
+    assignments: list[TaintAssignment] = []
+
+    for out_vn, out_name, out_bit_start, out_bit_end in targets_to_evaluate:
         slice_ops = slice_backward(translation.ops, out_vn)
         cat = determine_category(slice_ops)
         polarities = compute_polarity(slice_ops)
 
         deps: dict[tuple[str, int, int], int] = {}
-        for vn_id, p in polarities.items():
-            parts = vn_id.split(':')
-            if len(parts) != 3:
-                continue
-            space, st_offset, st_size = parts
-            if space == 'register':
-                mapped_dep = _map_sleigh_to_state(ctx, arch, state_format, int(st_offset), int(st_size))
+
+        # If the output varnode was never produced by any operation in this instruction,
+        # it is intrinsically its own direct read dependency (e.g. CBRANCH reading flags).
+        if not slice_ops:
+            if out_vn.space.name == 'register':
+                mapped_dep = _map_sleigh_to_state(ctx, arch, state_format, out_vn.offset, out_vn.size)
                 if mapped_dep:
-                    deps[mapped_dep] = p
+                    deps[mapped_dep] = 1
+        else:
+            for vn_id, p in polarities.items():
+                parts = vn_id.split(':')
+                if len(parts) != 3:
+                    continue
+                space, st_offset, st_size = parts
+                if space == 'register':
+                    mapped_dep = _map_sleigh_to_state(ctx, arch, state_format, int(st_offset), int(st_size))
+                    if mapped_dep:
+                        deps[mapped_dep] = p
 
         if not deps:
             continue
@@ -123,13 +150,19 @@ def generate_static_rule(
             expr: Expr = dependencies[0]
             for dep in dependencies[1:]:
                 expr = BinaryExpr(Op.OR, expr, dep)
+
+            # Automatically apply Avalanche to program counter branches
+            # Because if a branch condition or address is tainted, the entire PC is entirely tainted.
+            if out_name in ('EIP', 'RIP', 'PC'):
+                expr = AvalancheExpr(expr)
+
             assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expr))
 
         elif cat == InstructionCategory.AVALANCHE:
-            expr = dependencies[0]
+            expression = dependencies[0]
             for dep in dependencies[1:]:
-                expr = BinaryExpr(Op.OR, expr, dep)
-            expression: Expr = AvalancheExpr(expr)
+                expression = BinaryExpr(Op.OR, expression, dep)
+            expression = AvalancheExpr(expression)
             assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expression))
 
         elif cat == InstructionCategory.TRANSPORTABLE:
@@ -158,11 +191,15 @@ def generate_static_rule(
 
             expression = BinaryExpr(Op.OR, expression, transport_term)
 
+            if out_name in ('EIP', 'RIP', 'PC'):
+                expression = AvalancheExpr(expression)
             assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expression))
         else:
             in_dict: dict[str, Expr] = {d.name: d for d in dependencies}
-            C_cell = InstructionCellExpr(arch, bytestring.hex(), out_name, out_bit_start, out_bit_end, in_dict)
-            assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=C_cell))
+            expression = InstructionCellExpr(arch, bytestring.hex(), out_name, out_bit_start, out_bit_end, in_dict)
+            if out_name in ('EIP', 'RIP', 'PC'):
+                expression = AvalancheExpr(expression)
+            assignments.append(TaintAssignment(target=target, dependencies=dependencies, expression=expression))
 
     return LogicCircuit(
         assignments=assignments,
