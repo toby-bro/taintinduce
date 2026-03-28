@@ -259,8 +259,6 @@ def get_rule_data() -> Response | tuple[Response, int]:  # noqa: C901
             sample_flows_circuit = []
             dataflow_list_circuit = []
 
-
-
             input_bits_circuit = []
             input_labels_circuit = []
             for dep in assignment.dependencies:
@@ -826,7 +824,9 @@ def simulate_mreplica_endpoint() -> Response | tuple[Response, int]:
     # Collect per-cell outputs
     cell_results: list[dict[str, Any]] = []
     all_output_vals: list[int] = []
-    for cell in replica.cells:
+    # Make a copy of cells to avoid Set changed size during iteration RuntimeError
+    # in case cell logic modifies the set (e.g. m-replica generation).
+    for cell in list(replica.cells):
         out = cell.get_output(input_state)
         all_output_vals.append(out.state_value)
         cell_results.append({'mask': cell.mask, 'value': cell.value, 'output': out.state_value})

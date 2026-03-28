@@ -38,7 +38,7 @@ class MReplica:
     def simulate(self, input_state: State) -> State:
         """Simulate the instruction on the given input state and return the set of possible output states."""
         output_states = set()
-        for cell in self.cells:
+        for cell in list(self.cells):
             output_state = cell.get_output(input_state)
             output_states.add(output_state.state_value)
         # XOR bitwise two by two all output states and OR them together to get the final output state
