@@ -347,15 +347,19 @@ function mrRenderCellList() {
   mrCells.forEach((cell) => {
     const maskBits = [...Array(numBits)]
       .map((_, i) =>
-        (cell.mask >> i) & 1 ? ((cell.value >> i) & 1 ? "1" : "0") : "·",
+        (BigInt(cell.mask) >> BigInt(i)) & 1n
+          ? (BigInt(cell.value) >> BigInt(i)) & 1n
+            ? "1"
+            : "0"
+          : "·",
       )
       .reverse()
       .join("");
     html += `<div class="mr-cell-row">
-      <span class="mr-mono">0x${cell.mask.toString(16)}</span>
-      <span class="mr-mono">0x${cell.value.toString(16)}</span>
+      <span class="mr-mono">${typeof cell.mask === "string" ? cell.mask : "0x" + cell.mask.toString(16)}</span>
+      <span class="mr-mono">${typeof cell.value === "string" ? cell.value : "0x" + cell.value.toString(16)}</span>
       <span class="mr-mono mr-maskbits" title="Bit pattern (MSB→LSB: · = pass-through)">${maskBits}</span>
-      <span><button class="mr-del-btn" onclick="mrDeleteCell(${cell.mask},${cell.value})">✕</button></span>
+      <span><button class="mr-del-btn" onclick="mrDeleteCell('${cell.mask}','${cell.value}')">✕</button></span>
     </div>`;
   });
   html += "</div>";
@@ -368,8 +372,12 @@ async function mrAddCellDialog() {
   const valueStr = prompt("Value (hex or decimal):");
   if (valueStr == null) return;
   try {
-    const mask = parseInt(maskStr, maskStr.startsWith("0x") ? 16 : 10);
-    const value = parseInt(valueStr, valueStr.startsWith("0x") ? 16 : 10);
+    const mask = maskStr.startsWith("0x")
+      ? maskStr
+      : "0x" + BigInt(maskStr).toString(16);
+    const value = valueStr.startsWith("0x")
+      ? valueStr
+      : "0x" + BigInt(valueStr).toString(16);
     await mrAPIAddCell(mask, value);
   } catch {
     alert("Invalid input");
@@ -405,7 +413,7 @@ async function mrResetCells() {
 async function mrMakeFullDialog() {
   // Build a bit selector from the current register format
   const bits_mask = mrGetMakeFullMask();
-  if (bits_mask === 0) {
+  if (bits_mask === "0x0" || BigInt(bits_mask) === 0n) {
     alert(
       'Please select at least one bit. Use the bit selector below the "Make Full" button or set bits in the input panel.',
     );
@@ -429,22 +437,23 @@ async function mrMakeFullDialog() {
   mrRunSimulation();
 }
 
-function popcount(n) {
+function popcount(n_str) {
+  let n = BigInt(n_str);
   let c = 0;
-  while (n) {
-    c += n & 1;
-    n >>>= 1;
+  while (n > 0n) {
+    c += Number(n & 1n);
+    n >>= 1n;
   }
   return c;
 }
 
 function mrGetMakeFullMask() {
   // Read from the "make-full bits selector" checkboxes
-  let mask = 0;
+  let mask = 0n;
   document.querySelectorAll(".mr-makebit-cb:checked").forEach((cb) => {
-    mask |= 1 << parseInt(cb.dataset.bitpos);
+    mask |= 1n << BigInt(cb.dataset.bitpos);
   });
-  return mask;
+  return "0x" + mask.toString(16);
 }
 
 function mrRenderMakeFullSelector() {
@@ -519,11 +528,11 @@ function mrRunSimulation() {
 
 async function _mrDoSimulation() {
   if (!currentRuleData) return;
-  const inputVal = mrGetInputStateInt();
+  const inputValHex = mrGetInputStateHex();
   const r = await fetch("/api/mreplica/simulate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ input_state: inputVal }),
+    body: JSON.stringify({ input_state: inputValHex }),
   });
   if (!r.ok) {
     console.error("M-Replica simulation failed");
@@ -534,8 +543,8 @@ async function _mrDoSimulation() {
   mrRenderOutputPanel();
 }
 
-function mrGetInputStateInt() {
-  if (!currentRuleData) return 0;
+function mrGetInputStateHex() {
+  if (!currentRuleData) return "0x0";
   let val = 0n,
     offset = 0;
   currentRuleData.format.registers.forEach((reg) => {
@@ -545,7 +554,7 @@ function mrGetInputStateInt() {
     }
     offset += reg.bits;
   });
-  return Number(val);
+  return "0x" + val.toString(16);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -571,7 +580,7 @@ function mrRenderMatrix() {
     ? mrSimResult.cell_results
     : mrCells.map((c) => ({ ...c, output: null, contributes_to_taint: false }));
   const taintOut = mrSimResult ? mrSimResult.taint_output : 0;
-  const inputVal = mrGetInputStateInt();
+  const inputVal = BigInt(mrGetInputStateHex());
 
   // --- layout dimensions ---
   const numRows = cells.length + 2; // header(input) + cells + footer(taint)
@@ -622,10 +631,14 @@ function mrRenderMatrix() {
     0,
     "INPUT",
     "#555",
-    (b) => (inputVal >> b) & 1,
+    (b) => (inputVal >> BigInt(b)) & 1n,
     (b) => {
       const tainted = mrTaintBits.has(mrBitToKey(b, regs));
-      return tainted ? "#ff9800" : (inputVal >> b) & 1 ? "#28a745" : "#adb5bd";
+      return tainted
+        ? "#ff9800"
+        : (inputVal >> BigInt(b)) & 1n
+          ? "#28a745"
+          : "#adb5bd";
     },
     "#f0f4ff",
   );
@@ -634,26 +647,27 @@ function mrRenderMatrix() {
   cells.forEach((cell, idx) => {
     const rowBg = idx % 2 === 0 ? "white" : "#fafafa";
     const active = cell.contributes_to_taint;
-    const label = `#${idx + 1} m:${cell.mask.toString(16)} v:${cell.value.toString(16)}`;
+    const label = `#${idx + 1} m:${typeof cell.mask === "string" ? cell.mask : "0x" + cell.mask.toString(16)} v:${typeof cell.value === "string" ? cell.value : "0x" + cell.value.toString(16)}`;
     drawRow(
       idx + 1,
       label,
       active ? "#d63031" : "#636e72",
       (b) => {
         // output value if we have it, else show the masked/input bit
-        if (cell.output != null) return (cell.output >> b) & 1;
-        if ((cell.mask >> b) & 1) return (cell.value >> b) & 1;
-        return (inputVal >> b) & 1;
+        if (cell.output != null) return (BigInt(cell.output) >> BigInt(b)) & 1n;
+        if ((BigInt(cell.mask) >> BigInt(b)) & 1n)
+          return (BigInt(cell.value) >> BigInt(b)) & 1n;
+        return (inputVal >> BigInt(b)) & 1n;
       },
       (b) => {
-        const isMasked = (cell.mask >> b) & 1;
+        const isMasked = (BigInt(cell.mask) >> BigInt(b)) & 1n;
         const outVal =
           cell.output != null
-            ? (cell.output >> b) & 1
+            ? (BigInt(cell.output) >> BigInt(b)) & 1n
             : isMasked
-              ? (cell.value >> b) & 1
-              : (inputVal >> b) & 1;
-        const taintedBit = (taintOut >> b) & 1;
+              ? (BigInt(cell.value) >> BigInt(b)) & 1n
+              : (inputVal >> BigInt(b)) & 1n;
+        const taintedBit = (BigInt(taintOut) >> BigInt(b)) & 1n;
         if (isMasked && active) return outVal ? "#e17055" : "#b2bec3"; // active cell: orange-red / gray
         if (isMasked) return outVal ? "#74b9ff" : "#dfe6e9"; // inactive masked
         return outVal ? "#55efc4" : "#dfe6e9"; // pass-through
@@ -668,8 +682,8 @@ function mrRenderMatrix() {
     taintRowIdx,
     "⊕ TAINT",
     "#d63031",
-    (b) => (taintOut >> b) & 1,
-    (b) => ((taintOut >> b) & 1 ? "#d63031" : "#dfe6e9"),
+    (b) => (BigInt(taintOut) >> BigInt(b)) & 1n,
+    (b) => ((BigInt(taintOut) >> BigInt(b)) & 1n ? "#d63031" : "#dfe6e9"),
     "#fff0f0",
   );
 
@@ -725,7 +739,7 @@ function mrRenderOutputPanel() {
   const panel = document.getElementById("mr-output-panel");
   if (!panel) return;
 
-  const taint = mrSimResult.taint_output;
+  const taint = BigInt(mrSimResult.taint_output);
   const regs = mrSimResult.register_format || currentRuleData.format.registers;
   const real = mrSimResult.real_output || {};
 
@@ -737,8 +751,8 @@ function mrRenderOutputPanel() {
       <div class="mr-out-reg-title">${reg.name}</div>
       <div class="mr-bit-row">`;
     for (let b = reg.bits - 1; b >= 0; b--) {
-      const gp = bitOffset + b;
-      const tv = (taint >> gp) & 1;
+      const gp = BigInt(bitOffset + b);
+      const tv = Number((taint >> gp) & 1n);
       const flag = getFlagName(reg.name, b);
       taintHtml += `<div class="mr-bit-wrapper">
         ${flag ? `<div class="mr-flag-label">${flag}</div>` : '<div class="mr-flag-label">&nbsp;</div>'}

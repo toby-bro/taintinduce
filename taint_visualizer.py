@@ -720,10 +720,10 @@ def _reg_values_from_int(state_val: int) -> dict[str, dict[int, int]]:
     return extract_bits_from_state(state_val, _get_rule_format(current_rule))
 
 
-def _cells_as_json(replica: MReplica) -> list[dict[str, int]]:
+def _cells_as_json(replica: MReplica) -> list[dict[str, str]]:
     """Serialize cells to JSON-friendly list sorted by (mask, value)."""
     return sorted(
-        [{'mask': c.mask, 'value': c.value} for c in replica.cells],
+        [{'mask': hex(c.mask), 'value': hex(c.value)} for c in replica.cells],
         key=lambda c: (c['mask'], c['value']),
     )
 
@@ -763,8 +763,8 @@ def add_mreplica_cell() -> Response | tuple[Response, int]:
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
     data = request.json
-    mask = int(data['mask'])
-    value = int(data['value'])
+    mask = int(data['mask'], 16) if isinstance(data['mask'], str) else int(data['mask'])
+    value = int(data['value'], 16) if isinstance(data['value'], str) else int(data['value'])
     replica = _make_mreplica_if_needed()
     replica.new_cell(mask=mask, value=value)
     return jsonify({'success': True, 'num_cells': len(replica.cells)})
@@ -776,8 +776,8 @@ def delete_mreplica_cell() -> Response | tuple[Response, int]:
     if current_mreplica is None:
         return jsonify({'error': 'No M-Replica'}), 400
     data = request.json
-    mask = int(data['mask'])
-    value = int(data['value'])
+    mask = int(data['mask'], 16) if isinstance(data['mask'], str) else int(data['mask'])
+    value = int(data['value'], 16) if isinstance(data['value'], str) else int(data['value'])
     cell_to_remove = MReplicaCell(
         value=value,
         mask=mask,
@@ -795,7 +795,7 @@ def make_full_mreplica_endpoint() -> Response | tuple[Response, int]:
     if current_rule is None:
         return jsonify({'error': 'No rule loaded'}), 400
     data = request.json
-    bits_mask = int(data['bits_mask'])
+    bits_mask = int(data['bits_mask'], 16) if isinstance(data['bits_mask'], str) else int(data['bits_mask'])
     try:
         n_bits = _total_bits()
     except ValueError as e:
@@ -813,7 +813,8 @@ def simulate_mreplica_endpoint() -> Response | tuple[Response, int]:
         return jsonify({'error': 'No rule loaded'}), 400
     replica = _make_mreplica_if_needed()
     data = request.json
-    input_val = int(data.get('input_state', 0))
+    input_state_raw = data.get('input_state', 0)
+    input_val = int(input_state_raw, 16) if isinstance(input_state_raw, str) else int(input_state_raw)
     try:
         n_bits = _total_bits()
     except ValueError as e:
@@ -829,8 +830,8 @@ def simulate_mreplica_endpoint() -> Response | tuple[Response, int]:
     for cell in list(replica.cells):
         out = cell.get_output(input_state)
         all_output_vals.append(out.state_value)
-        cell_results.append({'mask': cell.mask, 'value': cell.value, 'output': out.state_value})
-    cell_results.sort(key=lambda c: (c['mask'], c['value']))
+        cell_results.append({'mask': hex(cell.mask), 'value': hex(cell.value), 'output': hex(out.state_value)})
+    cell_results.sort(key=lambda c: (int(c['mask'], 16), int(c['value'], 16)))
 
     # Mark cells whose output differs from at least one other cell
     for cr in cell_results:
@@ -845,7 +846,7 @@ def simulate_mreplica_endpoint() -> Response | tuple[Response, int]:
 
     return jsonify(
         {
-            'taint_output': taint_state.state_value,
+            'taint_output': hex(taint_state.state_value),
             'taint_output_hex': hex(taint_state.state_value),
             'cell_results': cell_results,
             'real_output': real_output,
